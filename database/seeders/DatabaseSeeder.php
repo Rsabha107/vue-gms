@@ -21,5 +21,11 @@ class DatabaseSeeder extends Seeder
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
+
+        // Seed venues first, then events
+        $this->call([
+            VenueSeeder::class,
+            EventSeeder::class,
+        ]);
     }
 }

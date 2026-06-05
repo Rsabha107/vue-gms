@@ -1,0 +1,501 @@
+<script setup>
+import { ref, inject } from 'vue'
+import GmsLayout from '@/Layouts/GmsLayout.vue'
+import GmsIcon from '@/Components/Gms/GmsIcon.vue'
+import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
+
+defineOptions({ layout: GmsLayout })
+
+const props = defineProps({
+    user: { type: Object, default: () => ({}) },
+    event: { type: Object, default: () => ({}) },
+})
+
+const toast = inject('toast')
+
+const activeSection = ref('team')
+
+// Account / profile
+const profileName = ref('Layla Hassan')
+const profileEmail = ref('layla.hassan@protocol.qa')
+const profileRole = ref('administrator')
+const avatarColor = ref('#8a1f3d')
+
+const avatarColors = [
+    '#8a1f3d', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B',
+    '#10B981', '#06B6D4', '#6366F1', '#EF4444', '#F97316',
+]
+
+// Email templates
+const emailTemplates = ref([
+    { id: 1, name: 'Guest Invite',  subject: 'Your invitation to {{event_name}}',       active: true  },
+    { id: 2, name: 'Reminder',      subject: 'Reminder: {{event_name}} is tomorrow',    active: false },
+    { id: 3, name: 'Confirmation',  subject: 'Thank you for confirming',                active: false },
+])
+const activeTemplate = ref(emailTemplates.value[0])
+const templateSubject = ref(activeTemplate.value.subject)
+const templateBody = ref(`Dear {{guest_name}},
+
+You are cordially invited to {{event_name}} on {{event_date}} at {{venue}}.
+
+As a {{tier_name}} guest, you will enjoy exclusive access and premium hospitality.
+
+Please confirm your attendance at your earliest convenience.
+
+Best regards,
+The Doha Cup Committee`)
+const templateTags = ['guest_name', 'event_name', 'event_date', 'venue', 'tier_name']
+
+// Team members
+const teamMembers = ref([
+    { id: 1, name: 'Layla Hassan',    email: 'layla.hassan@protocol.qa',   role: 'admin',       isYou: true  },
+    { id: 2, name: 'Omar Al-Kuwari',  email: 'omar.k@protocol.qa',         role: 'coordinator', isYou: false },
+    { id: 3, name: 'Sara Nasser',     email: 'sara.n@protocol.qa',         role: 'protocol',    isYou: false },
+    { id: 4, name: 'Yusuf Rahman',    email: 'yusuf.r@commercial.qa',      role: 'coordinator', isYou: false },
+    { id: 5, name: 'Hana Said',       email: 'hana.s@protocol.qa',         role: 'viewer',      isYou: false },
+])
+
+const roleLabels = { admin: 'Admin', coordinator: 'Coordinator', protocol: 'Protocol', viewer: 'Viewer' }
+
+// Role permissions matrix
+const capabilities = [
+    { label: 'Manage guests',    admin: true,  coordinator: true,  protocol: true,  viewer: false },
+    { label: 'Send invitations', admin: true,  coordinator: true,  protocol: true,  viewer: false },
+    { label: 'Edit seating',     admin: true,  coordinator: true,  protocol: false, viewer: false },
+    { label: 'Manage modules',   admin: true,  coordinator: false, protocol: false, viewer: false },
+    { label: 'Manage team',      admin: true,  coordinator: false, protocol: false, viewer: false },
+    { label: 'Export data',      admin: true,  coordinator: true,  protocol: false, viewer: false },
+]
+
+// Branding
+const primaryColor = ref('#8a1f3d')
+const brandColors = [
+    { name: 'Maroon',  hex: '#8a1f3d' },
+    { name: 'Blue',    hex: '#3B82F6' },
+    { name: 'Pink',    hex: '#EC4899' },
+    { name: 'Green',   hex: '#10B981' },
+    { name: 'Purple',  hex: '#8B5CF6' },
+    { name: 'Orange',  hex: '#F97316' },
+]
+
+// General / notifications
+const notificationsEnabled = ref(true)
+const emailReminders = ref(true)
+const autoAssignSeats = ref(false)
+
+function selectTemplate(template) {
+    activeTemplate.value = template
+    emailTemplates.value.forEach(t => t.active = false)
+    template.active = true
+    templateSubject.value = template.subject
+}
+
+function insertTag(tag) {
+    templateBody.value += `{{${tag}}}`
+}
+
+function formatTag(tag) {
+    return `{{${tag}}}`
+}
+</script>
+
+<template>
+  <div class="gms-view">
+    <div class="gms-view-header">
+      <div>
+        <h1 class="gms-view-title">Settings</h1>
+        <p class="gms-view-subtitle">Configure {{ event?.name || "Doha Cup '26" }} and your GMS workspace.</p>
+      </div>
+    </div>
+
+    <div class="set-grid">
+      <!-- Left Navigation -->
+      <nav class="set-nav">
+        <button class="set-nav-item" :class="{ on: activeSection === 'general' }" @click="activeSection = 'general'">
+          <span class="ic"><GmsIcon name="settings" :size="16" /></span>
+          General
+        </button>
+        <button class="set-nav-item" :class="{ on: activeSection === 'modules' }" @click="activeSection = 'modules'">
+          <span class="ic"><GmsIcon name="grid" :size="16" /></span>
+          Modules
+        </button>
+        <button class="set-nav-item" :class="{ on: activeSection === 'account' }" @click="activeSection = 'account'">
+          <span class="ic"><GmsIcon name="user" :size="16" /></span>
+          Account & profile
+        </button>
+        <button class="set-nav-item" :class="{ on: activeSection === 'team' }" @click="activeSection = 'team'">
+          <span class="ic"><GmsIcon name="users" :size="16" /></span>
+          Team & roles
+        </button>
+        <button class="set-nav-item" :class="{ on: activeSection === 'notifications' }" @click="activeSection = 'notifications'">
+          <span class="ic"><GmsIcon name="bell" :size="16" /></span>
+          Notifications
+        </button>
+        <button class="set-nav-item" :class="{ on: activeSection === 'email' }" @click="activeSection = 'email'">
+          <span class="ic"><GmsIcon name="mail" :size="16" /></span>
+          Email templates
+        </button>
+        <button class="set-nav-item" :class="{ on: activeSection === 'branding' }" @click="activeSection = 'branding'">
+          <span class="ic"><GmsIcon name="palette" :size="16" /></span>
+          Branding
+        </button>
+        <button class="set-nav-item" :class="{ on: activeSection === 'export' }" @click="activeSection = 'export'">
+          <span class="ic"><GmsIcon name="download" :size="16" /></span>
+          Data & export
+        </button>
+      </nav>
+
+      <!-- Right Content Area -->
+      <div class="set-body">
+
+        <!-- ── Team & Roles ───────────────────────────────────── -->
+        <div v-if="activeSection === 'team'">
+
+          <!-- Team members card -->
+          <div class="set-panel" style="margin-bottom: 24px;">
+            <div class="set-panel-h">
+              <h2 class="set-panel-t">Team members</h2>
+              <p class="set-panel-d">People with access to this GMS workspace.</p>
+            </div>
+
+            <div class="team-list">
+              <div v-for="member in teamMembers" :key="member.id" class="team-row">
+                <GmsAvatar :name="member.name" size="md" />
+                <div style="flex:1;min-width:0;">
+                  <div class="team-nm">
+                    {{ member.name }}
+                    <span v-if="member.isYou" class="you-tag">You</span>
+                  </div>
+                  <div class="team-em">{{ member.email }}</div>
+                </div>
+                <span class="role-pill" :class="member.role">{{ roleLabels[member.role] }}</span>
+                <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" style="margin-left:4px;">
+                  <GmsIcon name="more-vertical" :size="14" />
+                </button>
+              </div>
+            </div>
+
+            <div class="set-panel-f" style="justify-content:flex-start;">
+              <button class="gms-btn gms-btn-primary">
+                <GmsIcon name="plus" :size="13" />
+                Invite member
+              </button>
+            </div>
+          </div>
+
+          <!-- Role permissions card -->
+          <div class="set-panel">
+            <div class="set-panel-h">
+              <h2 class="set-panel-t">Role permissions</h2>
+              <p class="set-panel-d">What each role can do. Admin always has full access. Tap a cell to change.</p>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="matrix" style="min-width:560px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;padding:14px 24px;width:42%;">Capability</th>
+                    <th style="text-align:center;">Admin</th>
+                    <th style="text-align:center;">Coordinator</th>
+                    <th style="text-align:center;">Protocol</th>
+                    <th style="text-align:center;">Viewer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="cap in capabilities" :key="cap.label">
+                    <td class="cap" style="padding:12px 24px;">{{ cap.label }}</td>
+                    <td style="text-align:center;">
+                      <button class="mx-cell" :class="{ on: cap.admin }">
+                        <GmsIcon v-if="cap.admin" name="check" :size="12" />
+                        <span v-else style="font-size:13px;line-height:1;">—</span>
+                      </button>
+                    </td>
+                    <td style="text-align:center;">
+                      <button class="mx-cell" :class="{ on: cap.coordinator }">
+                        <GmsIcon v-if="cap.coordinator" name="check" :size="12" />
+                        <span v-else style="font-size:13px;line-height:1;">—</span>
+                      </button>
+                    </td>
+                    <td style="text-align:center;">
+                      <button class="mx-cell" :class="{ on: cap.protocol }">
+                        <GmsIcon v-if="cap.protocol" name="check" :size="12" />
+                        <span v-else style="font-size:13px;line-height:1;">—</span>
+                      </button>
+                    </td>
+                    <td style="text-align:center;">
+                      <button class="mx-cell" :class="{ on: cap.viewer }">
+                        <GmsIcon v-if="cap.viewer" name="check" :size="12" />
+                        <span v-else style="font-size:13px;line-height:1;">—</span>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Account & Profile ──────────────────────────────── -->
+        <div v-if="activeSection === 'account'" class="set-panel">
+          <div class="set-panel-h">
+            <h2 class="set-panel-t">Account & profile</h2>
+            <p class="set-panel-d">Update your personal information and avatar</p>
+          </div>
+          <div class="set-panel-b">
+            <div class="prof-head">
+              <GmsAvatar :name="profileName" size="xl" class="prof-av" />
+              <div style="flex:1;">
+                <div class="gms-field">
+                  <label class="gms-label">Full Name</label>
+                  <input v-model="profileName" type="text" class="gms-input" />
+                </div>
+                <div style="margin-top:12px;">
+                  <label class="gms-label">Avatar Color</label>
+                  <div class="avc-row">
+                    <button
+                      v-for="color in avatarColors"
+                      :key="color"
+                      class="avc"
+                      :class="{ on: avatarColor === color }"
+                      :style="{ background: color }"
+                      @click="avatarColor = color"
+                    ></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Email</label>
+              <input v-model="profileEmail" type="email" class="gms-input" />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Role</label>
+              <select v-model="profileRole" class="gms-input gms-select">
+                <option value="administrator">Administrator</option>
+                <option value="manager">Manager</option>
+                <option value="coordinator">Coordinator</option>
+              </select>
+            </div>
+          </div>
+          <div class="set-panel-f">
+            <button class="gms-btn gms-btn-ghost">Cancel</button>
+            <button class="gms-btn gms-btn-primary" @click="toast('Profile saved')">Save Changes</button>
+          </div>
+        </div>
+
+        <!-- ── General ────────────────────────────────────────── -->
+        <div v-if="activeSection === 'general'" class="set-panel">
+          <div class="set-panel-h">
+            <h2 class="set-panel-t">General</h2>
+            <p class="set-panel-d">Configure application-wide behaviour</p>
+          </div>
+          <div class="set-panel-b" style="padding:0;">
+            <div class="set-rows">
+              <div class="set-row">
+                <div class="set-row-ic"><GmsIcon name="zap" :size="16" /></div>
+                <div class="set-row-tx">
+                  <div class="set-row-t">Auto-Assign Seats</div>
+                  <div class="set-row-d">Automatically assign seats to newly confirmed guests</div>
+                </div>
+                <button class="sw" :class="{ on: autoAssignSeats }" @click="autoAssignSeats = !autoAssignSeats">
+                  <span class="kn"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="set-panel-f">
+            <button class="gms-btn gms-btn-primary" @click="toast('Preferences saved')">Save Preferences</button>
+          </div>
+        </div>
+
+        <!-- ── Modules ────────────────────────────────────────── -->
+        <div v-if="activeSection === 'modules'" class="set-panel">
+          <div class="set-panel-h">
+            <h2 class="set-panel-t">Modules</h2>
+            <p class="set-panel-d">Enable or disable GMS modules for this event</p>
+          </div>
+          <div class="set-panel-b" style="padding:0;">
+            <div class="set-rows">
+              <div v-for="mod in [
+                { icon: 'plane',     label: 'Flights',           desc: 'Flight request management',               on: true  },
+                { icon: 'building',  label: 'Accommodation',     desc: 'Hotel and accommodation requests',        on: true  },
+                { icon: 'car',       label: 'Transport',         desc: 'Ground transport coordination',           on: true  },
+                { icon: 'arrivals',  label: 'Arrival & Departure', desc: 'Airport and terminal handling',         on: false },
+              ]" :key="mod.label" class="set-row">
+                <div class="set-row-ic"><GmsIcon :name="mod.icon" :size="16" /></div>
+                <div class="set-row-tx">
+                  <div class="set-row-t">{{ mod.label }}</div>
+                  <div class="set-row-d">{{ mod.desc }}</div>
+                </div>
+                <button class="sw" :class="{ on: mod.on }" @click="mod.on = !mod.on">
+                  <span class="kn"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="set-panel-f">
+            <button class="gms-btn gms-btn-primary" @click="toast('Module settings saved')">Save</button>
+          </div>
+        </div>
+
+        <!-- ── Notifications ──────────────────────────────────── -->
+        <div v-if="activeSection === 'notifications'" class="set-panel">
+          <div class="set-panel-h">
+            <h2 class="set-panel-t">Notifications</h2>
+            <p class="set-panel-d">Control when and how you receive alerts</p>
+          </div>
+          <div class="set-panel-b" style="padding:0;">
+            <div class="set-rows">
+              <div class="set-row">
+                <div class="set-row-ic"><GmsIcon name="bell" :size="16" /></div>
+                <div class="set-row-tx">
+                  <div class="set-row-t">Email Notifications</div>
+                  <div class="set-row-d">Receive email alerts for guest updates</div>
+                </div>
+                <button class="sw" :class="{ on: notificationsEnabled }" @click="notificationsEnabled = !notificationsEnabled">
+                  <span class="kn"></span>
+                </button>
+              </div>
+              <div class="set-row">
+                <div class="set-row-ic"><GmsIcon name="clock" :size="16" /></div>
+                <div class="set-row-tx">
+                  <div class="set-row-t">Automatic Reminders</div>
+                  <div class="set-row-d">Send reminder emails 24 h before events</div>
+                </div>
+                <button class="sw" :class="{ on: emailReminders }" @click="emailReminders = !emailReminders">
+                  <span class="kn"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="set-panel-f">
+            <button class="gms-btn gms-btn-primary" @click="toast('Notification preferences saved')">Save Preferences</button>
+          </div>
+        </div>
+
+        <!-- ── Email Templates ────────────────────────────────── -->
+        <div v-if="activeSection === 'email'" class="set-panel">
+          <div class="set-panel-h">
+            <h2 class="set-panel-t">Email Templates</h2>
+            <p class="set-panel-d">Customize invitation and notification emails</p>
+          </div>
+          <div class="set-panel-b">
+            <div class="email-grid">
+              <div class="email-list">
+                <button
+                  v-for="template in emailTemplates"
+                  :key="template.id"
+                  class="tpl-item"
+                  :class="{ on: template.active }"
+                  @click="selectTemplate(template)"
+                >
+                  <span class="ic"><GmsIcon name="mail" :size="16" /></span>
+                  {{ template.name }}
+                </button>
+                <button class="tpl-item add">
+                  <span class="ic"><GmsIcon name="plus" :size="16" /></span>
+                  New Template
+                </button>
+              </div>
+              <div>
+                <div class="gms-field">
+                  <label class="gms-label">Subject</label>
+                  <input v-model="templateSubject" type="text" class="gms-input" />
+                </div>
+                <div class="gms-field">
+                  <label class="gms-label">Body</label>
+                  <textarea v-model="templateBody" class="email-body" rows="10"></textarea>
+                </div>
+                <div class="mtag-row">
+                  <label class="gms-label" style="width:100%;margin-bottom:8px;">Available Variables</label>
+                  <button v-for="tag in templateTags" :key="tag" class="mtag" @click="insertTag(tag)">
+                    {{ formatTag(tag) }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="set-panel-f">
+            <button class="gms-btn gms-btn-ghost">Cancel</button>
+            <button class="gms-btn gms-btn-primary" @click="toast('Template saved')">Save Template</button>
+          </div>
+        </div>
+
+        <!-- ── Branding ───────────────────────────────────────── -->
+        <div v-if="activeSection === 'branding'" class="set-panel">
+          <div class="set-panel-h">
+            <h2 class="set-panel-t">Branding</h2>
+            <p class="set-panel-d">Customize colors and branding elements</p>
+          </div>
+          <div class="set-panel-b">
+            <div style="margin-bottom:24px;">
+              <label class="gms-label" style="margin-bottom:12px;display:block;">Primary Color</label>
+              <div class="accent-grid">
+                <button
+                  v-for="color in brandColors"
+                  :key="color.hex"
+                  class="accent"
+                  :class="{ on: primaryColor === color.hex }"
+                  @click="primaryColor = color.hex"
+                >
+                  <div class="accent-sw" :style="{ background: color.hex }">
+                    <GmsIcon v-if="primaryColor === color.hex" name="check" :size="16" />
+                  </div>
+                  <div>
+                    <div class="accent-nm">{{ color.name }}</div>
+                    <div class="set-row-d">{{ color.hex }}</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <div class="brand-row">
+              <div>
+                <label class="gms-label">Event Logo</label>
+                <p style="font-size:12px;color:var(--gms-text-3);margin-top:4px;">Emoji or single character for event branding</p>
+              </div>
+              <div class="gms-field" style="margin-bottom:0;">
+                <input type="text" class="gms-input" value="⚽" style="text-align:center;font-size:24px;" maxlength="2" />
+              </div>
+            </div>
+          </div>
+          <div class="set-panel-f">
+            <button class="gms-btn gms-btn-ghost">Reset to Default</button>
+            <button class="gms-btn gms-btn-primary" @click="toast('Branding saved')">Save Changes</button>
+          </div>
+        </div>
+
+        <!-- ── Data & Export ──────────────────────────────────── -->
+        <div v-if="activeSection === 'export'" class="set-panel danger">
+          <div class="set-panel-h">
+            <h2 class="set-panel-t">Data & export</h2>
+            <p class="set-panel-d">Irreversible actions that affect your data</p>
+          </div>
+          <div class="set-panel-b" style="padding:0;">
+            <div class="set-rows">
+              <div class="set-row">
+                <div class="set-row-tx">
+                  <div class="set-row-t">Export All Data</div>
+                  <div class="set-row-d">Download a complete copy of your GMS data</div>
+                </div>
+                <button class="gms-btn gms-btn-ghost">
+                  <GmsIcon name="download" :size="13" />
+                  Export
+                </button>
+              </div>
+              <div class="set-row">
+                <div class="set-row-tx">
+                  <div class="set-row-t">Clear All Guest Data</div>
+                  <div class="set-row-d">Permanently delete all guest records for this event</div>
+                </div>
+                <button class="gms-btn gms-btn-ghost danger-btn">
+                  <GmsIcon name="trash" :size="13" />
+                  Clear Data
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</template>

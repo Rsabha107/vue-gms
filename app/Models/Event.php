@@ -1,0 +1,52 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Event extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'subtitle',
+        'location',
+        'venue',
+        'date_start',
+        'date_end',
+        'logo',
+        'active_flag',
+    ];
+
+    protected $casts = [
+        'date_start' => 'date',
+        'date_end' => 'date',
+        'active_flag' => 'boolean',
+    ];
+
+    /**
+     * Get the venues for the event
+     */
+    public function venues()
+    {
+        return $this->belongsToMany(\App\Models\Venue::class, 'venue_event');
+    }
+
+    /**
+     * Scope to get only active events
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('active_flag', true);
+    }
+
+    /**
+     * Get formatted date range
+     */
+    public function getFormattedDatesAttribute(): string
+    {
+        return $this->date_start->format('M j') . ' – ' . $this->date_end->format('M j, Y');
+    }
+}

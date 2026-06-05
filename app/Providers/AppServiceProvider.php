@@ -3,7 +3,7 @@
 namespace App\Providers;
 
 use App\Models\GeneralSettings\Setting;
-
+use App\Services\Gms\GmsMockData;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
 use SocialiteProviders\Manager\SocialiteWasCalled;
 
 class AppServiceProvider extends ServiceProvider
@@ -29,6 +30,21 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Share events with all GMS Inertia pages
+        Inertia::share([
+            'gmsEvents' => function () {
+                // Only load events for GMS routes
+                if (request()->is('gms*')) {
+                    try {
+                        return GmsMockData::getEvents();
+                    } catch (\Throwable $e) {
+                        return [];
+                    }
+                }
+                return [];
+            },
+        ]);
 
         // if (app()->runningInConsole()) {
         //     return;
