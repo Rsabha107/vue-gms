@@ -241,6 +241,38 @@ Local state: `localEvents` (reactive copy), `eventModal`, `editingEvent`, `delet
 
 **Database:** Fully wired to `events` and `venues` tables with many-to-many relationship via `venue_event` pivot table. CRUD operations persist via `GmsEventsController` → `Event` model. Venue relationships managed via `attach()` and `sync()` methods.
 
+### Matches (`Gms/Matches/Index.vue`)
+Match fixture management page under Setup sidebar section. Card-based grid layout with Create/Edit/Delete functionality.
+
+**Features:**
+- **Stats strip:** 4 stat cards showing total matches, capacity, seats assigned, and fill percentage
+- Card grid (`.gms-match-grid`) with responsive layout (auto-fill, minmax 320px)
+- Each match card shows: stage badge, team names with optional country codes, date/time/venue, seat capacity status
+- Action menu: Edit and Delete (vertical ellipsis dropdown)
+- "Add new" card with dashed border and hover effect
+- Create/Edit modal with full form (name, stage code/label, venue, home/away teams with codes, date, kickoff, stage display)
+- Delete confirmation modal
+- **Mini status bar:** Shows seats assigned (total - left) vs total with visual progress bar
+
+**UI Elements:**
+- `.gms-stats-grid` — stats container grid
+- `.gms-stat-card` — individual stat card with label/value/subtitle
+- `.gms-match-card` — individual match card with hover effects
+- `.gms-match-stage` — stage badge (Opening, Group B, QF, SF, Final)
+- `.gms-match-teams` — flex layout for home vs away teams
+- `.gms-match-flag` — country code chip (e.g., "QA", "JP")
+- `.gms-match-vs` — centered "vs" separator
+- `.gms-match-meta` — metadata grid (date, time, venue icons)
+- `.gms-match-status` — capacity status section with progress bar
+- `.gms-match-bar` — progress bar background
+- `.gms-match-bar-fill` — maroon fill showing percentage assigned
+- `.gms-match-add` — dashed-border "create new" card
+
+Props: `matches` (array from `GmsMockData::getMatches()`), `venues` (for venue dropdown), `event` (current event).
+Local state: `localMatches` (reactive copy), `matchModal`, `editingMatch`, `deleteModal`, `deletingId`, `actionsMenuOpen`, `venueMap` (computed), `matchStats` (computed).
+
+**Database:** Currently using mock data from `GmsMockData::getMatches()`. CRUD operations stubbed via `GmsMatchesController`. Ready for DB wiring with `matches` table migration.
+
 ---
 
 ## Design system (`resources/css/gms.css`)
@@ -268,6 +300,8 @@ Key tokens:
 Utility classes: `.gms-btn`, `.gms-btn-primary/ghost/danger`, `.gms-btn-sm/lg/icon`, `.gms-table`, `.gms-card`, `.gms-pill`, `.gms-pill.maroon`, `.gms-pill.good`, `.gms-avatar`, `.gms-search-input`, `.gms-input`, `.gms-select`, `.gms-field`, `.gms-label`, `.gms-form-grid`, `.gms-toolbar`, `.gms-filter-btn`, `.gms-tabs`, `.gms-tab`, `.gms-stat-card`, `.gms-detail-row`, `.gms-empty`, `.gms-section-title`, `.gms-view`, `.gms-view-header`, `.gms-view-title`.
 
 Event card classes: `.gms-ev-grid`, `.gms-ev-card`, `.gms-ev-card.managing`, `.gms-ev-mk`, `.gms-ev-name`, `.gms-ev-subtitle`, `.gms-ev-meta`, `.gms-ev-mi`, `.gms-ev-status`, `.gms-ev-add`.
+
+Match card classes: `.gms-match-grid`, `.gms-match-card`, `.gms-match-stage`, `.gms-match-teams`, `.gms-match-flag`, `.gms-match-name`, `.gms-match-vs`, `.gms-match-meta`, `.gms-match-mi`, `.gms-match-status`, `.gms-match-bar`, `.gms-match-bar-fill`, `.gms-match-add`.
 
 Multiselect chip classes: `.chip-pick` (wrapper), `.pick-chip` (chip button), `.pick-chip.on` (selected state), `.pick-chip-check` (checkbox indicator).
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, inject } from 'vue'
+import { ref, inject, computed } from 'vue'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
 import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
@@ -9,6 +9,7 @@ defineOptions({ layout: GmsLayout })
 const props = defineProps({
     user: { type: Object, default: () => ({}) },
     event: { type: Object, default: () => ({}) },
+    teamUsers: { type: Array, default: () => ([]) },
 })
 
 const toast = inject('toast')
@@ -45,17 +46,20 @@ Please confirm your attendance at your earliest convenience.
 Best regards,
 The Doha Cup Committee`)
 const templateTags = ['guest_name', 'event_name', 'event_date', 'venue', 'tier_name']
+const bodyTextarea = ref(null)
 
-// Team members
-const teamMembers = ref([
-    { id: 1, name: 'Layla Hassan',    email: 'layla.hassan@protocol.qa',   role: 'admin',       isYou: true  },
-    { id: 2, name: 'Omar Al-Kuwari',  email: 'omar.k@protocol.qa',         role: 'coordinator', isYou: false },
-    { id: 3, name: 'Sara Nasser',     email: 'sara.n@protocol.qa',         role: 'protocol',    isYou: false },
-    { id: 4, name: 'Yusuf Rahman',    email: 'yusuf.r@commercial.qa',      role: 'coordinator', isYou: false },
-    { id: 5, name: 'Hana Said',       email: 'hana.s@protocol.qa',         role: 'viewer',      isYou: false },
-])
-
+// Team members (from database)
 const roleLabels = { admin: 'Admin', coordinator: 'Coordinator', protocol: 'Protocol', viewer: 'Viewer' }
+const teamSearch = ref('')
+
+const filteredTeamUsers = computed(() => {
+    if (!teamSearch.value) return props.teamUsers
+    const query = teamSearch.value.toLowerCase()
+    return props.teamUsers.filter(member => 
+        member.name.toLowerCase().includes(query) ||
+        member.email.toLowerCase().includes(query)
+    )
+})
 
 // Role permissions matrix
 const capabilities = [
@@ -91,11 +95,17 @@ function selectTemplate(template) {
 }
 
 function insertTag(tag) {
-    templateBody.value += `{{${tag}}}`
-}
-
-function formatTag(tag) {
-    return `{{${tag}}}`
+    const el = bodyTextarea.value
+    const insert = `{{${tag}}}`
+    if (!el) { templateBody.value += insert; return }
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    templateBody.value = templateBody.value.slice(0, start) + insert + templateBody.value.slice(end)
+    // restore cursor after the inserted tag
+    requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = start + insert.length
+        el.focus()
+    })
 }
 </script>
 
@@ -152,27 +162,40 @@ function formatTag(tag) {
         <div v-if="activeSection === 'team'">
 
           <!-- Team members card -->
-          <div class="set-panel" style="margin-bottom: 24px;">
-            <div class="set-panel-h">
-              <h2 class="set-panel-t">Team members</h2>
-              <p class="set-panel-d">People with access to this GMS workspace.</p>
+          <div class="set-panel team-panel-scrollable" style="margin-bottom: 24px;">
+            <div class="set-panel-h sticky-header">
+              <div style="flex: 1;">
+                <h2 class="set-panel-t">Team members</h2>
+                <p class="set-panel-d">People with access to this GMS workspace.</p>
+              </div>
+              <div class="team-search-trigger">
+                <GmsIcon name="search" :size="14" />
+                <input 
+                  v-model="teamSearch" 
+                  type="text" 
+                  placeholder="Search members..." 
+                  class="team-search-input"
+                />
+              </div>
             </div>
 
-            <div class="team-list">
-              <div v-for="member in teamMembers" :key="member.id" class="team-row">
+            <div class="team-list-scrollable">
+              <div class="team-list">
+              <div v-for="member in filteredTeamUsers" :key="member.id" class="team-row">
                 <GmsAvatar :name="member.name" size="md" />
                 <div style="flex:1;min-width:0;">
                   <div class="team-nm">
                     {{ member.name }}
-                    <span v-if="member.isYou" class="you-tag">You</span>
+                    <span v-if="member.id === user?.id" class="you-tag">You</span>
                   </div>
                   <div class="team-em">{{ member.email }}</div>
                 </div>
-                <span class="role-pill" :class="member.role">{{ roleLabels[member.role] }}</span>
+                <span class="role-pill" :class="member.role || 'viewer'">{{ roleLabels[member.role || 'viewer'] }}</span>
                 <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" style="margin-left:4px;">
                   <GmsIcon name="more-vertical" :size="14" />
                 </button>
               </div>
+            </div>
             </div>
 
             <div class="set-panel-f" style="justify-content:flex-start;">
@@ -184,13 +207,13 @@ function formatTag(tag) {
           </div>
 
           <!-- Role permissions card -->
-          <div class="set-panel">
+          <div class="set-panel" style="overflow: visible;">
             <div class="set-panel-h">
               <h2 class="set-panel-t">Role permissions</h2>
               <p class="set-panel-d">What each role can do. Admin always has full access. Tap a cell to change.</p>
             </div>
-            <div style="overflow-x:auto;">
-              <table class="matrix" style="min-width:560px;">
+            <div class="set-panel-b" style="overflow-x:auto; padding-bottom: 32px;">
+              <table class="matrix" style="min-width:560px; margin-bottom: 0;">
                 <thead>
                   <tr>
                     <th style="text-align:left;padding:14px 24px;width:42%;">Capability</th>
@@ -373,51 +396,71 @@ function formatTag(tag) {
         </div>
 
         <!-- ── Email Templates ────────────────────────────────── -->
-        <div v-if="activeSection === 'email'" class="set-panel">
-          <div class="set-panel-h">
-            <h2 class="set-panel-t">Email Templates</h2>
-            <p class="set-panel-d">Customize invitation and notification emails</p>
+        <div v-if="activeSection === 'email'" class="email-two-col">
+
+          <!-- Left: template list card -->
+          <div class="set-panel email-list-panel">
+            <div class="email-sidebar-h">Templates</div>
+            <div class="email-sidebar-list">
+              <button
+                v-for="template in emailTemplates"
+                :key="template.id"
+                class="etpl-item"
+                :class="{ on: template.active }"
+                @click="selectTemplate(template)"
+              >
+                <GmsIcon name="mail" :size="15" />
+                <span class="etpl-name">{{ template.name }}</span>
+                <GmsIcon v-if="template.active" name="chevron-right" :size="14" class="etpl-chev" />
+              </button>
+            </div>
+            <button class="etpl-new">
+              <GmsIcon name="plus" :size="14" />
+              New template
+            </button>
           </div>
-          <div class="set-panel-b">
-            <div class="email-grid">
-              <div class="email-list">
-                <button
-                  v-for="template in emailTemplates"
-                  :key="template.id"
-                  class="tpl-item"
-                  :class="{ on: template.active }"
-                  @click="selectTemplate(template)"
-                >
-                  <span class="ic"><GmsIcon name="mail" :size="16" /></span>
-                  {{ template.name }}
-                </button>
-                <button class="tpl-item add">
-                  <span class="ic"><GmsIcon name="plus" :size="16" /></span>
-                  New Template
+
+          <!-- Right: editor card -->
+          <div class="set-panel email-editor-panel">
+            <div class="email-editor-h">
+              <div class="email-editor-t">Edit template</div>
+              <div class="email-editor-d">Used by the invitation wizard. Merge tags resolve per-recipient when the invitation is sent.</div>
+            </div>
+            <div class="email-editor-b">
+              <div class="gms-field">
+                <label class="gms-label">Template name</label>
+                <input :value="activeTemplate.name" type="text" class="gms-input" />
+              </div>
+              <div class="gms-field">
+                <label class="gms-label">Subject</label>
+                <input v-model="templateSubject" type="text" class="gms-input" />
+              </div>
+              <div class="gms-field">
+                <label class="gms-label">Body</label>
+                <textarea ref="bodyTextarea" v-model="templateBody" class="email-body" rows="10"></textarea>
+              </div>
+              <div class="mtag-row">
+                <span class="mtag-label">Insert:</span>
+                <button v-for="tag in templateTags" :key="tag" class="mtag" @click="insertTag(tag)">
+                  {{ tag.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }}
                 </button>
               </div>
-              <div>
-                <div class="gms-field">
-                  <label class="gms-label">Subject</label>
-                  <input v-model="templateSubject" type="text" class="gms-input" />
-                </div>
-                <div class="gms-field">
-                  <label class="gms-label">Body</label>
-                  <textarea v-model="templateBody" class="email-body" rows="10"></textarea>
-                </div>
-                <div class="mtag-row">
-                  <label class="gms-label" style="width:100%;margin-bottom:8px;">Available Variables</label>
-                  <button v-for="tag in templateTags" :key="tag" class="mtag" @click="insertTag(tag)">
-                    {{ formatTag(tag) }}
-                  </button>
-                </div>
+            </div>
+            <div class="email-footer">
+              <button class="gms-btn gms-btn-ghost email-delete-btn">
+                <GmsIcon name="trash" :size="13" />
+                Delete
+              </button>
+              <div style="display:flex;gap:8px;">
+                <button class="gms-btn gms-btn-ghost">
+                  <GmsIcon name="send" :size="13" />
+                  Send test
+                </button>
+                <button class="gms-btn gms-btn-primary" @click="toast('Template saved')">Save template</button>
               </div>
             </div>
           </div>
-          <div class="set-panel-f">
-            <button class="gms-btn gms-btn-ghost">Cancel</button>
-            <button class="gms-btn gms-btn-primary" @click="toast('Template saved')">Save Template</button>
-          </div>
+
         </div>
 
         <!-- ── Branding ───────────────────────────────────────── -->

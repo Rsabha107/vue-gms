@@ -8,6 +8,8 @@ import GmsPill from '@/Components/Gms/GmsPill.vue'
 import GmsDrawer from '@/Components/Gms/GmsDrawer.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
+import GmsBtn from '@/Components/Gms/GmsBtn.vue'
+import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -63,19 +65,58 @@ const filtered = computed(() => {
 })
 
 // ── Profile drawer ────────────────────────────────────────────────
-const drawerOpen   = ref(false)
-const activeGuest  = ref(null)
-const actionsMenuOpen = ref(null) // Track which guest's actions menu is open
+const drawerOpen      = ref(false)
+const activeGuest     = ref(null)
+const actionsMenuOpen = ref(null)
+const drawerTab       = ref('overview')
+const tierPickerOpen  = ref(false)
 
 function openDrawer(g) {
-    activeGuest.value = g
-    drawerOpen.value  = true
+    activeGuest.value  = g
+    drawerTab.value    = 'overview'
+    tierPickerOpen.value = false
+    drawerOpen.value   = true
 }
+
+function pickTier(tierId) {
+    if (!activeGuest.value) return
+    const idx = localGuests.value.findIndex(g => g.id === activeGuest.value.id)
+    if (idx !== -1) {
+        localGuests.value[idx].tier = tierId
+        activeGuest.value = { ...localGuests.value[idx] }
+    }
+    tierPickerOpen.value = false
+    toast(`Service level updated to ${tierFor(tierId)?.name}.`)
+}
+
+const serviceModules = [
+    { id: 'flights',   label: 'Flights',             icon: 'plane'    },
+    { id: 'accomm',    label: 'Accommodation',        icon: 'building' },
+    { id: 'seating',   label: 'Seating',              icon: 'ticket'   },
+    { id: 'transport', label: 'Transport',            icon: 'car'      },
+    { id: 'arrival',   label: 'Arrival & Departure',  icon: 'arrivals', full: true },
+]
+
+const tierServices = {
+    T1: ['flights', 'accomm', 'seating', 'transport', 'arrival'],
+    T2: ['flights', 'accomm', 'seating', 'transport', 'arrival'],
+    T3: ['accomm', 'seating', 'transport', 'arrival'],
+    T4: ['seating', 'transport'],
+    T5: ['seating'],
+}
+
+function guestServices(g) {
+    const included = tierServices[g.tier] ?? []
+    return serviceModules
+        .filter(m => included.includes(m.id))
+        .map(m => ({ ...m, status: g.status }))
+}
+
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : '' }
 
 function tierFor(id)  { return props.tiers.find(t => t.id === id) }
 function groupFor(id) { return props.groups.find(g => g.id === id) }
 function hostFor(id)  { return props.hosts.find(h => h.id === id) }
-function hotelFor(id) { return props.hotels.find(h => h.id === id) }
 
 // ── Create / Edit modal ──────────────────────────────────────────
 const guestModal   = ref(false)
@@ -86,6 +127,8 @@ const form = useForm({
     firstName:    '',
     lastName:     '',
     title:        '',
+    guestType:    'local',
+    qid:          '',
     tier:         props.tiers[0]?.id ?? '',
     group:        '',
     host:         '',
@@ -109,19 +152,21 @@ function openNew() {
 function openEdit(g, fromDrawer = false) {
     editingGuest.value = g
     form.name         = g.name
-    form.firstName    = g.firstName ?? ''
-    form.lastName     = g.lastName  ?? ''
-    form.title        = g.title     ?? ''
+    form.firstName    = g.firstName   ?? ''
+    form.lastName     = g.lastName    ?? ''
+    form.title        = g.title       ?? ''
+    form.guestType    = g.guestType   ?? (g.nationality === 'QA' ? 'local' : 'international')
+    form.qid          = g.qid         ?? ''
     form.tier         = g.tier
-    form.group        = g.group     ?? ''
-    form.host         = g.host      ?? ''
-    form.hotel        = g.hotel     ?? ''
+    form.group        = g.group       ?? ''
+    form.host         = g.host        ?? ''
+    form.hotel        = g.hotel       ?? ''
     form.nationality  = g.nationality ?? ''
     form.status       = g.status
-    form.email        = g.email     ?? ''
-    form.phone        = g.phone     ?? ''
+    form.email        = g.email       ?? ''
+    form.phone        = g.phone       ?? ''
     form.dietaryNotes = g.dietaryNotes ?? ''
-    form.notes        = g.notes     ?? ''
+    form.notes        = g.notes       ?? ''
     if (fromDrawer) drawerOpen.value = false
     guestModal.value = true
 }
@@ -172,10 +217,27 @@ function confirmDelete() {
 }
 
 // ── Invite Wizard ─────────────────────────────────────────────────
-const inviteModal = ref(false)
-const inviteStep  = ref(1)
-const inviteRecipient = ref(null)
-const selectedMatches = ref([])
+const inviteModal       = ref(false)
+const inviteStep        = ref(1)
+const inviteRecipient   = ref(null)
+const recipientPickerOpen  = ref(false)
+const recipientSearch      = ref('')
+const selectedMatches   = ref([])
+
+const filteredRecipients = computed(() => {
+    const q = recipientSearch.value.toLowerCase()
+    if (!q) return localGuests.value.slice(0, 20)
+    return localGuests.value.filter(g =>
+        g.name.toLowerCase().includes(q) ||
+        (groupFor(g.group)?.label ?? '').toLowerCase().includes(q)
+    ).slice(0, 20)
+})
+
+function pickRecipient(guest) {
+    inviteRecipient.value  = guest
+    recipientPickerOpen.value = false
+    recipientSearch.value  = ''
+}
 const emailSubject    = ref('Your invitation to Doha Cup 2026')
 const emailBody       = ref(`Dear {{guest_name}},
 
@@ -210,11 +272,28 @@ function prevInviteStep() {
 
 function toggleMatch(matchId) {
     const idx = selectedMatches.value.indexOf(matchId)
-    if (idx > -1) {
-        selectedMatches.value.splice(idx, 1)
-    } else {
-        selectedMatches.value.push(matchId)
-    }
+    if (idx > -1) selectedMatches.value.splice(idx, 1)
+    else selectedMatches.value.push(matchId)
+}
+
+function selectAllMatches() {
+    selectedMatches.value = props.matches.map(m => m.id)
+}
+
+function selectKnockouts() {
+    selectedMatches.value = props.matches
+        .filter(m => ['QF', 'SF', 'Final'].includes(m.stage))
+        .map(m => m.id)
+}
+
+function stageClass(code) {
+    if (!code) return ''
+    const c = (code + '').toUpperCase()
+    if (c.includes('OPENING') || c.includes('CEREMONY')) return 'mc-stage-opening'
+    if (c.includes('GROUP')) return 'mc-stage-group'
+    if (c.includes('QUARTER')) return 'mc-stage-qf'
+    if (c.includes('SEMI')) return 'mc-stage-sf'
+    return 'mc-stage-final'
 }
 
 const previewEmail = computed(() => {
@@ -266,26 +345,16 @@ const flagEmoji = (cc) => {
     )
 }
 
-function venueFor(id) { 
-    return props.venues.find(v => v.id === id) 
-}
-
-function getTeamFlag(teamName) {
-    const flagMap = {
-        'Qatar': '🇶🇦',
-        'Brazil': '🇧🇷',
-        'France': '🇫🇷',
-        'Germany': '🇩🇪',
-        'Italy': '🇮🇹',
-        'TBD': '🏳️',
-    }
-    return flagMap[teamName] || '⚽'
-}
-
 // Close actions menu when clicking outside
 function handleClickOutside(e) {
     if (actionsMenuOpen.value && !e.target.closest('.gms-menu-pop') && !e.target.closest('.gms-btn-icon')) {
         actionsMenuOpen.value = null
+    }
+    if (tierPickerOpen.value && !e.target.closest('.tier-pick-pop') && !e.target.closest('.gd-change-btn')) {
+        tierPickerOpen.value = false
+    }
+    if (recipientPickerOpen.value && !e.target.closest('.inv-change-wrap')) {
+        recipientPickerOpen.value = false
     }
 }
 
@@ -306,44 +375,18 @@ onUnmounted(() => {
         <p class="gms-view-subtitle">{{ localGuests.length }} registered guests</p>
       </div>
       <div class="gms-view-actions">
-        <button class="gms-btn gms-btn-ghost">
-          <GmsIcon name="download" :size="14" />
-          Export
-        </button>
-        <button class="gms-btn gms-btn-primary" @click="openNew">
-          <GmsIcon name="plus" :size="14" />
-          Add Guest
-        </button>
+        <GmsBtn icon="download">Export</GmsBtn>
+        <GmsBtn variant="primary" icon="plus" :icon-size="14" @click="openNew">Add Guest</GmsBtn>
       </div>
     </div>
 
     <!-- Stats strip -->
     <div class="gms-stats">
-      <div class="gms-stat">
-        <div class="gms-stat-strip"></div>
-        <div class="gms-stat-number">{{ localGuests.length }}</div>
-        <div class="gms-stat-label">Total Guests</div>
-      </div>
-      <div class="gms-stat clickable" @click="statusFilter = 'confirmed'">
-        <div class="gms-stat-strip" style="background: #15803d;"></div>
-        <div class="gms-stat-number">{{ countForStatus('confirmed') }}</div>
-        <div class="gms-stat-label">Confirmed</div>
-      </div>
-      <div class="gms-stat clickable" @click="statusFilter = 'pending'">
-        <div class="gms-stat-strip" style="background: #a16207;"></div>
-        <div class="gms-stat-number">{{ countForStatus('pending') }}</div>
-        <div class="gms-stat-label">Pending</div>
-      </div>
-      <div class="gms-stat clickable" @click="statusFilter = 'invited'">
-        <div class="gms-stat-strip" style="background: #1d4ed8;"></div>
-        <div class="gms-stat-number">{{ countForStatus('invited') }}</div>
-        <div class="gms-stat-label">Invited</div>
-      </div>
-      <div class="gms-stat clickable" @click="statusFilter = 'declined'">
-        <div class="gms-stat-strip" style="background: #dc2626;"></div>
-        <div class="gms-stat-number">{{ countForStatus('declined') }}</div>
-        <div class="gms-stat-label">Declined</div>
-      </div>
+      <GmsMiniStat label="Total Guests" :value="localGuests.length" />
+      <GmsMiniStat label="Confirmed" :value="countForStatus('confirmed')" color="#15803d" clickable @click="statusFilter = 'confirmed'" />
+      <GmsMiniStat label="Pending"   :value="countForStatus('pending')"   color="#a16207" clickable @click="statusFilter = 'pending'" />
+      <GmsMiniStat label="Invited"   :value="countForStatus('invited')"   color="#1d4ed8" clickable @click="statusFilter = 'invited'" />
+      <GmsMiniStat label="Declined"  :value="countForStatus('declined')"  color="#dc2626" clickable @click="statusFilter = 'declined'" />
     </div>
 
     <!-- Toolbar -->
@@ -392,6 +435,8 @@ onUnmounted(() => {
         all-label="All groups"
         :options="groups"
       />
+      
+      <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ localGuests.length }}</span>
     </div>
 
     <!-- Guest table -->
@@ -495,174 +540,256 @@ onUnmounted(() => {
   </div>
 
   <!-- ── Profile Drawer ──────────────────────────────────────────── -->
-  <GmsDrawer
-    :open="drawerOpen"
-    :title="activeGuest?.name ?? ''"
-    :subtitle="activeGuest?.title ?? ''"
-    @close="drawerOpen = false"
-  >
-    <template #header-prefix>
-      <GmsAvatar v-if="activeGuest" :name="activeGuest.name" size="lg" />
+  <GmsDrawer :open="drawerOpen" @close="drawerOpen = false">
+    <template v-if="activeGuest" #header>
+      <GmsAvatar :name="activeGuest.name" size="xl" />
+      <div class="gd-hinfo">
+        <div class="gd-name-row">
+          <span class="gd-name">{{ activeGuest.name }}</span>
+          <span
+            class="gms-pill"
+            :style="{ background: tierFor(activeGuest.tier)?.bg, color: tierFor(activeGuest.tier)?.color, fontSize: '11px' }"
+          >{{ tierFor(activeGuest.tier)?.name ?? activeGuest.tier }}</span>
+        </div>
+        <div class="gd-meta">
+          <span style="font-family:var(--gms-font-mono);font-size:11px;">{{ activeGuest.id }}</span>
+          <span class="gd-meta-dot">·</span>
+          <span>{{ flagEmoji(activeGuest.nationality) }} {{ activeGuest.nationality }}</span>
+          <span class="gd-meta-dot">·</span>
+          <span>{{ activeGuest.nationality === 'QA' ? 'Local' : 'International' }}</span>
+        </div>
+        <div class="gd-status-row">
+          <span class="gd-status-pill" :class="activeGuest.status">● {{ capitalize(activeGuest.status) }}</span>
+          <span v-if="activeGuest.status === 'confirmed'" class="gd-info-pill">Passport on file</span>
+        </div>
+      </div>
     </template>
 
     <template v-if="activeGuest">
-      <!-- Status + Tier pills -->
-      <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
-        <GmsPill :value="activeGuest.status" />
-        <span
-          class="gms-pill"
-          :style="{
-            background: tierFor(activeGuest.tier)?.bg,
-            color:      tierFor(activeGuest.tier)?.color,
-          }"
-        >{{ tierFor(activeGuest.tier)?.name ?? activeGuest.tier }}</span>
-        <span v-if="activeGuest.nationality" class="gms-pill" style="background:var(--gms-surface-3);color:var(--gms-text-2);">
-          {{ flagEmoji(activeGuest.nationality) }} {{ activeGuest.nationality }}
-        </span>
+      <!-- Tabs -->
+      <div class="gms-seg gd-tabs">
+        <button :class="{ on: drawerTab === 'overview' }"     @click="drawerTab = 'overview'">Overview</button>
+        <button :class="{ on: drawerTab === 'facilities' }"   @click="drawerTab = 'facilities'">Facilities</button>
+        <button :class="{ on: drawerTab === 'invitations' }"  @click="drawerTab = 'invitations'">Invitations</button>
       </div>
 
-      <!-- Details -->
-      <div class="gms-section-title">Contact</div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Email</span><span class="gms-detail-value gms-mono gms-small">{{ activeGuest.email || '—' }}</span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Phone</span><span class="gms-detail-value gms-mono gms-small">{{ activeGuest.phone || '—' }}</span></div>
+      <!-- ── Overview tab ── -->
+      <template v-if="drawerTab === 'overview'">
 
-      <div class="gms-section-title" style="margin-top:16px;">Protocol</div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Group</span><span class="gms-detail-value">{{ groupFor(activeGuest.group)?.label ?? '—' }}</span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Host</span><span class="gms-detail-value">{{ hostFor(activeGuest.host)?.name ?? '—' }}</span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Hotel</span><span class="gms-detail-value">{{ hotelFor(activeGuest.hotel)?.name ?? '—' }}</span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Dietary</span><span class="gms-detail-value">{{ activeGuest.dietaryNotes || 'None' }}</span></div>
+        <div class="gd-section-head">Contact</div>
+        <div class="gms-detail-row"><span class="gms-detail-label">Email</span><span class="gms-detail-value" style="font-family:var(--gms-font-mono);font-size:12px;">{{ activeGuest.email || '—' }}</span></div>
+        <div class="gms-detail-row"><span class="gms-detail-label">Group</span><span class="gms-detail-value">{{ groupFor(activeGuest.group)?.label ?? '—' }}</span></div>
+        <div class="gms-detail-row"><span class="gms-detail-label">Hosted by</span><span class="gms-detail-value">{{ hostFor(activeGuest.host)?.name ?? '—' }}</span></div>
+        <div class="gms-detail-row"><span class="gms-detail-label">Title</span><span class="gms-detail-value">{{ activeGuest.title || '—' }}</span></div>
 
-      <!-- Tier facilities -->
-      <div v-if="tierFor(activeGuest.tier)?.facilities?.length" style="margin-top:16px;">
-        <div class="gms-section-title">Tier Facilities</div>
-        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">
+        <div class="gd-sl-row" style="margin-top:20px;">
+          <span class="gd-section-head" style="margin-bottom:0;">Service Level</span>
           <span
-            v-for="f in tierFor(activeGuest.tier).facilities"
-            :key="f"
             class="gms-pill"
-            :style="{ background: tierFor(activeGuest.tier).bg, color: tierFor(activeGuest.tier).color }"
+            :style="{ background: tierFor(activeGuest.tier)?.bg, color: tierFor(activeGuest.tier)?.color, fontSize: '11px' }"
+          >{{ tierFor(activeGuest.tier)?.name ?? activeGuest.tier }}</span>
+          <div class="gd-change-wrap">
+            <GmsBtn icon="edit" class="gd-change-btn" @click="tierPickerOpen = !tierPickerOpen">Change</GmsBtn>
+            <div v-if="tierPickerOpen" class="tier-pick-pop">
+              <button
+                v-for="t in tiers" :key="t.id"
+                class="tier-pick-row"
+                :class="{ on: activeGuest.tier === t.id }"
+                @click="pickTier(t.id)"
+              >
+                <span class="tier-pick-name" :style="{ color: t.color }">{{ t.name }}</span>
+                <span class="tier-pick-icons">
+                  <GmsIcon
+                    v-for="svc in serviceModules.filter(m => (tierServices[t.id] ?? []).includes(m.id))"
+                    :key="svc.id"
+                    :name="svc.icon"
+                    :size="13"
+                  />
+                </span>
+                <GmsIcon v-if="activeGuest.tier === t.id" name="check" :size="13" class="tier-pick-check" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="gd-service-grid">
+          <div
+            v-for="svc in guestServices(activeGuest)" :key="svc.id"
+            class="gd-service-card"
+            :class="{ 'gd-full': svc.full }"
+          >
+            <div class="gd-svc-top">
+              <div class="gd-svc-icon"><GmsIcon :name="svc.icon" :size="16" /></div>
+              <div class="gd-svc-name">{{ svc.label }}</div>
+            </div>
+            <div class="gd-svc-bot">
+              <span class="gd-svc-sub">Included</span>
+              <GmsPill :value="svc.status" />
+            </div>
+          </div>
+        </div>
+
+        <div class="gd-service-note">
+          <span class="gd-note-code">FR 4.2.11.1</span>
+          Facilities can be added beyond the level per guest.
+        </div>
+
+      </template>
+
+      <!-- ── Facilities tab ── -->
+      <template v-else-if="drawerTab === 'facilities'">
+        <div class="gd-section-head">Tier Facilities</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;">
+          <span
+            v-for="f in tierFor(activeGuest.tier)?.facilities ?? []" :key="f"
+            class="gms-pill"
+            :style="{ background: tierFor(activeGuest.tier)?.bg, color: tierFor(activeGuest.tier)?.color }"
           >{{ f }}</span>
         </div>
-      </div>
+        <div v-if="activeGuest.dietaryNotes">
+          <div class="gd-section-head">Dietary</div>
+          <p style="font-size:13px;color:var(--gms-text-2);line-height:1.6;">{{ activeGuest.dietaryNotes }}</p>
+        </div>
+        <div v-if="activeGuest.notes" style="margin-top:14px;">
+          <div class="gd-section-head">Notes</div>
+          <p style="font-size:13px;color:var(--gms-text-2);line-height:1.6;">{{ activeGuest.notes }}</p>
+        </div>
+      </template>
 
-      <!-- Notes -->
-      <div v-if="activeGuest.notes" style="margin-top:16px;">
-        <div class="gms-section-title">Notes</div>
-        <p style="font-size:13px;color:var(--gms-text-2);margin-top:6px;line-height:1.6;">{{ activeGuest.notes }}</p>
-      </div>
+      <!-- ── Invitations tab ── -->
+      <template v-else-if="drawerTab === 'invitations'">
+        <div class="gms-empty" style="padding:40px 0;">
+          <div class="gms-empty-title">No invitations yet</div>
+          <div class="gms-empty-sub">Send an invite to get started.</div>
+        </div>
+      </template>
     </template>
 
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" style="flex:1;" @click="openEdit(activeGuest, true)">
-        <GmsIcon name="edit" :size="13" /> Edit
-      </button>
-      <button class="gms-btn gms-btn-danger" @click="openDelete(activeGuest.id); drawerOpen = false">
-        <GmsIcon name="trash" :size="13" /> Delete
-      </button>
+      <GmsBtn icon="trash" icon-only title="Delete" @click="openDelete(activeGuest.id); drawerOpen = false" />
+      <GmsBtn icon="edit" @click="openEdit(activeGuest, true)">Edit</GmsBtn>
+      <GmsBtn icon="ticket" @click="toast('Seating management coming soon.')">Manage seat</GmsBtn>
+      <GmsBtn variant="primary" icon="mail" style="margin-left:auto" @click="openInvite(activeGuest); drawerOpen = false">Send / update invite</GmsBtn>
     </template>
   </GmsDrawer>
 
   <!-- ── Create / Edit Modal ──────────────────────────────────────── -->
   <GmsModal
     :open="guestModal"
-    :title="editingGuest ? 'Edit Guest' : 'New Guest'"
+    :title="editingGuest ? 'Edit guest' : 'New guest'"
     size="lg"
     @close="guestModal = false"
   >
-    <div style="display:flex;flex-direction:column;gap:14px;">
+    <div class="gf-body">
+
       <div class="gms-form-grid">
+
+        <!-- Guest type -->
         <div class="gms-field">
-          <label class="gms-label">First Name</label>
+          <label class="gms-label">Guest type <span class="gf-req">*</span></label>
+          <div class="gms-seg" style="width:fit-content;">
+            <button :class="{ on: form.guestType === 'local' }"         @click="form.guestType = 'local'">Local</button>
+            <button :class="{ on: form.guestType === 'international' }" @click="form.guestType = 'international'">International</button>
+          </div>
+        </div>
+
+        <!-- Title -->
+        <div class="gms-field">
+          <label class="gms-label">Title</label>
+          <input v-model="form.title" class="gms-input" placeholder="Mr / Mrs / H.E. ..." />
+        </div>
+
+        <!-- First name -->
+        <div class="gms-field">
+          <label class="gms-label">First name <span class="gf-req">*</span></label>
           <input v-model="form.firstName" class="gms-input" placeholder="First name" />
         </div>
+
+        <!-- Last name -->
         <div class="gms-field">
-          <label class="gms-label">Last Name</label>
+          <label class="gms-label">Last name <span class="gf-req">*</span></label>
           <input v-model="form.lastName" class="gms-input" placeholder="Last name" />
         </div>
-        <div class="gms-field gms-form-full">
-          <label class="gms-label">Full Name / Display Name</label>
-          <input v-model="form.name" class="gms-input" placeholder="e.g. H.H. Sheikh Tamim Al-Thani" />
-          <span v-if="form.errors.name" class="gms-error">{{ form.errors.name }}</span>
-        </div>
-        <div class="gms-field gms-form-full">
-          <label class="gms-label">Title / Role</label>
-          <input v-model="form.title" class="gms-input" placeholder="e.g. President of France" />
-        </div>
-      </div>
 
-      <hr class="gms-divider" />
+        <!-- Mobile -->
+        <div class="gms-field">
+          <label class="gms-label">Mobile</label>
+          <input v-model="form.phone" class="gms-input" placeholder="+974 ..." />
+        </div>
 
-      <div class="gms-form-grid">
+        <!-- Email -->
         <div class="gms-field">
-          <label class="gms-label">Service Level (Tier)</label>
-          <select v-model="form.tier" class="gms-input gms-select">
-            <option v-for="t in tiers" :key="t.id" :value="t.id">{{ t.name }}</option>
-          </select>
-          <span v-if="form.errors.tier" class="gms-error">{{ form.errors.tier }}</span>
+          <label class="gms-label">Email <span class="gf-req">*</span></label>
+          <input v-model="form.email" type="email" class="gms-input" placeholder="name@email.com" />
         </div>
+
+        <!-- QID -->
         <div class="gms-field">
-          <label class="gms-label">Status</label>
-          <select v-model="form.status" class="gms-input gms-select">
-            <option value="invited">Invited</option>
-            <option value="pending">Pending</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="declined">Declined</option>
-          </select>
+          <label class="gms-label">QID</label>
+          <input v-model="form.qid" class="gms-input" placeholder="Qatari ID" />
         </div>
+
+        <!-- Nationality -->
         <div class="gms-field">
-          <label class="gms-label">Group</label>
+          <label class="gms-label">Nationality</label>
+          <input v-model="form.nationality" class="gms-input" placeholder="Nationality" maxlength="2" style="text-transform:uppercase;" />
+        </div>
+
+        <!-- Group -->
+        <div class="gms-field">
+          <label class="gms-label">Group <span class="gf-req">*</span></label>
           <select v-model="form.group" class="gms-input gms-select">
-            <option value="">— None —</option>
+            <option value="">Select group</option>
             <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.label }}</option>
           </select>
         </div>
-        <div class="gms-field">
-          <label class="gms-label">Nationality (2-letter)</label>
-          <input v-model="form.nationality" class="gms-input" placeholder="QA, FR, GB…" maxlength="2" style="text-transform:uppercase;" />
-        </div>
-      </div>
 
-      <hr class="gms-divider" />
-
-      <div class="gms-form-grid">
+        <!-- Hosted by -->
         <div class="gms-field">
-          <label class="gms-label">Email</label>
-          <input v-model="form.email" type="email" class="gms-input" placeholder="guest@example.com" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Phone</label>
-          <input v-model="form.phone" class="gms-input" placeholder="+974 …" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Assigned Host</label>
+          <label class="gms-label">Hosted by <span class="gf-req">*</span></label>
           <select v-model="form.host" class="gms-input gms-select">
-            <option value="">— None —</option>
+            <option value="">Select host</option>
             <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
           </select>
         </div>
-        <div class="gms-field">
-          <label class="gms-label">Hotel</label>
-          <select v-model="form.hotel" class="gms-input gms-select">
-            <option value="">— None —</option>
-            <option v-for="h in hotels" :key="h.id" :value="h.id">{{ h.name }}</option>
-          </select>
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Dietary Requirements</label>
-          <input v-model="form.dietaryNotes" class="gms-input" placeholder="Halal, Vegan, …" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Notes</label>
-          <input v-model="form.notes" class="gms-input" placeholder="Internal notes…" />
+
+      </div>
+
+      <!-- Service level -->
+      <div class="gms-field" style="margin-top:6px;">
+        <label class="gms-label">Service level <span class="gf-req">*</span></label>
+        <div class="gf-tier-row">
+          <button
+            v-for="t in tiers" :key="t.id"
+            type="button"
+            class="gf-tier-card"
+            :class="{ on: form.tier === t.id }"
+            @click="form.tier = t.id"
+          >
+            <span class="gf-tier-name" :style="{ color: t.color }">{{ t.name }}</span>
+            <span class="gf-tier-count">{{ t.facilities?.length ?? 0 }} facilities</span>
+          </button>
         </div>
       </div>
+
+      <hr class="gms-divider" style="margin:12px 0 10px;" />
+
+      <!-- Expanders -->
+      <div class="gf-expanders">
+        <GmsBtn icon="plus" @click="toast('Companion flow coming soon.')">Add companion</GmsBtn>
+        <GmsBtn icon="plus" @click="toast('Preferences flow coming soon.')">Flight / Accom / Transport preferences</GmsBtn>
+      </div>
+
+      <div class="gf-note">
+        <span class="gf-note-badge">friendly</span>
+        Only required fields shown by default — extras stay tucked away until needed.
+      </div>
+
     </div>
 
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="guestModal = false">Cancel</button>
-      <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="saveGuest">
-        {{ editingGuest ? 'Save Changes' : 'Add Guest' }}
-      </button>
+      <GmsBtn @click="guestModal = false">Cancel</GmsBtn>
+      <GmsBtn variant="primary" :disabled="form.processing" @click="saveGuest">{{ editingGuest ? 'Save changes' : 'Create guest' }}</GmsBtn>
     </template>
   </GmsModal>
 
@@ -678,185 +805,184 @@ onUnmounted(() => {
   </GmsModal>
 
   <!-- ── Invite Wizard Modal ───────────────────────────────────────── -->
-  <GmsModal :open="inviteModal" title="Invite to Doha Cup" size="lg" @close="inviteModal = false">
-    <!-- Wizard steps indicator -->
+  <GmsModal :open="inviteModal" :title="`Invite to ${event?.name ?? 'Doha Cup \'26'}`" size="lg" @close="inviteModal = false">
+    <!-- Stepper -->
     <div class="gms-wizard-steps">
       <div class="gms-wizard-step" :class="{ active: inviteStep === 1, done: inviteStep > 1 }">
         <span class="gms-wizard-num">1</span>
-        <span class="gms-wizard-label">Recipient</span>
+        <span class="gms-wizard-label">Matches</span>
       </div>
       <div class="gms-wizard-line" :class="{ done: inviteStep > 1 }"></div>
       <div class="gms-wizard-step" :class="{ active: inviteStep === 2, done: inviteStep > 2 }">
         <span class="gms-wizard-num">2</span>
-        <span class="gms-wizard-label">Matches</span>
+        <span class="gms-wizard-label">Email</span>
       </div>
       <div class="gms-wizard-line" :class="{ done: inviteStep > 2 }"></div>
       <div class="gms-wizard-step" :class="{ active: inviteStep === 3 }">
         <span class="gms-wizard-num">3</span>
-        <span class="gms-wizard-label">Email & Send</span>
+        <span class="gms-wizard-label">Review</span>
       </div>
     </div>
 
-    <!-- Step 1: Recipient -->
-    <div v-if="inviteStep === 1" style="padding-top:16px;">
-      <div class="recipient-bar" v-if="inviteRecipient">
-        <GmsAvatar :name="inviteRecipient.name" size="md" />
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:14px;">{{ inviteRecipient.name }}</div>
-          <div style="font-size:11.5px;color:var(--gms-text-3);">{{ inviteRecipient.title || 'Guest' }}</div>
+    <!-- Recipient bar (all steps) -->
+    <div v-if="inviteRecipient" class="inv-recipient">
+      <span class="inv-rec-label">RECIPIENT</span>
+      <GmsAvatar :name="inviteRecipient.name" size="sm" />
+      <div class="inv-rec-info">
+        <div class="inv-rec-name">{{ inviteRecipient.name }}</div>
+        <div class="inv-rec-meta">{{ inviteRecipient.email ?? '—' }} · {{ groupFor(inviteRecipient.group)?.label ?? inviteRecipient.title ?? 'Guest' }}</div>
+      </div>
+      <span class="gms-pill inv-tier-pill" :style="{ background: tierFor(inviteRecipient.tier)?.bg, color: tierFor(inviteRecipient.tier)?.color }">
+        {{ tierFor(inviteRecipient.tier)?.name ?? '—' }}
+      </span>
+      <div class="inv-change-wrap">
+        <GmsBtn @click="recipientPickerOpen = !recipientPickerOpen">Change</GmsBtn>
+        <div v-if="recipientPickerOpen" class="inv-rec-pop">
+          <div class="inv-rec-search">
+            <GmsIcon name="search" :size="14" class="inv-rec-search-icon" />
+            <input
+              v-model="recipientSearch"
+              class="inv-rec-search-input"
+              placeholder="Search guests..."
+              autofocus
+            />
+          </div>
+          <div class="inv-rec-list">
+            <button
+              v-for="g in filteredRecipients" :key="g.id"
+              class="inv-rec-row"
+              :class="{ on: inviteRecipient?.id === g.id }"
+              @click="pickRecipient(g)"
+            >
+              <GmsAvatar :name="g.name" size="sm" />
+              <div class="inv-rec-row-info">
+                <div class="inv-rec-row-name">{{ g.name }}</div>
+                <div class="inv-rec-row-sub">{{ groupFor(g.group)?.label ?? g.title ?? '—' }}</div>
+              </div>
+              <span class="gms-pill" :style="{ background: tierFor(g.tier)?.bg, color: tierFor(g.tier)?.color, fontSize: '10.5px' }">
+                {{ tierFor(g.tier)?.name }}
+              </span>
+            </button>
+          </div>
         </div>
-        <span
-          class="gms-pill"
-          :style="{
-            background: tierFor(inviteRecipient.tier)?.bg,
-            color: tierFor(inviteRecipient.tier)?.color,
-          }"
-        >{{ tierFor(inviteRecipient.tier)?.name }}</span>
-      </div>
-      <div style="font-size:13px;color:var(--gms-text-2);text-align:center;padding:20px;">
-        Ready to compose an invitation for <strong>{{ inviteRecipient?.name }}</strong>.
       </div>
     </div>
 
-    <!-- Step 2: Match Selection -->
-    <div v-if="inviteStep === 2" style="padding-top:16px;">
-      <div class="recipient-bar" v-if="inviteRecipient" style="margin-bottom:16px;">
-        <span class="rl">Recipient</span>
-        <GmsAvatar :name="inviteRecipient.name" size="sm" />
-        <div style="flex:1;font-weight:600;font-size:13px;">{{ inviteRecipient.name }}</div>
+    <!-- ── Step 1: Matches ── -->
+    <div v-if="inviteStep === 1">
+      <div class="inv-match-header">
+        <p class="inv-match-desc">Choose which matches to offer — the guest picks from these.</p>
+        <div class="inv-match-btns">
+          <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="selectAllMatches">Select all</button>
+          <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="selectKnockouts">Knockouts</button>
+          <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="selectedMatches = []">Clear</button>
+        </div>
       </div>
-
-      <div style="font-size:12px;font-weight:600;color:var(--gms-text-2);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;">
-        Select Matches to Include
-      </div>
-
       <div class="match-list">
         <div
-          v-for="match in matches"
-          :key="match.id"
-          class="match-card"
-          :class="{ sel: selectedMatches.includes(match.id) }"
+          v-for="match in matches" :key="match.id"
+          class="match-card" :class="{ sel: selectedMatches.includes(match.id) }"
           @click="toggleMatch(match.id)"
         >
           <div class="mc-top">
-            <span class="mc-stage" :class="{ final: match.stage === 'Final' }">{{ match.stage }}</span>
+            <span class="mc-stage" :class="stageClass(match.stageCode)">{{ match.stageCode }}</span>
+            <span class="mc-stlabel">{{ match.stageLabel }}</span>
             <div class="mc-check">
-              <GmsIcon v-if="selectedMatches.includes(match.id)" name="check" :size="12" />
+              <GmsIcon v-if="selectedMatches.includes(match.id)" name="check" :size="11" />
             </div>
           </div>
-
-          <div class="mc-teams" v-if="match.awayTeam">
+          <div class="mc-teams">
             <div class="team">
-              <span class="fl">{{ getTeamFlag(match.homeTeam) }}</span>
-              <span>{{ match.homeTeam }}</span>
+              <span v-if="match.homeCode" class="mc-flag">{{ flagEmoji(match.homeCode) }}</span>
+              <span v-else class="mc-tbd">🏆</span>
+              <span class="mc-tname">{{ match.homeTeam }}</span>
+              <span v-if="match.homeCode" class="mc-code">{{ match.homeCode }}</span>
             </div>
-            <span class="vs">vs</span>
+            <span class="vs">v</span>
             <div class="team r">
-              <span>{{ match.awayTeam }}</span>
-              <span class="fl">{{ getTeamFlag(match.awayTeam) }}</span>
+              <span v-if="match.awayCode" class="mc-code">{{ match.awayCode }}</span>
+              <span class="mc-tname">{{ match.awayTeam }}</span>
+              <span v-if="match.awayCode" class="mc-flag">{{ flagEmoji(match.awayCode) }}</span>
+              <span v-else class="mc-tbd">🏆</span>
             </div>
           </div>
-
-          <div v-else style="font-weight:700;font-size:14px;text-align:center;">
-            {{ match.name }}
-          </div>
-
           <div class="mc-meta">
             <span>{{ match.date }}</span>
-            <div class="dot"></div>
+            <span class="mc-dot">·</span>
             <span>{{ match.kickoff }}</span>
-            <div class="dot"></div>
-            <span>{{ venueFor(match.venueId)?.name || 'TBD' }}</span>
+            <div v-if="match.seatsLeft != null" class="mc-seats-wrap">
+              <div class="mc-seats-bar">
+                <div class="mc-seats-fill" :style="{ width: Math.min(100, (match.seatsLeft / match.seatsTotal) * 100) + '%' }"></div>
+              </div>
+              <span class="mc-seats-left">{{ match.seatsLeft }} left</span>
+            </div>
           </div>
         </div>
       </div>
-
-      <div v-if="!matches.length" class="gms-empty" style="padding:30px;">
-        <div class="gms-empty-title">No matches available</div>
-        <div class="gms-empty-sub">Please configure matches for this event.</div>
-      </div>
     </div>
 
-    <!-- Step 3: Email Composition & Preview -->
-    <div v-if="inviteStep === 3" style="padding-top:16px;">
-      <div class="recipient-bar" v-if="inviteRecipient" style="margin-bottom:16px;">
-        <span class="rl">Recipient</span>
-        <GmsAvatar :name="inviteRecipient.name" size="sm" />
-        <div style="flex:1;font-weight:600;font-size:13px;">{{ inviteRecipient.name }}</div>
-        <span style="font-size:11px;color:var(--gms-text-3);">
-          {{ selectedMatches.length }} {{ selectedMatches.length === 1 ? 'match' : 'matches' }}
-        </span>
-      </div>
-
-      <div class="email-grid">
-        <!-- Left: Email Editor -->
+    <!-- ── Step 2: Email ── -->
+    <div v-if="inviteStep === 2">
+      <div class="email-grid" style="margin-top:16px;">
         <div>
           <div class="gms-field">
             <label class="gms-label">Subject</label>
             <input v-model="emailSubject" class="gms-input" />
           </div>
-
           <div class="gms-field">
             <label class="gms-label">Message Body</label>
-            <textarea
-              v-model="emailBody"
-              class="body-area"
-              style="font-family:var(--gms-font-ui);font-size:13px;min-height:260px;"
-            ></textarea>
+            <textarea v-model="emailBody" class="email-body" rows="10"></textarea>
           </div>
-
           <div class="tags-row">
-            <button class="tag-chip" @click="insertTag('guest_name')">{{guest_name}}</button>
-            <button class="tag-chip" @click="insertTag('tier_name')">{{tier_name}}</button>
-            <button class="tag-chip" @click="insertTag('match_list')">{{match_list}}</button>
+            <button class="tag-chip" @click="insertTag('guest_name')">{&#8203;{guest_name}}</button>
+            <button class="tag-chip" @click="insertTag('tier_name')">{&#8203;{tier_name}}</button>
+            <button class="tag-chip" @click="insertTag('match_list')">{&#8203;{match_list}}</button>
           </div>
         </div>
-
-        <!-- Right: Preview -->
         <div>
-          <div class="preview-label">
-            <GmsIcon name="eye" :size="13" />
-            Preview
-          </div>
-          <div class="gms-card" style="padding:16px;background:var(--gms-surface-2);border:1px solid var(--gms-border);border-radius:10px;">
-            <div style="font-weight:700;font-size:14px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--gms-border);">
-              {{ emailSubject }}
-            </div>
-            <div style="font-size:13px;line-height:1.65;color:var(--gms-text);white-space:pre-wrap;">
-              {{ previewEmail }}
-            </div>
+          <div class="preview-label"><GmsIcon name="eye" :size="13" /> Preview</div>
+          <div style="padding:16px;background:var(--gms-surface-2);border:1px solid var(--gms-border);border-radius:10px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--gms-border);">{{ emailSubject }}</div>
+            <div style="font-size:12.5px;line-height:1.65;color:var(--gms-text);white-space:pre-wrap;">{{ previewEmail }}</div>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- ── Step 3: Review ── -->
+    <div v-if="inviteStep === 3" style="margin-top:16px;">
+      <div class="gms-section-title">Selected matches</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+        <div v-for="mid in selectedMatches" :key="mid" class="inv-review-match">
+          <span class="mc-stage" :class="stageClass(matches.find(m => m.id === mid)?.stageCode)">
+            {{ matches.find(m => m.id === mid)?.stageCode }}
+          </span>
+          <span style="font-size:13px;font-weight:600;">{{ matches.find(m => m.id === mid)?.stageLabel }}</span>
+          <span style="font-size:12px;color:var(--gms-text-3);margin-left:auto;">{{ matches.find(m => m.id === mid)?.date }}</span>
+        </div>
+      </div>
+      <div class="gms-section-title" style="margin-top:20px;">Email preview</div>
+      <div style="margin-top:10px;padding:16px;background:var(--gms-surface-2);border:1px solid var(--gms-border);border-radius:10px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--gms-border);">{{ emailSubject }}</div>
+        <div style="font-size:12.5px;line-height:1.65;color:var(--gms-text);white-space:pre-wrap;max-height:180px;overflow-y:auto;">{{ previewEmail }}</div>
+      </div>
+    </div>
+
     <template #footer>
-      <button
-        v-if="inviteStep > 1"
-        class="gms-btn gms-btn-ghost"
-        @click="prevInviteStep"
-      >
-        <GmsIcon name="chevron-left" :size="13" />
-        Back
-      </button>
-      <button class="gms-btn gms-btn-ghost" @click="inviteModal = false">Cancel</button>
-      <button
-        v-if="inviteStep < 3"
-        class="gms-btn gms-btn-primary"
-        @click="nextInviteStep"
-      >
-        Next
-        <GmsIcon name="chevron-right" :size="13" />
-      </button>
-      <button
-        v-if="inviteStep === 3"
-        class="gms-btn gms-btn-primary"
-        :disabled="!selectedMatches.length"
-        @click="sendInvitation"
-      >
-        <GmsIcon name="mail" :size="13" />
-        Send Invitation
-      </button>
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+        <span class="inv-footer-info">
+          {{ inviteRecipient?.name.split(' ').pop() }} · {{ selectedMatches.length }} {{ selectedMatches.length === 1 ? 'match' : 'matches' }}
+        </span>
+        <div style="display:flex;gap:8px;">
+          <button v-if="inviteStep > 1" class="gms-btn gms-btn-ghost" @click="prevInviteStep">
+            <GmsIcon name="chevron-left" :size="13" /> Back
+          </button>
+          <button v-if="inviteStep < 3" class="gms-btn gms-btn-primary" @click="nextInviteStep">Continue</button>
+          <button v-if="inviteStep === 3" class="gms-btn gms-btn-primary" :disabled="!selectedMatches.length" @click="sendInvitation">
+            <GmsIcon name="mail" :size="13" /> Send Invitation
+          </button>
+        </div>
+      </div>
     </template>
   </GmsModal>
 </template>

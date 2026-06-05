@@ -7,6 +7,7 @@ import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
 import GmsPill from '@/Components/Gms/GmsPill.vue'
 import GmsDrawer from '@/Components/Gms/GmsDrawer.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
+import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -29,6 +30,7 @@ const statuses     = ['all', 'confirmed', 'pending', 'cancelled']
 
 function countFor(s) {
     if (s === 'all') return localReqs.value.length
+    if (s === 'changes') return localReqs.value.filter(r => r.changeRequest).length
     return localReqs.value.filter(r => r.status === s).length
 }
 
@@ -133,11 +135,10 @@ const statusColors = {
 
     <!-- Stats strip -->
     <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-      <div v-for="s in statuses.filter(x=>x!=='all')" :key="s"
-           style="flex:1;min-width:120px;background:var(--gms-surface);border:1px solid var(--gms-border);border-radius:10px;padding:12px 16px;">
-        <div style="font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;" :style="{ color: statusColors[s].fg }">{{ s }}</div>
-        <div style="font-family:var(--gms-font-display);font-size:28px;line-height:1;" :style="{ color: statusColors[s].fg }">{{ countFor(s) }}</div>
-      </div>
+      <GmsMiniStat label="Confirmed" :value="countFor('confirmed')" color="#15803d" style="flex:1;min-width:120px;" />
+      <GmsMiniStat label="Pending" :value="countFor('pending')" color="#a16207" style="flex:1;min-width:120px;" />
+      <GmsMiniStat label="Cancelled" :value="countFor('cancelled')" color="#6b7280" style="flex:1;min-width:120px;" />
+      <GmsMiniStat label="Change requests" :value="countFor('changes')" color="#2563eb" style="flex:1;min-width:120px;" />
     </div>
 
     <!-- Toolbar -->
@@ -146,10 +147,13 @@ const statusColors = {
         <GmsIcon name="search" :size="14" class="gms-search-icon" />
         <input v-model="search" class="gms-search-input" placeholder="Search guest, flight no…" />
       </div>
-      <button v-for="s in statuses" :key="s" class="gms-filter-btn" :class="{ active: statusFilter===s }" @click="statusFilter=s">
-        {{ s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }}
-        <span class="gms-filter-count">{{ countFor(s) }}</span>
-      </button>
+      <div class="gms-seg">
+        <button v-for="s in statuses" :key="s" :class="{ on: statusFilter===s }" @click="statusFilter=s">
+          {{ s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }}
+          <span class="gms-seg-count">{{ countFor(s) }}</span>
+        </button>
+      </div>
+      <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ localReqs.length }}</span>
     </div>
 
     <!-- Table -->

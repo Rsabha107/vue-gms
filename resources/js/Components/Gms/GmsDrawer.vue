@@ -22,11 +22,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
     <Transition name="gms-drawer">
       <div v-if="open" class="gms-drawer">
         <div class="gms-drawer-header">
-          <slot name="header-prefix" />
-          <div class="gms-drawer-header-info">
-            <div class="gms-drawer-title">{{ title }}</div>
-            <div v-if="subtitle" class="gms-drawer-subtitle">{{ subtitle }}</div>
-          </div>
+          <template v-if="$slots['header']">
+            <slot name="header" />
+          </template>
+          <template v-else>
+            <slot name="header-prefix" />
+            <div class="gms-drawer-header-info">
+              <div class="gms-drawer-title">{{ title }}</div>
+              <div v-if="subtitle" class="gms-drawer-subtitle">{{ subtitle }}</div>
+            </div>
+          </template>
           <button class="gms-drawer-close" @click="$emit('close')">
             <GmsIcon name="x" :size="14" />
           </button>

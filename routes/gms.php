@@ -8,6 +8,7 @@ use App\Http\Controllers\Gms\GmsEventsController;
 use App\Http\Controllers\Gms\GmsFlightController;
 use App\Http\Controllers\Gms\GmsGuestController;
 use App\Http\Controllers\Gms\GmsInvitationController;
+use App\Http\Controllers\Gms\GmsMatchesController;
 use App\Http\Controllers\Gms\GmsSeatingController;
 use App\Http\Controllers\Gms\GmsServiceLevelController;
 use App\Http\Controllers\Gms\GmsTransportController;
@@ -73,11 +74,18 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::put('/events/{id}',      [GmsEventsController::class, 'update'])->name('events.update');
     Route::delete('/events/{id}',   [GmsEventsController::class, 'destroy'])->name('events.destroy');
 
+    // Matches (Setup)
+    Route::get('/matches',          [GmsMatchesController::class, 'index'])->name('matches.index');
+    Route::post('/matches',         [GmsMatchesController::class, 'store'])->name('matches.store');
+    Route::put('/matches/{id}',     [GmsMatchesController::class, 'update'])->name('matches.update');
+    Route::delete('/matches/{id}',  [GmsMatchesController::class, 'destroy'])->name('matches.destroy');
+
     // Settings
     Route::get('/settings', function () {
         return inertia('Gms/Settings/Index', [
-            'user'  => auth()->user(),
-            'event' => \App\Services\Gms\GmsMockData::getEvent(),
+            'user'      => auth()->user(),
+            'event'     => \App\Services\Gms\GmsMockData::getEvent(),
+            'teamUsers' => \App\Models\User::orderBy('name')->get(),
         ]);
     })->name('settings');
 });

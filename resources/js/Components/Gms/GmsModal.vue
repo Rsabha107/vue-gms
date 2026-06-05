@@ -3,9 +3,10 @@ import { onMounted, onUnmounted } from 'vue'
 import GmsIcon from './GmsIcon.vue'
 
 defineProps({
-    open:  { type: Boolean, default: false },
-    title: { type: String,  default: '' },
-    size:  { type: String,  default: '' }, // '' | 'sm' | 'lg'
+    open:     { type: Boolean, default: false },
+    title:    { type: String,  default: '' },
+    subtitle: { type: String,  default: '' },
+    size:     { type: String,  default: '' }, // '' | 'sm' | 'lg'
 })
 const emit = defineEmits(['close'])
 
@@ -22,6 +23,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
           <div v-if="open" class="gms-modal" :class="size ? `gms-modal-${size}` : ''">
             <div class="gms-modal-header">
               <span class="gms-modal-title">{{ title }}</span>
+              <span v-if="subtitle" class="gms-modal-subtitle">{{ subtitle }}</span>
               <button class="gms-drawer-close" @click="$emit('close')">
                 <GmsIcon name="x" :size="14" />
               </button>

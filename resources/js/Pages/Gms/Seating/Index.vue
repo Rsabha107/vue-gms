@@ -7,6 +7,7 @@ import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
 import GmsPill from '@/Components/Gms/GmsPill.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsSeatingConfigurator from '@/Components/Gms/GmsSeatingConfigurator.vue'
+import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 
 defineOptions({ layout: GmsLayout, inheritAttrs: false })
 
@@ -611,15 +612,10 @@ function assignTemplate() {
 
     <!-- Stats row -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
-      <div v-for="[label, val, accent] in [
-        ['Matches',       localMatches.length,                                                                           'var(--gms-maroon)'],
-        ['Templates',     templates.length,                                                                              '#3b82f6'],
-        ['With template', localMatches.filter(m=>m.templateId||seatState[m.id]?.length).length,                        'var(--gms-gold)'],
-        ['Need template', localMatches.filter(m=>!m.templateId&&!seatState[m.id]?.length).length,                      '#d97706'],
-      ]" :key="label" class="gms-stat-card">
-        <div class="gms-stat-value" :style="{color:accent}">{{ val }}</div>
-        <div class="gms-stat-label">{{ label }}</div>
-      </div>
+      <GmsMiniStat label="Matches" :value="localMatches.length" color="var(--gms-maroon)" />
+      <GmsMiniStat label="Templates" :value="templates.length" color="#3b82f6" />
+      <GmsMiniStat label="With template" :value="localMatches.filter(m=>m.templateId||seatState[m.id]?.length).length" color="var(--gms-gold)" />
+      <GmsMiniStat label="Need template" :value="localMatches.filter(m=>!m.templateId&&!seatState[m.id]?.length).length" color="#d97706" />
     </div>
 
     <!-- Match table -->

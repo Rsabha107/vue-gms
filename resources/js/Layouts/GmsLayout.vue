@@ -10,7 +10,7 @@ const page     = usePage()
 const auth     = computed(() => page.props.auth)
 const event    = computed(() => page.props.event ?? { name: "Doha Cup '26", location: 'Lusail, Qatar' })
 const events   = computed(() => page.props.gmsEvents ?? [])
-const routeName = computed(() => page.props.ziggy?.location ?? '')
+const currentUrl = computed(() => page.url)
 
 // ── Event selector ────────────────────────────────────────────────
 const eventSelectorOpen = ref(false)
@@ -67,10 +67,13 @@ const breadcrumbMap = {
     'gms/accommodation':     'Accommodation',
     'gms/transport':         'Transport',
     'gms/arrival-departure': 'Arrival & Departure',
+    'gms/events':            'Events',
+    'gms/matches':           'Matches',
+    'gms/settings':          'Settings',
 }
 
 const currentBreadcrumb = computed(() => {
-    const loc = (routeName.value ?? '').replace(/^.*\/\/[^/]+/, '').replace(/^\//, '')
+    const loc = currentUrl.value.replace(/^\//, '')
     if (loc === 'gms' || loc === 'gms/') return 'Overview'
     for (const [key, label] of Object.entries(breadcrumbMap)) {
         if (loc.startsWith(key)) return label
@@ -93,13 +96,15 @@ const modules = [
 ]
 const setup = [
     { name: 'gms.events.index',        label: 'Events',        icon: 'calendar',  href: '/gms/events' },
+    { name: 'gms.matches.index',       label: 'Matches',       icon: 'trophy',    href: '/gms/matches' },
     { name: 'gms.settings',            label: 'Settings',      icon: 'settings',  href: '/gms/settings' },
 ]
 
 function isActive(item) {
-    const loc = (routeName.value ?? '').replace(/^.*\/\/[^/]+/, '')
-    if (item.href === '/gms') return loc === '/gms' || loc === '/gms/'
-    return loc.startsWith(item.href)
+    if (item.href === '/gms') {
+        return currentUrl.value === '/gms' || currentUrl.value === '/gms/'
+    }
+    return currentUrl.value.startsWith(item.href)
 }
 </script>
 
