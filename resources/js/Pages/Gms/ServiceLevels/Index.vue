@@ -311,7 +311,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     </div>
 
     <!-- ── Facilities grid ── -->
-    <div v-else class="sl-fac-grid">
+    <div v-else class="sl-grid">
 
       <div v-for="fac in localFacilities" :key="fac.id" class="sl-fac-card">
         <div class="sl-fac-top">
