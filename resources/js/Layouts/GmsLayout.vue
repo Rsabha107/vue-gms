@@ -68,6 +68,7 @@ const breadcrumbMap = {
     'gms/transport':         'Transport',
     'gms/arrival-departure': 'Arrival & Departure',
     'gms/events':            'Events',
+    'gms/venues':            'Venues',
     'gms/matches':           'Matches',
     'gms/settings':          'Settings',
 }
@@ -96,6 +97,7 @@ const modules = [
 ]
 const setup = [
     { name: 'gms.events.index',        label: 'Events',        icon: 'calendar',  href: '/gms/events' },
+    { name: 'gms.venues.index',        label: 'Venues',        icon: 'map',       href: '/gms/venues' },
     { name: 'gms.matches.index',       label: 'Matches',       icon: 'trophy',    href: '/gms/matches' },
     { name: 'gms.settings',            label: 'Settings',      icon: 'settings',  href: '/gms/settings' },
 ]

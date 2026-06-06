@@ -10,11 +10,15 @@ class Venue extends Model
     use HasFactory;
 
     protected $fillable = [
+        'title',
+        'short_name',
+        'active_flag',
         'name',
         'city',
         'country',
         'capacity',
         'type',
+        'notes',
     ];
 
     /**

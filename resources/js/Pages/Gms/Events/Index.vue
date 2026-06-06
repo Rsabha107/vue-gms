@@ -18,6 +18,11 @@ const toast = inject('toast')
 // ── Local reactive events list ────────────────────────────────────
 const localEvents = ref(props.events.map(e => ({ ...e })))
 
+// ── Active venues computed ────────────────────────────────────────
+const activeVenues = computed(() => {
+    return props.availableVenues.filter(v => v.active_flag === true || v.active_flag === 1)
+})
+
 // ── Modal state ───────────────────────────────────────────────────
 const eventModal = ref(false)
 const editingEvent = ref(null)
@@ -74,7 +79,7 @@ function saveEvent() {
     if (editingEvent.value) {
         const idx = localEvents.value.findIndex(e => e.id === editingEvent.value.id)
         if (idx !== -1) {
-            const selectedVenues = availableVenues.value.filter(v => form.venue_ids.includes(v.id))
+            const selectedVenues = activeVenues.value.filter(v => form.venue_ids.includes(v.id))
             localEvents.value[idx] = { 
                 ...localEvents.value[idx], 
                 ...payload,
@@ -89,7 +94,7 @@ function saveEvent() {
             preserveScroll: true,
         })
     } else {
-        const selectedVenues = availableVenues.value.filter(v => form.venue_ids.includes(v.id))
+        const selectedVenues = activeVenues.value.filter(v => form.venue_ids.includes(v.id))
         const newEvent = { 
             id: 'E' + Date.now(), 
             ...payload,
@@ -132,7 +137,6 @@ function handleClickOutside(e) {
 }
 
 const currentEvent = computed(() => props.event)
-const availableVenues = computed(() => props.availableVenues)
 
 onMounted(() => {
     document.addEventListener('click', handleClickOutside)
@@ -206,7 +210,7 @@ onBeforeUnmount(() => {
             <GmsIcon name="building" :size="14" class="gms-ev-mi-icon" />
             <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ evt.venue }}</span>
           </div>
-          <div class="gms-ev-mi" style="grid-column: 1 / -1;">
+          <div class="gms-ev-mi">
             <GmsIcon name="calendar" :size="14" class="gms-ev-mi-icon" />
             <span>{{ evt.dates }}</span>
           </div>
@@ -259,7 +263,7 @@ onBeforeUnmount(() => {
         <label class="gms-label">Venues <span style="color: var(--gms-maroon);">*</span></label>
         <div class="chip-pick">
           <button
-            v-for="venue in availableVenues"
+            v-for="venue in activeVenues"
             :key="venue.id"
             type="button"
             class="pick-chip"

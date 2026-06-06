@@ -1,78 +1,157 @@
 <script setup>
-import { ref, computed, inject } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
 import { router, useForm } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
+import GmsBtn from '@/Components/Gms/GmsBtn.vue'
+import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 
 defineOptions({ layout: GmsLayout })
 
 const props = defineProps({
-    tiers:  { type: Array, default: () => [] },
-    guests: { type: Array, default: () => [] },
+    tiers:  { type: Array,  default: () => [] },
+    guests: { type: Array,  default: () => [] },
     event:  { type: Object, default: () => ({}) },
 })
 
 const toast = inject('toast')
 
-// ── Local reactive tiers (mutations are optimistic until DB is wired) ─
-const localTiers = ref(props.tiers.map(t => ({ ...t })))
+// ── Constants ─────────────────────────────────────────────────────
+const CORE_MODULES = [
+    { id: 'flights',   name: 'Flights',            icon: 'plane',    slug: 'flight',    desc: 'Inbound & outbound air travel.'   },
+    { id: 'accomm',    name: 'Accommodation',       icon: 'building', slug: 'hotel',     desc: 'Hotel booking for the stay.'      },
+    { id: 'seating',   name: 'Seating',             icon: 'ticket',   slug: 'seat',      desc: 'Match-day VIP tribune seat.'      },
+    { id: 'transport', name: 'Transport',           icon: 'car',      slug: 'transport', desc: 'Chauffeured ground transport.'    },
+    { id: 'arrival',   name: 'Arrival & Departure', icon: 'arrivals', slug: 'ad',        desc: 'Airport protocol & lounge.'       },
+]
 
-// ── Modal state ───────────────────────────────────────────────────
-const modalOpen   = ref(false)
-const deleteModal = ref(false)
+const BADGE_COLORS = [
+    '#7c3aed', '#d97706', '#6b7280', '#dc2626', '#2563eb',
+    '#16a34a', '#ea580c', '#1e40af',
+]
+
+const ICON_OPTIONS = [
+    'plane','building','ticket','car','arrivals','map',
+    'users','mail','bell','calendar','clock','trophy','star','tag',
+]
+
+const DEFAULT_MODULES = {
+    T1: ['flights','accomm','seating','transport','arrival'],
+    T2: ['flights','accomm','seating','transport','arrival'],
+    T3: ['accomm','seating','transport','arrival'],
+    T4: ['seating','transport'],
+    T5: ['seating'],
+}
+
+const DEFAULT_DESCS = {
+    T1: 'Full state protocol with every facility included.',
+    T2: 'Full VVIP programme — every facility included.',
+    T3: 'Premium hospitality with travel & ground transport.',
+    T4: 'Match-day seating only — no travel arrangements.',
+    T5: 'Press access with match-day seating.',
+}
+
+function bgFor(color) {
+    const map = {
+        '#7c3aed':'#ede9fe','#d97706':'#fef3c7','#6b7280':'#f3f4f6',
+        '#dc2626':'#fce7f3','#2563eb':'#dbeafe','#16a34a':'#dcfce7',
+        '#ea580c':'#ffedd5','#1e40af':'#dbeafe','#0ea5e9':'#e0f2fe',
+        '#8a1f3d':'#fce7f3','#c4973a':'#fef3c7','#8b5cf6':'#ede9fe',
+    }
+    return map[color] ?? (color + '1a')
+}
+
+// ── Local state ───────────────────────────────────────────────────
+const localTiers = ref(props.tiers.map(t => ({
+    ...t,
+    description: t.description ?? DEFAULT_DESCS[t.id] ?? '',
+    modules: t.modules ?? DEFAULT_MODULES[t.id] ?? [],
+})))
+
+const localFacilities = ref(CORE_MODULES.map(m => ({ ...m, type: 'core' })))
+
+const activeTab        = ref('levels')
+const actionsMenuOpen  = ref(null)
+
+// ── Stats ─────────────────────────────────────────────────────────
+const assignedGuests   = computed(() => props.guests.filter(g => localTiers.value.some(t => t.id === g.tier)).length)
+const unassignedGuests = computed(() => props.guests.length - assignedGuests.value)
+const coreFacCount     = computed(() => localFacilities.value.filter(f => f.type === 'core').length)
+const customFacCount   = computed(() => localFacilities.value.filter(f => f.type === 'custom').length)
+const levelsUsing      = computed(() => {
+    const used = new Set(localTiers.value.flatMap(t => t.modules ?? []))
+    return localFacilities.value.filter(f => used.has(f.id)).length
+})
+
+function guestCountFor(id) {
+    return props.guests.filter(g => g.tier === id).length
+}
+function registryPct(id) {
+    return props.guests.length ? Math.round(guestCountFor(id) / props.guests.length * 100) : 0
+}
+function levelsForFac(id) {
+    return localTiers.value.filter(t => (t.modules ?? []).includes(id)).length
+}
+function guestsForFac(id) {
+    const tids = new Set(localTiers.value.filter(t => (t.modules ?? []).includes(id)).map(t => t.id))
+    return props.guests.filter(g => tids.has(g.tier)).length
+}
+
+// ── Tier CRUD ─────────────────────────────────────────────────────
+const tierModal   = ref(false)
 const editingTier = ref(null)
+const deleteModal = ref(false)
 const deletingId  = ref(null)
 
-const form = useForm({
-    name:       '',
-    color:      '#8a1f3d',
-    bg:         '#fce7f3',
-    facilities: '',
-})
+const form = useForm({ name: '', color: '#dc2626', description: '', modules: [] })
+
+function toggleModule(id) {
+    const i = form.modules.indexOf(id)
+    if (i === -1) form.modules.push(id)
+    else form.modules.splice(i, 1)
+}
 
 function openNew() {
     editingTier.value = null
-    form.name       = ''
-    form.color      = '#8a1f3d'
-    form.bg         = '#fce7f3'
-    form.facilities = ''
-    modalOpen.value = true
+    form.name = ''; form.color = '#dc2626'; form.description = ''; form.modules = []
+    tierModal.value = true
 }
 
 function openEdit(tier) {
     editingTier.value = tier
-    form.name       = tier.name
-    form.color      = tier.color
-    form.bg         = tier.bg ?? '#f3f4f6'
-    form.facilities = (tier.facilities ?? []).join('\n')
-    modalOpen.value = true
+    form.name = tier.name
+    form.color = tier.color
+    form.description = tier.description ?? ''
+    form.modules = [...(tier.modules ?? [])]
+    tierModal.value = true
+    actionsMenuOpen.value = null
 }
 
 function openDelete(id) {
-    deletingId.value  = id
+    deletingId.value = id
     deleteModal.value = true
+    actionsMenuOpen.value = null
 }
 
 function saveTier() {
-    const facilities = form.facilities.split('\n').map(f => f.trim()).filter(Boolean)
+    const bg = bgFor(form.color)
     if (editingTier.value) {
         const idx = localTiers.value.findIndex(t => t.id === editingTier.value.id)
-        if (idx !== -1) {
-            localTiers.value[idx] = { ...localTiers.value[idx], name: form.name, color: form.color, bg: form.bg, facilities }
-        }
+        if (idx !== -1) Object.assign(localTiers.value[idx], {
+            name: form.name, color: form.color, bg,
+            description: form.description, modules: [...form.modules],
+        })
         form.put(route('gms.service-levels.update', editingTier.value.id), {
-            onSuccess: () => { modalOpen.value = false; toast('Service level updated.') },
-            onError: () => toast('Failed to save.', 'error'),
-            preserveScroll: true,
+            onSuccess: () => { tierModal.value = false; toast('Service level updated.') },
+            onError:   () => toast('Failed to save.', 'error'), preserveScroll: true,
         })
     } else {
         const id = 'T' + Date.now()
-        localTiers.value.push({ id, name: form.name, color: form.color, bg: form.bg, facilities, rank: localTiers.value.length + 1 })
+        localTiers.value.push({ id, name: form.name, color: form.color, bg, description: form.description, modules: [...form.modules], rank: localTiers.value.length + 1 })
         form.post(route('gms.service-levels.store'), {
-            onSuccess: () => { modalOpen.value = false; toast('Service level created.') },
-            onError: () => toast('Failed to save.', 'error'),
-            preserveScroll: true,
+            onSuccess: () => { tierModal.value = false; toast('Service level created.') },
+            onError:   () => toast('Failed to save.', 'error'), preserveScroll: true,
         })
     }
 }
@@ -81,147 +160,321 @@ function confirmDelete() {
     localTiers.value = localTiers.value.filter(t => t.id !== deletingId.value)
     router.delete(route('gms.service-levels.destroy', deletingId.value), {
         onSuccess: () => { deleteModal.value = false; toast('Service level deleted.') },
-        onError: () => toast('Failed to delete.', 'error'),
-        preserveScroll: true,
+        onError:   () => toast('Failed to delete.', 'error'), preserveScroll: true,
     })
 }
 
-function guestCountFor(tierId) {
-    return props.guests.filter(g => g.tier === tierId).length
+function duplicateTier(tier) {
+    localTiers.value.push({
+        ...tier, id: 'T' + Date.now(), name: tier.name + ' (copy)',
+        modules: [...(tier.modules ?? [])], rank: localTiers.value.length + 1,
+    })
+    actionsMenuOpen.value = null
+    toast('Service level duplicated.')
 }
 
-function duplicateTier(tier) {
-    const copy = { ...tier, id: 'T' + Date.now(), name: tier.name + ' (copy)', rank: localTiers.value.length + 1 }
-    localTiers.value.push(copy)
-    toast('Tier duplicated.')
+// ── Facility CRUD ─────────────────────────────────────────────────
+const facilityModal   = ref(false)
+const editingFacility = ref(null)
+const facForm = useForm({ name: '', description: '', icon: 'tag' })
+
+function openNewFacility() {
+    editingFacility.value = null
+    facForm.name = ''; facForm.description = ''; facForm.icon = 'tag'
+    facilityModal.value = true
 }
+
+function openEditFacility(fac) {
+    editingFacility.value = fac
+    facForm.name = fac.name; facForm.description = fac.desc ?? ''; facForm.icon = fac.icon
+    facilityModal.value = true
+}
+
+function saveFacility() {
+    if (editingFacility.value) {
+        const idx = localFacilities.value.findIndex(f => f.id === editingFacility.value.id)
+        if (idx !== -1) Object.assign(localFacilities.value[idx], { name: facForm.name, desc: facForm.description, icon: facForm.icon })
+        toast('Facility updated.')
+    } else {
+        localFacilities.value.push({
+            id: 'fac-' + Date.now(), name: facForm.name, desc: facForm.description,
+            icon: facForm.icon, slug: facForm.name.toLowerCase().replace(/\s+/g, '-'), type: 'custom',
+        })
+        toast('Facility created.')
+    }
+    facilityModal.value = false
+}
+
+// ── Click-outside ─────────────────────────────────────────────────
+function handleClickOutside(e) {
+    if (!e.target.closest('.sl-actions-wrap')) actionsMenuOpen.value = null
+}
+onMounted(()  => document.addEventListener('click', handleClickOutside))
+onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 </script>
 
 <template>
   <div class="gms-view">
+
+    <!-- Header -->
     <div class="gms-view-header">
       <div>
         <h1 class="gms-view-title">Service Levels</h1>
-        <p class="gms-view-subtitle">Define VIP tiers and their facilities</p>
+        <p class="gms-view-subtitle">Each level bundles a set of facilities. Assign one to every guest — extras can still be added per guest.</p>
       </div>
       <div class="gms-view-actions">
-        <button class="gms-btn gms-btn-primary" @click="openNew">
-          <GmsIcon name="plus" :size="14" />
-          New Tier
+        <GmsBtn variant="primary" icon="plus" :iconSize="14" @click="activeTab === 'levels' ? openNew() : openNewFacility()">
+          {{ activeTab === 'levels' ? 'New service level' : 'New facility' }}
+        </GmsBtn>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="gms-seg" style="width:fit-content;margin-bottom:22px;">
+      <button :class="{ on: activeTab === 'levels' }" @click="activeTab = 'levels'">Service levels</button>
+      <button :class="{ on: activeTab === 'facilities' }" @click="activeTab = 'facilities'">Facilities · {{ localFacilities.length }}</button>
+    </div>
+
+    <!-- Stats — levels tab -->
+    <div v-if="activeTab === 'levels'" class="gms-stats">
+      <GmsMiniStat :value="localTiers.length"       label="Service levels" />
+      <GmsMiniStat :value="assignedGuests"           label="Guests assigned"        color="#15803d" />
+      <GmsMiniStat :value="unassignedGuests"         label="Unassigned"             color="#d97706" />
+      <GmsMiniStat :value="localFacilities.length"   label="Facilities tracked"     color="#2563eb" />
+    </div>
+
+    <!-- Stats — facilities tab -->
+    <div v-else class="gms-stats">
+      <GmsMiniStat :value="localFacilities.length"   label="Facilities" />
+      <GmsMiniStat :value="coreFacCount"             label="Core (module-linked)" />
+      <GmsMiniStat :value="customFacCount"           label="Custom"               color="#6b7280" />
+      <GmsMiniStat :value="levelsUsing"              label="Service levels using them" color="#15803d" />
+    </div>
+
+    <!-- ── Service Levels grid ── -->
+    <div v-if="activeTab === 'levels'" class="sl-grid">
+
+      <div v-for="tier in localTiers" :key="tier.id" class="sl-tier-card">
+
+        <!-- Header: pill + guests count + actions -->
+        <div class="sl-tier-head">
+          <div class="sl-tier-head-left">
+            <span class="sl-tier-pill" :style="{ background: tier.bg ?? bgFor(tier.color), color: tier.color }">
+              {{ tier.name }}
+            </span>
+            <span class="sl-tier-guests">{{ guestCountFor(tier.id) }} guests</span>
+          </div>
+          <div class="sl-actions-wrap">
+            <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" @click.stop="actionsMenuOpen = actionsMenuOpen === tier.id ? null : tier.id">
+              <GmsIcon name="more-vertical" :size="14" />
+            </button>
+            <div v-if="actionsMenuOpen === tier.id" class="sl-actions-menu">
+              <button @click="duplicateTier(tier)"><GmsIcon name="copy" :size="13" /> Duplicate</button>
+              <button @click="openEdit(tier)"><GmsIcon name="edit" :size="13" /> Edit</button>
+              <button class="danger" @click="openDelete(tier.id)"><GmsIcon name="trash" :size="13" /> Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <p class="sl-desc">{{ tier.description || '—' }}</p>
+
+        <!-- Facility chips: all 5, colored if included, grey if not -->
+        <div class="sl-chips">
+          <span
+            v-for="m in CORE_MODULES" :key="m.id"
+            class="sl-chip"
+            :class="(tier.modules ?? []).includes(m.id) ? 'on' : 'off'"
+            :style="(tier.modules ?? []).includes(m.id) ? { background: tier.bg ?? bgFor(tier.color), color: tier.color } : {}"
+          >
+            <GmsIcon :name="m.icon" :size="11" />{{ m.name }}
+          </span>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="sl-bar-section">
+          <div class="sl-bar-labels">
+            <span>{{ registryPct(tier.id) }}% of registry</span>
+            <span>{{ (tier.modules ?? []).length }} of {{ CORE_MODULES.length }} facilities</span>
+          </div>
+          <div class="sl-bar">
+            <div class="sl-bar-fill" :style="{ width: registryPct(tier.id) + '%', background: tier.color }" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Add new card -->
+      <div class="sl-add-card" @click="openNew">
+        <GmsIcon name="plus" :size="20" style="color:var(--gms-text-3);" />
+        <span>Add service level</span>
+      </div>
+    </div>
+
+    <!-- ── Facilities grid ── -->
+    <div v-else class="sl-fac-grid">
+
+      <div v-for="fac in localFacilities" :key="fac.id" class="sl-fac-card">
+        <div class="sl-fac-top">
+          <div class="sl-fac-icon-wrap">
+            <div class="sl-fac-icon">
+              <GmsIcon :name="fac.icon" :size="18" />
+            </div>
+            <div class="sl-fac-info">
+              <div class="sl-fac-name">{{ fac.name }}</div>
+              <span class="sl-fac-slug">{{ fac.slug }}</span>
+            </div>
+          </div>
+          <span v-if="fac.type === 'core'" class="sl-fac-badge">Core</span>
+          <div v-else class="sl-actions-wrap">
+            <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" @click.stop="actionsMenuOpen = actionsMenuOpen === 'f'+fac.id ? null : 'f'+fac.id">
+              <GmsIcon name="more-vertical" :size="14" />
+            </button>
+            <div v-if="actionsMenuOpen === 'f'+fac.id" class="sl-actions-menu">
+              <button @click="openEditFacility(fac)"><GmsIcon name="edit" :size="13" /> Edit</button>
+            </div>
+          </div>
+        </div>
+        <p class="sl-fac-desc">{{ fac.desc }}</p>
+        <div class="sl-fac-divider" />
+        <div class="sl-fac-footer">
+          <span class="sl-fac-stat"><GmsIcon name="star" :size="12" /> {{ levelsForFac(fac.id) }} {{ levelsForFac(fac.id) === 1 ? 'level' : 'levels' }}</span>
+          <span class="sl-fac-stat"><GmsIcon name="users" :size="12" /> {{ guestsForFac(fac.id) }} guests</span>
+        </div>
+      </div>
+
+      <!-- Add facility card -->
+      <div class="sl-add-card" @click="openNewFacility">
+        <GmsIcon name="plus" :size="20" style="color:var(--gms-text-3);" />
+        <span>Add facility</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── New / Edit Service Level Modal ── -->
+  <GmsModal :open="tierModal" :title="editingTier ? 'Edit service level' : 'New service level'" @close="tierModal = false">
+
+    <!-- Live preview -->
+    <div class="sl-modal-preview">
+      <span class="sl-preview-pill" :style="{ background: bgFor(form.color), color: form.color }">
+        {{ form.name || 'UNTITLED' }}
+      </span>
+      <span class="sl-preview-count">{{ form.modules.length }} {{ form.modules.length === 1 ? 'facility' : 'facilities' }} bundled</span>
+    </div>
+
+    <!-- Name + Badge colour (side by side) -->
+    <div class="sl-name-color-row">
+      <div class="gms-field" style="flex:1;min-width:0;">
+        <label class="gms-label">Name *</label>
+        <input v-model="form.name" class="gms-input" placeholder="e.g. Diamond" />
+      </div>
+      <div class="gms-field">
+        <label class="gms-label">Badge colour</label>
+        <div class="sl-color-grid">
+          <button
+            v-for="c in BADGE_COLORS" :key="c"
+            class="sl-color-dot"
+            :style="{ background: c, boxShadow: form.color === c ? `0 0 0 2.5px white, 0 0 0 4.5px ${c}` : 'none' }"
+            @click="form.color = c"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Description -->
+    <div class="gms-field" style="margin-top:14px;">
+      <label class="gms-label">Description</label>
+      <input v-model="form.description" class="gms-input" placeholder="Short summary shown on the card" />
+    </div>
+
+    <!-- Included facilities -->
+    <div style="margin-top:20px;">
+      <div class="sl-section-head">Included facilities <span class="sl-section-hint">· tap to toggle</span></div>
+      <div class="sl-fac-toggles">
+        <button
+          v-for="m in CORE_MODULES" :key="m.id"
+          class="sl-fac-toggle"
+          :class="{ on: form.modules.includes(m.id) }"
+          type="button"
+          @click="toggleModule(m.id)"
+        >
+          <div class="sl-toggle-icon">
+            <GmsIcon :name="m.icon" :size="15" />
+          </div>
+          <div class="sl-toggle-info">
+            <div class="sl-toggle-name">{{ m.name }}</div>
+            <div class="sl-toggle-status">{{ form.modules.includes(m.id) ? 'Included' : 'Excluded' }}</div>
+          </div>
+          <div class="sl-toggle-check">
+            <GmsIcon v-if="form.modules.includes(m.id)" name="check" :size="11" />
+          </div>
         </button>
       </div>
     </div>
 
-    <div class="gms-grid-2" style="gap:16px;">
-      <div
-        v-for="tier in localTiers"
-        :key="tier.id"
-        class="gms-card"
-        style="overflow:hidden;"
-      >
-        <!-- Tier colour bar -->
-        <div :style="{ height: '5px', background: tier.color }" />
-
-        <div class="gms-card-body">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <div
-                :style="{ width:'36px', height:'36px', background: tier.bg, borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', color: tier.color, fontWeight:'700', fontSize:'15px' }"
-              >{{ tier.name[0] }}</div>
-              <div>
-                <div style="font-weight:700;font-size:15px;">{{ tier.name }}</div>
-                <div style="font-size:12px;color:var(--gms-text-3);">Rank {{ tier.rank ?? '—' }}</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:4px;">
-              <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" @click="duplicateTier(tier)" title="Duplicate">
-                <GmsIcon name="copy" :size="13" />
-              </button>
-              <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" @click="openEdit(tier)" title="Edit">
-                <GmsIcon name="edit" :size="13" />
-              </button>
-              <button class="gms-btn gms-btn-danger gms-btn-sm gms-btn-icon" @click="openDelete(tier.id)" title="Delete">
-                <GmsIcon name="trash" :size="13" />
-              </button>
-            </div>
-          </div>
-
-          <!-- Guest count -->
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;padding:8px 10px;background:var(--gms-surface-2);border-radius:6px;">
-            <GmsIcon name="users" :size="13" style="color:var(--gms-text-3);" />
-            <span style="font-size:12.5px;color:var(--gms-text-2);">
-              <strong>{{ guestCountFor(tier.id) }}</strong> guests assigned
-            </span>
-          </div>
-
-          <!-- Facilities -->
-          <div>
-            <div class="gms-section-title" style="margin-bottom:8px;">Facilities</div>
-            <div v-if="tier.facilities?.length" style="display:flex;flex-wrap:wrap;gap:5px;">
-              <span
-                v-for="f in tier.facilities"
-                :key="f"
-                class="gms-pill"
-                :style="{ background: tier.bg, color: tier.color }"
-              >{{ f }}</span>
-            </div>
-            <div v-else style="font-size:12px;color:var(--gms-text-3);">No facilities defined</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Empty -->
-      <div v-if="!localTiers.length" class="gms-empty" style="grid-column:1/-1;">
-        <div class="gms-empty-icon"><GmsIcon name="star" :size="38" /></div>
-        <div class="gms-empty-title">No service levels defined</div>
-        <div class="gms-empty-sub">Create tiers to assign to guests.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Create / Edit modal -->
-  <GmsModal :open="modalOpen" :title="editingTier ? 'Edit Service Level' : 'New Service Level'" @close="modalOpen = false">
-    <div class="gms-form-grid">
-      <div class="gms-field">
-        <label class="gms-label">Name</label>
-        <input v-model="form.name" class="gms-input" placeholder="e.g. Diamond" />
-        <span v-if="form.errors.name" class="gms-error">{{ form.errors.name }}</span>
-      </div>
-      <div class="gms-field">
-        <label class="gms-label">Primary Color</label>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="color" v-model="form.color" style="width:36px;height:36px;border:1px solid var(--gms-border);border-radius:6px;padding:2px;cursor:pointer;" />
-          <input v-model="form.color" class="gms-input" style="font-family:var(--gms-font-mono);font-size:12px;" />
-        </div>
-      </div>
-      <div class="gms-field">
-        <label class="gms-label">Background Color</label>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="color" v-model="form.bg" style="width:36px;height:36px;border:1px solid var(--gms-border);border-radius:6px;padding:2px;cursor:pointer;" />
-          <input v-model="form.bg" class="gms-input" style="font-family:var(--gms-font-mono);font-size:12px;" />
-        </div>
-      </div>
-      <div class="gms-field gms-form-full">
-        <label class="gms-label">Facilities (one per line)</label>
-        <textarea v-model="form.facilities" class="gms-input gms-textarea" placeholder="VIP Lounge&#10;Chauffeur&#10;Hotel upgrade" rows="4" />
-      </div>
-    </div>
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="modalOpen = false">Cancel</button>
-      <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="saveTier">
-        {{ editingTier ? 'Save Changes' : 'Create Tier' }}
-      </button>
+      <GmsBtn variant="ghost" @click="tierModal = false">Cancel</GmsBtn>
+      <GmsBtn variant="primary" :disabled="form.processing || !form.name" @click="saveTier">
+        {{ editingTier ? 'Save changes' : 'Create service level' }}
+      </GmsBtn>
     </template>
   </GmsModal>
 
-  <!-- Delete confirm -->
-  <GmsModal :open="deleteModal" title="Delete Service Level" size="sm" @close="deleteModal = false">
+  <!-- ── New / Edit Facility Modal ── -->
+  <GmsModal :open="facilityModal" :title="editingFacility ? 'Edit facility' : 'New facility'" @close="facilityModal = false">
+
+    <!-- Live preview -->
+    <div class="sl-fac-preview">
+      <div class="sl-fac-prev-icon">
+        <GmsIcon :name="facForm.icon || 'tag'" :size="20" />
+      </div>
+      <div>
+        <div class="sl-fac-prev-name">{{ facForm.name || 'Untitled facility' }}</div>
+        <div class="sl-fac-prev-sub">Shown on service-level cards &amp; the guest profile</div>
+      </div>
+    </div>
+
+    <div class="gms-field" style="margin-top:18px;">
+      <label class="gms-label">Name *</label>
+      <input v-model="facForm.name" class="gms-input" placeholder="e.g. Gala dinner" />
+    </div>
+    <div class="gms-field" style="margin-top:14px;">
+      <label class="gms-label">Description</label>
+      <input v-model="facForm.description" class="gms-input" placeholder="Short summary" />
+    </div>
+
+    <!-- Icon picker -->
+    <div style="margin-top:20px;">
+      <div class="sl-section-head">Icon <span class="sl-section-hint">· tap to choose</span></div>
+      <div class="sl-icon-grid">
+        <button
+          v-for="ico in ICON_OPTIONS" :key="ico"
+          class="sl-icon-btn"
+          :class="{ on: facForm.icon === ico }"
+          type="button"
+          @click="facForm.icon = ico"
+        >
+          <GmsIcon :name="ico" :size="16" />
+        </button>
+      </div>
+    </div>
+
+    <template #footer>
+      <GmsBtn variant="ghost" @click="facilityModal = false">Cancel</GmsBtn>
+      <GmsBtn variant="primary" :disabled="!facForm.name" @click="saveFacility">
+        {{ editingFacility ? 'Save changes' : 'Create facility' }}
+      </GmsBtn>
+    </template>
+  </GmsModal>
+
+  <!-- ── Delete Confirm ── -->
+  <GmsModal :open="deleteModal" title="Delete service level" size="sm" @close="deleteModal = false">
     <p style="font-size:13.5px;color:var(--gms-text-2);">
-      This tier will be removed. Guests with this tier will need to be reassigned.
+      This service level will be removed. Guests assigned to it will need to be reassigned.
     </p>
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="deleteModal = false">Cancel</button>
-      <button class="gms-btn gms-btn-danger" @click="confirmDelete">Delete</button>
+      <GmsBtn variant="ghost" @click="deleteModal = false">Cancel</GmsBtn>
+      <GmsBtn variant="danger" @click="confirmDelete">Delete</GmsBtn>
     </template>
   </GmsModal>
 </template>

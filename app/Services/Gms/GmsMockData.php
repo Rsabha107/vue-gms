@@ -143,6 +143,7 @@ class GmsMockData
                 'country' => $venue->country,
                 'capacity' => $venue->capacity,
                 'type' => $venue->type,
+                'active_flag' => $venue->active_flag,
             ];
         })->toArray();
     }
@@ -401,14 +402,77 @@ class GmsMockData
     public static function getFlightRequests(): array
     {
         return [
-            ['id' => 'FLT-001', 'guestId' => 'G002', 'guestName' => 'Emmanuel Macron',          'status' => 'confirmed', 'changeRequest' => false, 'flightNo' => 'QR 2025', 'route' => 'CDG → DOH', 'origin' => 'CDG', 'destination' => 'DOH', 'class' => 'Business', 'pax' => 3, 'date' => '2026-01-14', 'time' => '09:30', 'arrival' => '2026-01-14', 'arrivalTime' => '18:45', 'notes' => 'Diplomatic passport, no queue'],
-            ['id' => 'FLT-002', 'guestId' => 'G004', 'guestName' => 'Prince William',            'status' => 'confirmed', 'changeRequest' => true,  'flightNo' => 'QR 5',    'route' => 'LHR → DOH', 'origin' => 'LHR', 'destination' => 'DOH', 'class' => 'First',    'pax' => 6, 'date' => '2026-01-14', 'time' => '21:00', 'arrival' => '2026-01-15', 'arrivalTime' => '07:00', 'notes' => 'Security pre-clear required – time change requested'],
-            ['id' => 'FLT-003', 'guestId' => 'G006', 'guestName' => 'Olaf Scholz',               'status' => 'confirmed', 'changeRequest' => false, 'flightNo' => 'LH 688',  'route' => 'FRA → DOH', 'origin' => 'FRA', 'destination' => 'DOH', 'class' => 'Business', 'pax' => 4, 'date' => '2026-01-15', 'time' => '11:00', 'arrival' => '2026-01-15', 'arrivalTime' => '19:30', 'notes' => ''],
-            ['id' => 'FLT-004', 'guestId' => 'G007', 'guestName' => 'Arsène Wenger',              'status' => 'pending',   'changeRequest' => false, 'flightNo' => 'QR 47',   'route' => 'GVA → DOH', 'origin' => 'GVA', 'destination' => 'DOH', 'class' => 'Business', 'pax' => 2, 'date' => '2026-01-14', 'time' => '14:20', 'arrival' => '2026-01-14', 'arrivalTime' => '22:10', 'notes' => 'Awaiting confirmation'],
-            ['id' => 'FLT-005', 'guestId' => 'G008', 'guestName' => 'Kylian Mbappé',              'status' => 'confirmed', 'changeRequest' => true,  'flightNo' => 'QR 39',   'route' => 'CDG → DOH', 'origin' => 'CDG', 'destination' => 'DOH', 'class' => 'First',    'pax' => 2, 'date' => '2026-01-17', 'time' => '22:00', 'arrival' => '2026-01-18', 'arrivalTime' => '07:10', 'notes' => 'Upgrade to First class requested'],
-            ['id' => 'FLT-006', 'guestId' => 'G012', 'guestName' => 'Pedro Sánchez',              'status' => 'pending',   'changeRequest' => false, 'flightNo' => 'IB 3168', 'route' => 'MAD → DOH', 'origin' => 'MAD', 'destination' => 'DOH', 'class' => 'Business', 'pax' => 3, 'date' => '2026-01-14', 'time' => '08:00', 'arrival' => '2026-01-14', 'arrivalTime' => '18:20', 'notes' => ''],
-            ['id' => 'FLT-007', 'guestId' => 'G009', 'guestName' => 'Cristiano Ronaldo',          'status' => 'confirmed', 'changeRequest' => false, 'flightNo' => 'QR 271',  'route' => 'RUH → DOH', 'origin' => 'RUH', 'destination' => 'DOH', 'class' => 'First',    'pax' => 1, 'date' => '2026-01-17', 'time' => '17:00', 'arrival' => '2026-01-17', 'arrivalTime' => '18:30', 'notes' => ''],
-            ['id' => 'FLT-008', 'guestId' => 'G014', 'guestName' => 'Tim Cook',                   'status' => 'cancelled', 'changeRequest' => false, 'flightNo' => 'AA 209',  'route' => 'JFK → DOH', 'origin' => 'JFK', 'destination' => 'DOH', 'class' => 'Business', 'pax' => 2, 'date' => '2026-01-13', 'time' => '22:30', 'arrival' => '2026-01-15', 'arrivalTime' => '05:55', 'notes' => 'Cancelled – rescheduled separately'],
+            ['id'=>'FLT-001','guestId'=>'G002','guestName'=>'Emmanuel Macron',   'status'=>'confirmed','changeRequest'=>false,'pnr'=>'PJK7X2',
+             'flightNo'=>'QR 2025','inboundFlight'=>'QR 2025','outboundFlight'=>'QR 2026',
+             'route'=>'CDG → DOH','origin'=>'CDG','originCity'=>'Paris','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'Business','pax'=>3,'airline'=>'Qatar Airways','duration'=>'7h 15m',
+             'date'=>'2026-01-14','time'=>'09:30','arrival'=>'2026-01-14','arrivalTime'=>'18:45',
+             'outboundDate'=>'2026-01-20','outboundTime'=>'22:00','outboundArrival'=>'2026-01-21','outboundArrivalTime'=>'04:15',
+             'inboundTerminal'=>'Arrival — Hamad International (HIA)','outboundTerminal'=>'Departure — Hamad International (HIA)',
+             'submitted'=>'2025-12-10 14:30','notes'=>'Diplomatic passport, no queue'],
+
+            ['id'=>'FLT-002','guestId'=>'G004','guestName'=>'Prince William',    'status'=>'new',      'changeRequest'=>true, 'pnr'=>'RX49WL',
+             'flightNo'=>'QR 5',    'inboundFlight'=>'QR 5',    'outboundFlight'=>'QR 6',
+             'route'=>'LHR → DOH','origin'=>'LHR','originCity'=>'London','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'First','pax'=>6,'airline'=>'Qatar Airways','duration'=>'6h 50m',
+             'date'=>'2026-01-14','time'=>'21:00','arrival'=>'2026-01-15','arrivalTime'=>'07:00',
+             'outboundDate'=>'2026-01-21','outboundTime'=>'09:00','outboundArrival'=>'2026-01-21','outboundArrivalTime'=>'14:55',
+             'inboundTerminal'=>'Arrival — Royal Terminal','outboundTerminal'=>'Departure — Royal Terminal',
+             'submitted'=>'2025-12-15 10:00','notes'=>'Security pre-clear required – time change requested'],
+
+            ['id'=>'FLT-003','guestId'=>'G006','guestName'=>'Olaf Scholz',       'status'=>'confirmed','changeRequest'=>false,'pnr'=>'GH2MNQ',
+             'flightNo'=>'LH 688', 'inboundFlight'=>'LH 688', 'outboundFlight'=>'LH 689',
+             'route'=>'FRA → DOH','origin'=>'FRA','originCity'=>'Frankfurt','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'Business','pax'=>4,'airline'=>'Lufthansa','duration'=>'6h 30m',
+             'date'=>'2026-01-15','time'=>'11:00','arrival'=>'2026-01-15','arrivalTime'=>'19:30',
+             'outboundDate'=>'2026-01-21','outboundTime'=>'23:30','outboundArrival'=>'2026-01-22','outboundArrivalTime'=>'05:00',
+             'inboundTerminal'=>'Arrival — Hamad International (HIA)','outboundTerminal'=>'Departure — Hamad International (HIA)',
+             'submitted'=>'2025-12-18 09:15','notes'=>''],
+
+            ['id'=>'FLT-004','guestId'=>'G007','guestName'=>'Arsène Wenger',     'status'=>'new',      'changeRequest'=>false,'pnr'=>'7BKT3F',
+             'flightNo'=>'QR 47',  'inboundFlight'=>'QR 47',  'outboundFlight'=>'QR 48',
+             'route'=>'GVA → DOH','origin'=>'GVA','originCity'=>'Geneva','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'Business','pax'=>2,'airline'=>'Qatar Airways','duration'=>'5h 50m',
+             'date'=>'2026-01-14','time'=>'14:20','arrival'=>'2026-01-14','arrivalTime'=>'22:10',
+             'outboundDate'=>'2026-01-20','outboundTime'=>'01:30','outboundArrival'=>'2026-01-20','outboundArrivalTime'=>'06:20',
+             'inboundTerminal'=>'Arrival — Hamad International (HIA)','outboundTerminal'=>'Departure — Hamad International (HIA)',
+             'submitted'=>'2026-01-02 11:00','notes'=>'Awaiting confirmation'],
+
+            ['id'=>'FLT-005','guestId'=>'G008','guestName'=>'Kylian Mbappé',     'status'=>'new',      'changeRequest'=>false,'pnr'=>'MP5VZ9',
+             'flightNo'=>'QR 39',  'inboundFlight'=>'QR 39',  'outboundFlight'=>'QR 40',
+             'route'=>'CDG → DOH','origin'=>'CDG','originCity'=>'Paris','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'First','pax'=>2,'airline'=>'Qatar Airways','duration'=>'7h 10m',
+             'date'=>'2026-01-17','time'=>'22:00','arrival'=>'2026-01-18','arrivalTime'=>'07:10',
+             'outboundDate'=>'2026-01-22','outboundTime'=>'03:00','outboundArrival'=>'2026-01-22','outboundArrivalTime'=>'09:10',
+             'inboundTerminal'=>'Arrival — Hamad International (HIA)','outboundTerminal'=>'Departure — Hamad International (HIA)',
+             'submitted'=>'2026-01-05 16:45','notes'=>''],
+
+            ['id'=>'FLT-006','guestId'=>'G012','guestName'=>'Pedro Sánchez',     'status'=>'new',      'changeRequest'=>false,'pnr'=>'SN8YCJ',
+             'flightNo'=>'IB 3168','inboundFlight'=>'IB 3168','outboundFlight'=>'IB 3169',
+             'route'=>'MAD → DOH','origin'=>'MAD','originCity'=>'Madrid','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'Business','pax'=>3,'airline'=>'Iberia','duration'=>'6h 20m',
+             'date'=>'2026-01-14','time'=>'08:00','arrival'=>'2026-01-14','arrivalTime'=>'18:20',
+             'outboundDate'=>'2026-01-21','outboundTime'=>'20:00','outboundArrival'=>'2026-01-22','outboundArrivalTime'=>'02:20',
+             'inboundTerminal'=>'Arrival — Hamad International (HIA)','outboundTerminal'=>'Departure — Hamad International (HIA)',
+             'submitted'=>'2026-01-08 08:00','notes'=>''],
+
+            ['id'=>'FLT-007','guestId'=>'G009','guestName'=>'Cristiano Ronaldo', 'status'=>'confirmed','changeRequest'=>false,'pnr'=>'CR7DOH',
+             'flightNo'=>'QR 271', 'inboundFlight'=>'QR 271', 'outboundFlight'=>'QR 272',
+             'route'=>'RUH → DOH','origin'=>'RUH','originCity'=>'Riyadh','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'First','pax'=>1,'airline'=>'Qatar Airways','duration'=>'1h 30m',
+             'date'=>'2026-01-17','time'=>'17:00','arrival'=>'2026-01-17','arrivalTime'=>'18:30',
+             'outboundDate'=>'2026-01-22','outboundTime'=>'19:00','outboundArrival'=>'2026-01-22','outboundArrivalTime'=>'20:30',
+             'inboundTerminal'=>'Arrival — Hamad International (HIA)','outboundTerminal'=>'Departure — Hamad International (HIA)',
+             'submitted'=>'2025-12-20 12:00','notes'=>''],
+
+            ['id'=>'FLT-008','guestId'=>'G014','guestName'=>'Tim Cook',          'status'=>'cancelled','changeRequest'=>false,'pnr'=>'TCK209',
+             'flightNo'=>'AA 209', 'inboundFlight'=>'AA 209', 'outboundFlight'=>'AA 210',
+             'route'=>'JFK → DOH','origin'=>'JFK','originCity'=>'New York','destination'=>'DOH','destCity'=>'Doha',
+             'class'=>'Business','pax'=>2,'airline'=>'American Airlines','duration'=>'13h 25m',
+             'date'=>'2026-01-13','time'=>'22:30','arrival'=>'2026-01-15','arrivalTime'=>'05:55',
+             'outboundDate'=>'2026-01-21','outboundTime'=>'08:00','outboundArrival'=>'2026-01-21','outboundArrivalTime'=>'13:25',
+             'inboundTerminal'=>'Arrival — Hamad International (HIA)','outboundTerminal'=>'Departure — Hamad International (HIA)',
+             'submitted'=>'2025-12-05 17:00','notes'=>'Cancelled – rescheduled separately'],
         ];
     }
 

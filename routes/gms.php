@@ -12,6 +12,7 @@ use App\Http\Controllers\Gms\GmsMatchesController;
 use App\Http\Controllers\Gms\GmsSeatingController;
 use App\Http\Controllers\Gms\GmsServiceLevelController;
 use App\Http\Controllers\Gms\GmsTransportController;
+use App\Http\Controllers\Gms\GmsVenuesController;
 use Illuminate\Support\Facades\Route;
 
 // Route::prefix('gms')->middleware('auth')->name('gms.')->group(function () {
@@ -73,6 +74,12 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/events',          [GmsEventsController::class, 'store'])->name('events.store');
     Route::put('/events/{id}',      [GmsEventsController::class, 'update'])->name('events.update');
     Route::delete('/events/{id}',   [GmsEventsController::class, 'destroy'])->name('events.destroy');
+
+    // Venues (Setup)
+    Route::get('/venues',          [GmsVenuesController::class, 'index'])->name('venues.index');
+    Route::post('/venues',         [GmsVenuesController::class, 'store'])->name('venues.store');
+    Route::put('/venues/{id}',     [GmsVenuesController::class, 'update'])->name('venues.update');
+    Route::delete('/venues/{id}',  [GmsVenuesController::class, 'destroy'])->name('venues.destroy');
 
     // Matches (Setup)
     Route::get('/matches',          [GmsMatchesController::class, 'index'])->name('matches.index');
