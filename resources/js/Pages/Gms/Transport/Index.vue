@@ -49,7 +49,11 @@ function openDrawer(r) { activeReq.value = r; drawerOpen.value = true }
 
 function changeStatus(id, status) {
     const idx = localReqs.value.findIndex(r => r.id === id)
-    if (idx !== -1) localReqs.value[idx] = { ...localReqs.value[idx], status }
+    if (idx !== -1) {
+        localReqs.value = localReqs.value.map((r, i) => 
+            i === idx ? { ...r, status } : r
+        )
+    }
     router.patch(route('gms.transport.status', id), { status }, { preserveScroll: true })
     toast(`Status updated to ${status}.`)
 }

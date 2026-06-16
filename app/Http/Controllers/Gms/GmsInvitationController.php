@@ -16,11 +16,28 @@ class GmsInvitationController extends Controller
         $eventId = $event['id'] ?? null;
 
         // Fetch guests for the current event
-        $guests = Guest::with(['status', 'group'])
+        $guests = Guest::with(['status', 'group', 'flightRequests.legs', 'accommodationRequests'])
             ->when($eventId, fn($q) => $q->where('event_id', $eventId))
             ->orderBy('reference_number')
             ->get()
             ->map(function ($guest) {
+                // Get most recent flight request (prioritize confirmed)
+                $flight = $guest->flightRequests
+                    ->sortByDesc(fn($f) => [$f->status === 'confirmed' ? 1 : 0, $f->created_at])
+                    ->first();
+                
+                // Get first accommodation request (prioritize confirmed)
+                $accommodation = $guest->accommodationRequests
+                    ->sortByDesc(fn($a) => [$a->status_id === 'confirmed' ? 1 : 0, $a->created_at])
+                    ->first();
+                
+                // Build flight display string
+                $flightDisplay = null;
+                if ($flight) {
+                    $inbound = $flight->legs->where('dir', 'Inbound')->first();
+                    $flightDisplay = $inbound ? $inbound->flight_no : $flight->code;
+                }
+                
                 return [
                     'id' => $guest->id,
                     'reference_number' => $guest->reference_number,
@@ -34,6 +51,10 @@ class GmsInvitationController extends Controller
                     'status' => $guest->status?->name ?? 'pending',
                     'email' => $guest->email,
                     'phone' => $guest->phone,
+                    'flight' => $flightDisplay,
+                    'flightStatus' => $flight ? $flight->status : null,
+                    'hotel' => $accommodation ? $accommodation->hotel_name : null,
+                    'hotelStatus' => $accommodation ? $accommodation->status_id : null,
                 ];
             })
             ->toArray();

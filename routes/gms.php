@@ -56,6 +56,7 @@ Route::prefix('gms')->name('gms.')->group(function () {
     // Accommodation
     Route::get('/accommodation',                [GmsAccommodationController::class, 'index'])->name('accommodation.index');
     Route::post('/accommodation',              [GmsAccommodationController::class, 'store'])->name('accommodation.store');
+    Route::patch('/accommodation/{id}',        [GmsAccommodationController::class, 'update'])->name('accommodation.update');
     Route::patch('/accommodation/{id}/status', [GmsAccommodationController::class, 'updateStatus'])->name('accommodation.status');
     Route::delete('/accommodation/{id}',       [GmsAccommodationController::class, 'destroy'])->name('accommodation.destroy');
 

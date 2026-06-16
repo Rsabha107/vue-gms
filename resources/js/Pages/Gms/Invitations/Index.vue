@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, inject } from 'vue'
-import { useForm, Link } from '@inertiajs/vue3'
+import { useForm, Link, router } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
 import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
@@ -76,6 +76,22 @@ const allSelected = computed(() =>
     filtered.value.length > 0 && selected.value.size === filtered.value.length
 )
 
+// ── Refresh ───────────────────────────────────────────────────────
+const isRefreshing = ref(false)
+
+function refreshInvitations() {
+    isRefreshing.value = true
+    router.reload({ 
+        only: ['guests'],
+        preserveState: true,
+        preserveScroll: true,
+        onFinish: () => {
+            isRefreshing.value = false
+            toast('Invitations refreshed')
+        },
+    })
+}
+
 // ── Send modal ────────────────────────────────────────────────────
 const sendModal    = ref(false)
 const chosenTplId  = ref(props.emailTemplates[0]?.id ?? '')
@@ -114,6 +130,15 @@ function sendInvitations() {
         <p class="gms-view-subtitle">Manage outreach to registered guests</p>
       </div>
       <div class="gms-view-actions">
+        <button 
+          class="gms-btn gms-btn-ghost gms-btn-sm" 
+          @click="refreshInvitations"
+          :disabled="isRefreshing"
+          title="Refresh invitations"
+          style="margin-right: 8px;"
+        >
+          <GmsIcon name="refresh-cw" :size="14" :class="{ 'gms-spin': isRefreshing }" />
+        </button>
         <button class="gms-btn" @click="() => toast('Export feature coming soon')">
           <GmsIcon name="download" :size="14" />
           Export
@@ -180,6 +205,8 @@ function sendInvitations() {
           {{ s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }}
         </button>
       </div>
+      
+      <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ guests.length }}</span>
     </div>
 
     <!-- Guest table (list view) -->
@@ -291,8 +318,22 @@ function sendInvitations() {
                 </td>
                 <td><span class="gms-muted gms-small">{{ g.group }}</span></td>
                 <td><GmsPill :value="g.status" /></td>
-                <td><span class="gms-muted">—</span></td>
-                <td><span class="gms-muted">—</span></td>
+                <td>
+                  <div v-if="g.flight" style="display:flex;align-items:center;gap:6px;">
+                    <span class="gms-small gms-mono" style="font-weight:500;">{{ g.flight }}</span>
+                    <span v-if="g.flightStatus === 'new'" class="gms-small" style="color:var(--gms-text-3);font-size:10px;">(pending)</span>
+                    <span v-if="g.flightStatus === 'change'" class="gms-small" style="color:#2563eb;font-size:10px;">(change)</span>
+                  </div>
+                  <span v-else class="gms-muted">—</span>
+                </td>
+                <td>
+                  <div v-if="g.hotel" style="display:flex;align-items:center;gap:6px;">
+                    <span class="gms-small" style="font-weight:500;">{{ g.hotel }}</span>
+                    <span v-if="g.hotelStatus === 'new'" class="gms-small" style="color:var(--gms-text-3);font-size:10px;">(pending)</span>
+                    <span v-if="g.hotelStatus === 'change'" class="gms-small" style="color:#3a6a8a;font-size:10px;">(change)</span>
+                  </div>
+                  <span v-else class="gms-muted">—</span>
+                </td>
                 <td><span class="gms-muted">—</span></td>
                 <td><span class="gms-muted">—</span></td>
                 <td><span class="gms-muted">—</span></td>

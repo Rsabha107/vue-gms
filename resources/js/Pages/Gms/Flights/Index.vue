@@ -115,8 +115,13 @@ function refreshFlights() {
 // ── Drawer ────────────────────────────────────────────────────────
 const drawerOpen = ref(false)
 const activeReq  = ref(null)
+const confirmDelete = ref(false)
 
-function openDrawer(r) { activeReq.value = r; drawerOpen.value = true }
+function openDrawer(r) { 
+    activeReq.value = r
+    drawerOpen.value = true
+    confirmDelete.value = false
+}
 
 // ── Schedule view ─────────────────────────────────────────────────
 const scheduleData = computed(() => {
@@ -215,11 +220,36 @@ function reinstateBooking(r) {
     })
 }
 
+function deleteFlightRequest(r) {
+    if (!confirmDelete.value) {
+        confirmDelete.value = true
+        return
+    }
+    
+    router.delete(route('gms.flights.destroy', r.id), {
+        onSuccess: () => {
+            const idx = localReqs.value.findIndex(x => x.id === r.id)
+            if (idx !== -1) localReqs.value.splice(idx, 1)
+            drawerOpen.value = false
+            confirmDelete.value = false
+            toast('Flight request deleted.')
+        },
+        onError: () => {
+            confirmDelete.value = false
+            toast('Failed to delete.', 'error')
+        },
+        preserveScroll: true,
+    })
+}
+
 // ── Edit leg modal ────────────────────────────────────────────────
 const legModal    = ref(false)
 const editingLeg  = ref(null) // 'inbound' | 'outbound'
 const isSavingLeg = ref(false)
-const legForm = useForm({ airline: '', flightNo: '', class: 'Business', date: '', duration: '', time: '', arrivalTime: '' })
+const legForm = useForm({ 
+    airline: '', flightNo: '', class: 'Business', date: '', duration: '', time: '', arrivalTime: '',
+    fromCode: '', fromCity: '', toCode: '', toCity: ''
+})
 
 function openEditLeg(direction) {
     editingLeg.value = direction
@@ -236,6 +266,10 @@ function openEditLeg(direction) {
         legForm.duration    = leg?.dur ?? r.duration ?? ''
         legForm.time        = leg?.dep ?? r.time ?? ''
         legForm.arrivalTime = leg?.arr ?? r.arrivalTime ?? ''
+        legForm.fromCode    = leg?.fromCode ?? r.origin ?? ''
+        legForm.fromCity    = leg?.fromCity ?? r.originCity ?? ''
+        legForm.toCode      = leg?.toCode ?? r.destination ?? ''
+        legForm.toCity      = leg?.toCity ?? r.destCity ?? ''
     } else {
         legForm.airline     = leg?.airline ?? r.airline ?? ''
         legForm.flightNo    = leg?.flightNo ?? r.outboundFlight ?? ''
@@ -244,6 +278,10 @@ function openEditLeg(direction) {
         legForm.duration    = leg?.dur ?? r.duration ?? ''
         legForm.time        = leg?.dep ?? r.outboundTime ?? ''
         legForm.arrivalTime = leg?.arr ?? r.outboundArrivalTime ?? ''
+        legForm.fromCode    = leg?.fromCode ?? r.destination ?? ''
+        legForm.fromCity    = leg?.fromCity ?? r.destCity ?? ''
+        legForm.toCode      = leg?.toCode ?? r.origin ?? ''
+        legForm.toCity      = leg?.toCity ?? r.originCity ?? ''
     }
     legModal.value = true
 }
@@ -267,6 +305,10 @@ function saveLeg() {
         dep: legForm.time,
         arr: legForm.arrivalTime,
         dur: legForm.duration,
+        from_code: legForm.fromCode,
+        from_city: legForm.fromCity,
+        to_code: legForm.toCode,
+        to_city: legForm.toCity,
     }
 
     router.patch(route('gms.flights.legs.update', { id: r.id, legId: leg.id }), legData, {
@@ -285,6 +327,10 @@ function saveLeg() {
                         dep: legForm.time,
                         arr: legForm.arrivalTime,
                         dur: legForm.duration,
+                        fromCode: legForm.fromCode,
+                        fromCity: legForm.fromCity,
+                        toCode: legForm.toCode,
+                        toCity: legForm.toCity,
                     })
                 }
 
@@ -299,6 +345,10 @@ function saveLeg() {
                         duration: legForm.duration,
                         time: legForm.time,
                         arrivalTime: legForm.arrivalTime,
+                        origin: legForm.fromCode,
+                        originCity: legForm.fromCity,
+                        destination: legForm.toCode,
+                        destCity: legForm.toCity,
                     })
                 } else {
                     // Update outbound-specific fields (NOT the shared class)
@@ -327,33 +377,89 @@ function saveLeg() {
 
 // ── New request modal ─────────────────────────────────────────────
 const newModal = ref(false)
+const selectedGuestId = ref(null)
+const guestSearchQuery = ref('')
+
 const form = useForm({
-    guestId: '', flightNo: '', route: '', origin: '', destination: '',
+    guestId: '', flightNo: '', route: '', origin: 'DOH', destination: '',
     class: 'Business', pax: 1, date: '', time: '',
     outboundDate: '', outboundTime: '', airline: '', notes: '',
+    isChange: false,
 })
 
-// Only show international guests who don't already have a flight request
-const availableGuests = computed(() => {
-    const requestedGuestIds = new Set(localReqs.value.map(r => r.guestId))
-    return props.guests.filter(g => !requestedGuestIds.has(g.id))
+// Filter and sort guests: international first
+const guestList = computed(() => {
+    const query = guestSearchQuery.value.trim().toLowerCase()
+    let filtered = props.guests
+    
+    if (query) {
+        filtered = filtered.filter(g => 
+            g.name.toLowerCase().includes(query) ||
+            (g.group && g.group.toLowerCase().includes(query)) ||
+            (g.nationality && g.nationality.toLowerCase().includes(query))
+        )
+    }
+    
+    return filtered.sort((a, b) => {
+        const aIntl = a.guestType === 'international' ? 0 : 1
+        const bIntl = b.guestType === 'international' ? 0 : 1
+        return aIntl - bIntl
+    })
 })
+
+const selectedGuest = computed(() => {
+    return selectedGuestId.value ? props.guests.find(g => g.id === selectedGuestId.value) : null
+})
+
+const selectedGuestTier = computed(() => {
+    if (!selectedGuest.value) return null
+    return props.tiers.find(t => t.id === selectedGuest.value.tier)
+})
+
+const guestHasFlight = (guestId) => {
+    return localReqs.value.some(f => f.guestId === guestId && f.status !== 'cancelled')
+}
+
+const defaultClassForTier = (tierName) => {
+    if (tierName === 'Platinum') return 'First'
+    if (tierName === 'Gold') return 'Business'
+    return 'Economy'
+}
+
+function pickGuest(guest) {
+    selectedGuestId.value = guest.id
+    form.guestId = guest.id
+    form.class = defaultClassForTier(selectedGuestTier.value?.name || '')
+    form.pax = 1 + (guest.companionList?.length || 0)
+    // Set destination from guest's nationality if available
+    if (guest.nationality) {
+        form.destination = guest.nationality.substring(0, 3).toUpperCase()
+    }
+}
+
+function incrementPax() {
+    if (form.pax < 9) form.pax++
+}
+
+function decrementPax() {
+    if (form.pax > 1) form.pax--
+}
 
 function saveNew() {
     const guest = props.guests.find(g => g.id === form.guestId)
     form.post(route('gms.flights.store'), {
         onSuccess: () => {
-            localReqs.value.unshift({
-                id: 'FLT-' + Date.now(), ...form.data(),
-                pnr: Math.random().toString(36).slice(2, 8).toUpperCase(),
-                guestName: guest?.name ?? form.guestId,
-                status: 'new', changeRequest: false,
-                arrival: '', arrivalTime: '',
-            })
-            newModal.value = false; toast('Flight request created.'); form.reset()
+            // Will be refreshed by Inertia, no need for optimistic update
+            newModal.value = false
+            selectedGuestId.value = null
+            guestSearchQuery.value = ''
+            toast('Flight request created.')
+            form.reset()
+            form.origin = 'DOH'
+            form.isChange = false
         },
         onError: () => toast('Failed to create.', 'error'),
-        preserveScroll: true,
+        preserveScroll: false, // Reload to get fresh data with legs
     })
 }
 </script>
@@ -415,11 +521,13 @@ function saveNew() {
         <GmsIcon name="search" :size="14" class="gms-search-icon" />
         <input v-model="search" class="gms-search-input" placeholder="Search guest, PNR or flight…" />
       </div>
-      <div class="gms-seg" style="margin-left:auto;">
+      <div class="gms-seg">
         <button v-for="t in tabs" :key="t.key" :class="{ on: statusFilter === t.key }" @click="statusFilter = t.key">
           {{ t.label }}<span v-if="t.key !== 'all'" class="gms-seg-count">{{ countFor(t.key) }}</span>
         </button>
       </div>
+      
+      <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ localReqs.length }}</span>
     </div>
 
     <!-- Table -->
@@ -541,8 +649,8 @@ function saveNew() {
                 <GmsAvatar :name="ev.guest.name" size="sm" />
                 <div style="flex:1;min-width:0;">
                   <div class="fl-ev-n">{{ ev.guest.name }}</div>
-                  <div class="gms-muted" style="font-size:11px;">
-                    {{ ev.leg.fromCode }} → DOH · {{ ev.leg.flightNo }}
+                  <div class="gms-muted" style="font-size:11px;font-family:var(--gms-font-mono);text-transform:uppercase;">
+                    {{ ev.leg.fromCode }} → {{ ev.leg.toCode }} · {{ ev.leg.flightNo }}
                   </div>
                 </div>
                 <GmsPill
@@ -574,8 +682,8 @@ function saveNew() {
                 <GmsAvatar :name="ev.guest.name" size="sm" />
                 <div style="flex:1;min-width:0;">
                   <div class="fl-ev-n">{{ ev.guest.name }}</div>
-                  <div class="gms-muted" style="font-size:11px;">
-                    DOH → {{ ev.leg.toCode }} · {{ ev.leg.flightNo }}
+                  <div class="gms-muted" style="font-size:11px;font-family:var(--gms-font-mono);text-transform:uppercase;">
+                    {{ ev.leg.fromCode }} → {{ ev.leg.toCode }} · {{ ev.leg.flightNo }}
                   </div>
                 </div>
                 <GmsPill
@@ -638,8 +746,8 @@ function saveNew() {
         </div>
         <div class="flt-leg-route">
           <div class="flt-leg-end">
-            <div class="flt-leg-iata">{{ activeReq.origin }}</div>
-            <div class="flt-leg-city">{{ activeReq.originCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.fromCode ?? activeReq.origin }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.fromCity ?? activeReq.originCity }}</div>
             <div class="flt-leg-time">{{ activeReq.time }}</div>
           </div>
           <div class="flt-leg-mid">
@@ -652,8 +760,8 @@ function saveNew() {
             <span class="flt-leg-carrier">{{ activeReq.airline }}</span>
           </div>
           <div class="flt-leg-end right">
-            <div class="flt-leg-iata">{{ activeReq.destination }}</div>
-            <div class="flt-leg-city">{{ activeReq.destCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.toCode ?? activeReq.destination }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.toCity ?? activeReq.destCity }}</div>
             <div class="flt-leg-time">{{ activeReq.arrivalTime }}</div>
           </div>
         </div>
@@ -680,8 +788,8 @@ function saveNew() {
         </div>
         <div class="flt-leg-route">
           <div class="flt-leg-end">
-            <div class="flt-leg-iata">{{ activeReq.destination }}</div>
-            <div class="flt-leg-city">{{ activeReq.destCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.fromCode ?? activeReq.destination }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.fromCity ?? activeReq.destCity }}</div>
             <div class="flt-leg-time">{{ activeReq.outboundTime }}</div>
           </div>
           <div class="flt-leg-mid">
@@ -694,8 +802,8 @@ function saveNew() {
             <span class="flt-leg-carrier">{{ activeReq.airline }}</span>
           </div>
           <div class="flt-leg-end right">
-            <div class="flt-leg-iata">{{ activeReq.origin }}</div>
-            <div class="flt-leg-city">{{ activeReq.originCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.toCode ?? activeReq.origin }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.toCity ?? activeReq.originCity }}</div>
             <div class="flt-leg-time">{{ activeReq.outboundArrivalTime }}</div>
           </div>
         </div>
@@ -731,88 +839,255 @@ function saveNew() {
 
     <template #footer>
       <GmsBtn variant="ghost" icon="user" :iconSize="13">Guest profile</GmsBtn>
-      <GmsBtn v-if="canConfirm(activeReq)" variant="ghost" icon="x" :iconSize="13" @click="cancelBooking(activeReq)">Cancel</GmsBtn>
-      <GmsBtn v-if="canConfirm(activeReq)" variant="primary" icon="check" :iconSize="13" @click="confirmRow(activeReq)">Confirm booking</GmsBtn>
-      <GmsBtn v-if="!canConfirm(activeReq)" variant="primary" icon="refresh-cw" :iconSize="13" @click="reinstateBooking(activeReq)">Re-instate</GmsBtn>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <GmsBtn 
+          variant="danger" 
+          icon="trash-2" 
+          :iconSize="13" 
+          @click="deleteFlightRequest(activeReq)"
+        >
+          {{ confirmDelete ? 'Confirm delete?' : 'Delete' }}
+        </GmsBtn>
+        <GmsBtn v-if="canConfirm(activeReq)" variant="ghost" icon="x" :iconSize="13" @click="cancelBooking(activeReq)">Cancel</GmsBtn>
+        <GmsBtn v-if="canConfirm(activeReq)" variant="primary" icon="check" :iconSize="13" @click="confirmRow(activeReq)">Confirm booking</GmsBtn>
+        <GmsBtn v-if="!canConfirm(activeReq)" variant="primary" icon="refresh-cw" :iconSize="13" @click="reinstateBooking(activeReq)">Re-instate</GmsBtn>
+      </div>
     </template>
   </GmsDrawer>
 
   <!-- ── New request modal ── -->
-  <GmsModal :open="newModal" title="New Flight Request" @close="newModal = false">
-    <div style="display:flex;flex-direction:column;gap:14px;">
-      <div class="gms-field">
-        <label class="gms-label">Guest</label>
-        <select v-model="form.guestId" class="gms-input gms-select">
-          <option value="">— Select international guest —</option>
-          <option v-for="g in availableGuests" :key="g.id" :value="g.id">
-            {{ g.name }}{{ g.nationality ? ` (${g.nationality})` : '' }}
-          </option>
-        </select>
-        <p v-if="availableGuests.length === 0" style="font-size:12px;color:var(--gms-text-3);margin-top:6px;">
-          All international guests already have flight requests.
-        </p>
-      </div>
-      <div class="gms-form-grid">
-        <div class="gms-field">
-          <label class="gms-label">Inbound flight no.</label>
-          <input v-model="form.flightNo" class="gms-input" placeholder="QR 2025" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Route</label>
-          <input v-model="form.route" class="gms-input" placeholder="CDG → DOH" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Airline</label>
-          <input v-model="form.airline" class="gms-input" placeholder="Qatar Airways" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Class</label>
-          <select v-model="form.class" class="gms-input gms-select">
-            <option>First</option><option>Business</option><option>Economy</option>
-          </select>
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Passengers</label>
-          <input v-model.number="form.pax" type="number" min="1" class="gms-input" />
+  <GmsModal :open="newModal" title="New Flight Request" size="lg" @close="newModal = false; selectedGuestId = null; guestSearchQuery = ''">
+    <div style="padding:0;">
+      
+      <!-- Step 1: Guest selection -->
+      <div class="nf-step">1 · Guest</div>
+      <div style="margin:2px 0 10px;">
+        <div class="gms-search-wrap">
+          <GmsIcon name="search" :size="14" class="gms-search-icon" />
+          <input v-model="guestSearchQuery" class="gms-search-input" placeholder="Search the guest registry…" />
         </div>
       </div>
-      <div class="gms-form-grid">
-        <div class="gms-field">
-          <label class="gms-label">Inbound date</label>
-          <input v-model="form.date" type="date" class="gms-input" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Inbound time</label>
-          <input v-model="form.time" type="time" class="gms-input" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Outbound date</label>
-          <input v-model="form.outboundDate" type="date" class="gms-input" />
-        </div>
-        <div class="gms-field">
-          <label class="gms-label">Outbound time</label>
-          <input v-model="form.outboundTime" type="time" class="gms-input" />
+
+      <div class="nf-glist">
+        <button
+          v-for="g in guestList"
+          :key="g.id"
+          type="button"
+          :class="['nf-guest', { 'on': selectedGuestId === g.id }]"
+          @click="pickGuest(g)"
+        >
+          <GmsAvatar :name="g.name" size="sm" />
+          <div style="flex:1;min-width:0;text-align:left;">
+            <div class="nf-gn">{{ g.name }}</div>
+            <div class="gms-muted" style="font-size:11px;">
+              {{ g.guestType === 'international' ? 'Int\'l' : 'Local' }} · {{ g.group || '—' }}
+            </div>
+          </div>
+          <span v-if="guestHasFlight(g.id)" class="gms-pill" style="font-size:10px;" title="Already has a booking">has flight</span>
+          <span
+            v-if="props.tiers.find(t => t.id === g.tier)"
+            class="gms-pill"
+            :style="{
+              background: props.tiers.find(t => t.id === g.tier).bg,
+              color: props.tiers.find(t => t.id === g.tier).color,
+              fontSize: '10.5px'
+            }"
+          >{{ g.tier }}</span>
+          <span class="nf-radio">
+            <GmsIcon v-if="selectedGuestId === g.id" name="check" :size="13" />
+          </span>
+        </button>
+        <div v-if="guestList.length === 0" class="gms-muted" style="font-size:12.5px;padding:14px;text-align:center;">
+          No guests match "{{ guestSearchQuery }}".
         </div>
       </div>
-      <div class="gms-field">
-        <label class="gms-label">Notes</label>
-        <textarea v-model="form.notes" class="gms-input gms-textarea" rows="2" />
+
+      <!-- Step 2: Flight details (only shown when guest selected) -->
+      <div :class="['nf-details', { 'off': !selectedGuest }]">
+        <div class="nf-step" style="margin-top:20px;">2 · Flight details</div>
+        <div v-if="!selectedGuest" class="gms-muted" style="font-size:12.5px;margin-top:6px;">
+          Select a guest above to set their route.
+        </div>
+        <div v-else>
+          <!-- Change request toggle -->
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input 
+                type="checkbox" 
+                v-model="form.isChange" 
+                style="width:16px;height:16px;cursor:pointer;accent-color:var(--gms-maroon);"
+              >
+              <span style="font-size:13px;font-weight:500;">This is a change request</span>
+            </label>
+            <span 
+              v-if="form.isChange" 
+              class="gms-pill" 
+              style="background:var(--warn);color:white;font-size:10.5px;font-weight:600;"
+            >CHANGE</span>
+          </div>
+
+          <!-- Origin & Destination fields -->
+          <div class="gms-form-grid" style="margin-bottom:14px;">
+            <div class="gms-field">
+              <label class="gms-label">Origin</label>
+              <input 
+                type="text" 
+                v-model="form.destination" 
+                class="gms-input" 
+                placeholder="e.g. LHR, JFK, SYD" 
+                style="text-transform:uppercase;font-family:var(--gms-font-mono);" 
+                maxlength="3"
+              >
+              <div class="gms-hint" style="margin-top:4px;font-size:11px;">Guest's home airport (3-letter code)</div>
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Destination</label>
+              <input 
+                type="text" 
+                v-model="form.origin" 
+                class="gms-input" 
+                readonly 
+                style="background:var(--gms-surface-2);cursor:not-allowed;font-family:var(--gms-font-mono);"
+              >
+              <div class="gms-hint" style="margin-top:4px;font-size:11px;">Doha (event venue)</div>
+            </div>
+          </div>
+
+          <!-- Route display -->
+          <div class="nf-od" style="margin-top:4px;">
+            <span class="fl-od" style="font-size:15px;">
+              <b>{{ form.destination || 'INT' }}</b>
+              <span class="fl-swap">⇄</span>
+              <b>{{ form.origin }}</b>
+            </span>
+            <span class="gms-muted" style="font-size:12.5px;">
+              {{ selectedGuest.nationality || 'International' }} ↔ Doha · Qatar Airways
+            </span>
+            <span v-if="selectedGuest.guestType === 'local'" class="gms-pill" style="background:var(--warn-soft);color:var(--warn);margin-left:auto;font-size:10.5px;">local guest</span>
+          </div>
+
+          <!-- Form fields -->
+          <div class="gms-form-grid" style="margin-top:14px;">
+            <!-- Cabin class -->
+            <div class="gms-field">
+              <label class="gms-label">Cabin class</label>
+              <div class="gms-seg">
+                <button
+                  v-for="cls in ['Economy', 'Business', 'First']"
+                  :key="cls"
+                  type="button"
+                  :class="{ on: form.class === cls }"
+                  @click="form.class = cls"
+                >{{ cls }}</button>
+              </div>
+            </div>
+
+            <!-- Passengers -->
+            <div class="gms-field">
+              <label class="gms-label">Passengers</label>
+              <div class="nf-stepper">
+                <button type="button" @click="decrementPax">−</button>
+                <span class="tnum">{{ form.pax }}</span>
+                <button type="button" @click="incrementPax">+</button>
+                <span class="gms-muted" style="font-size:11.5px;margin-left:8px;">
+                  {{ form.pax > 1 ? `guest + ${form.pax - 1}` : 'guest only' }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Inbound date -->
+            <div class="gms-field">
+              <label class="gms-label">Inbound date</label>
+              <input v-model="form.date" type="date" class="gms-input" />
+            </div>
+
+            <!-- Outbound date -->
+            <div class="gms-field">
+              <label class="gms-label">Outbound date</label>
+              <input v-model="form.outboundDate" type="date" class="gms-input" />
+            </div>
+          </div>
+
+          <div class="gms-muted" style="font-size:12px;margin-top:10px;padding:10px;background:var(--gms-surface-2);border-radius:8px;">
+            <span style="display:inline-block;padding:2px 6px;background:var(--gms-bg);border-radius:4px;font-weight:600;font-size:10px;margin-right:6px;">draft</span>
+            Created as a <strong>{{ form.isChange ? 'Change' : 'New' }}</strong> request — flight numbers & times are pre-filled and editable, then Confirm to issue.
+          </div>
+        </div>
       </div>
+
     </div>
     <template #footer>
-      <GmsBtn variant="ghost" @click="newModal = false">Cancel</GmsBtn>
-      <GmsBtn variant="primary" :disabled="form.processing" @click="saveNew">Create request</GmsBtn>
+      <span class="gms-muted" style="font-size:12.5px;">
+        {{ selectedGuest ? `${selectedGuest.name} · ${form.class} · ${form.pax} pax` : 'No guest selected' }}
+      </span>
+      <div style="margin-left:auto;display:flex;gap:10px;">
+        <GmsBtn variant="ghost" @click="newModal = false; selectedGuestId = null; guestSearchQuery = ''">Cancel</GmsBtn>
+        <GmsBtn variant="primary" :disabled="!selectedGuest || form.processing" @click="saveNew">
+          <GmsIcon name="plus" :size="13" />
+          Create request
+        </GmsBtn>
+      </div>
     </template>
   </GmsModal>
 
   <!-- ── Edit leg modal ── -->
   <GmsModal :open="legModal" :title="editingLeg === 'inbound' ? 'Edit inbound leg' : 'Edit outbound leg'" @close="legModal = false">
     <template v-if="activeReq">
-      <!-- Route subtitle -->
-      <p style="font-size:13px;color:var(--gms-text-3);margin-bottom:20px;">
-        <template v-if="editingLeg === 'inbound'">{{ activeReq.origin }} → {{ activeReq.destination }} · {{ activeReq.originCity }} to {{ activeReq.destCity }}</template>
-        <template v-else>{{ activeReq.destination }} → {{ activeReq.origin }} · {{ activeReq.destCity }} to {{ activeReq.originCity }}</template>
-      </p>
+      <!-- Origin & Destination -->
+      <div class="gms-form-grid" style="margin-bottom:14px;">
+        <div class="gms-field">
+          <label class="gms-label">Origin code *</label>
+          <input 
+            v-model="legForm.fromCode" 
+            class="gms-input" 
+            placeholder="LHR" 
+            maxlength="3"
+            style="text-transform:uppercase;font-family:var(--gms-font-mono);"
+          />
+          <div class="gms-hint" style="margin-top:4px;font-size:11px;">3-letter airport code</div>
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">Origin city</label>
+          <input 
+            v-model="legForm.fromCity" 
+            class="gms-input" 
+            placeholder="London"
+          />
+        </div>
+      </div>
+
+      <div class="gms-form-grid" style="margin-bottom:14px;">
+        <div class="gms-field">
+          <label class="gms-label">Destination code *</label>
+          <input 
+            v-model="legForm.toCode" 
+            class="gms-input" 
+            placeholder="DOH" 
+            maxlength="3"
+            style="text-transform:uppercase;font-family:var(--gms-font-mono);"
+          />
+          <div class="gms-hint" style="margin-top:4px;font-size:11px;">3-letter airport code</div>
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">Destination city</label>
+          <input 
+            v-model="legForm.toCity" 
+            class="gms-input" 
+            placeholder="Doha"
+          />
+        </div>
+      </div>
+
+      <!-- Route preview -->
+      <div style="padding:10px 12px;background:var(--gms-surface-2);border-radius:8px;margin-bottom:14px;">
+        <div class="gms-muted" style="font-size:11px;margin-bottom:4px;">Route preview</div>
+        <div style="font-weight:600;font-size:14px;font-family:var(--gms-font-mono);text-transform:uppercase;">
+          {{ legForm.fromCode || '???' }} → {{ legForm.toCode || '???' }}
+        </div>
+        <div class="gms-muted" style="font-size:12px;margin-top:2px;">
+          {{ legForm.fromCity || 'Origin' }} to {{ legForm.toCity || 'Destination' }}
+        </div>
+      </div>
 
       <!-- Airline -->
       <div class="gms-field" style="margin-bottom:14px;">
@@ -862,7 +1137,11 @@ function saveNew() {
 
     <template #footer>
       <GmsBtn variant="ghost" @click="legModal = false" :disabled="isSavingLeg">Cancel</GmsBtn>
-      <GmsBtn variant="primary" :disabled="!legForm.flightNo || isSavingLeg" @click="saveLeg">
+      <GmsBtn 
+        variant="primary" 
+        :disabled="!legForm.flightNo || !legForm.fromCode || !legForm.toCode || isSavingLeg" 
+        @click="saveLeg"
+      >
         <GmsIcon v-if="isSavingLeg" name="refresh-cw" :size="12" class="gms-spin" style="margin-right: 4px;" />
         {{ isSavingLeg ? 'Saving...' : 'Save leg' }}
       </GmsBtn>

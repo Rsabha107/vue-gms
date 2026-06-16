@@ -5119,6 +5119,136 @@
 }
 .flt-action-btn:hover { border-color: var(--gms-maroon); color: var(--gms-maroon); }
 
+/* ── New flight modal ── */
+.nf-step {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--gms-text-3);
+  margin-bottom: 8px;
+}
+
+.nf-glist {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 218px;
+  overflow-y: auto;
+  padding: 2px;
+  border: 1px solid var(--gms-border);
+  border-radius: 8px;
+  background: var(--gms-surface-2);
+}
+
+.nf-guest {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--gms-surface);
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.12s;
+  text-align: left;
+  width: 100%;
+}
+
+.nf-guest:hover {
+  border-color: var(--gms-border);
+}
+
+.nf-guest.on {
+  border-color: var(--gms-maroon);
+  background: var(--gms-maroon-tint);
+}
+
+.nf-gn {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nf-radio {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gms-border);
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #fff;
+}
+
+.nf-guest.on .nf-radio {
+  background: var(--gms-maroon);
+  border-color: var(--gms-maroon);
+}
+
+.nf-details.off {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.nf-od {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--gms-surface-2);
+  border: 1px solid var(--gms-border);
+}
+
+.fl-od {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.fl-swap {
+  color: var(--gms-text-3);
+  font-size: 14px;
+}
+
+.nf-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nf-stepper button {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--gms-border);
+  background: var(--gms-surface);
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  color: var(--gms-text-2);
+}
+
+.nf-stepper button:hover {
+  border-color: var(--gms-maroon);
+  color: var(--gms-maroon);
+  background: var(--gms-maroon-soft);
+}
+
+.nf-stepper span.tnum {
+  min-width: 26px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 /* ── Flight schedule view ── */
 .fl-sched {
   display: flex;
@@ -5295,7 +5425,7 @@
 .flt-leg-route { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .flt-leg-end { min-width: 52px; }
 .flt-leg-end.right { text-align: right; }
-.flt-leg-iata { font: 700 22px/1 var(--gms-font-display); color: var(--gms-text); }
+.flt-leg-iata { font: 700 22px/1 var(--gms-font-display); color: var(--gms-text); text-transform: uppercase; }
 .flt-leg-city { font-size: 11px; color: var(--gms-text-3); margin-top: 2px; }
 .flt-leg-time { font: 600 12px/1 var(--gms-font-mono); color: var(--gms-text-2); margin-top: 4px; }
 
@@ -5311,7 +5441,10 @@
   flex: 1;
   border-top: 1.5px dashed var(--gms-border);
 }
-.flt-leg-plane-ico { color: var(--gms-text-3); display: flex; }
+.flt-leg-plane-ico { 
+  color: var(--gms-maroon); 
+  display: flex; 
+}
 .flt-leg-plane-in svg,
 .flt-leg-plane-out svg {
   transform: rotate(90deg);

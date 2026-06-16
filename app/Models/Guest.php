@@ -94,6 +94,14 @@ class Guest extends Model
     }
 
     /**
+     * Get all accommodation requests for this guest
+     */
+    public function accommodationRequests()
+    {
+        return $this->hasMany(AccommodationRequest::class);
+    }
+
+    /**
      * Scope for confirmed guests
      */
     public function scopeConfirmed($query)

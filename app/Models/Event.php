@@ -35,6 +35,30 @@ class Event extends Model
     }
 
     /**
+     * Get all guests for this event
+     */
+    public function guests()
+    {
+        return $this->hasMany(Guest::class);
+    }
+
+    /**
+     * Get all flight requests for this event
+     */
+    public function flightRequests()
+    {
+        return $this->hasMany(FlightRequest::class);
+    }
+
+    /**
+     * Get all accommodation requests for this event
+     */
+    public function accommodationRequests()
+    {
+        return $this->hasMany(AccommodationRequest::class);
+    }
+
+    /**
      * Scope to get only active events
      */
     public function scopeActive($query)

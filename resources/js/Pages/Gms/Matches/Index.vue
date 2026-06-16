@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, inject, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
@@ -16,6 +16,11 @@ const props = defineProps({
 
 const toast = inject('toast')
 const localMatches = ref(props.matches.map(m => ({ ...m })))
+
+// Watch for props.matches changes (e.g., after reload)
+watch(() => props.matches, (newMatches) => {
+    localMatches.value = newMatches.map(m => ({ ...m }))
+}, { deep: true })
 
 // ── View + filter ─────────────────────────────────────────────────
 const viewMode    = ref('table') // 'table' | 'grid'
@@ -74,14 +79,30 @@ function stageClass(code) {
     return 'mc-stage-final'
 }
 
-function allocated(m) { return (m.seatsTotal || 0) - (m.seatsLeft || 0) }
-function capPct(m)    { return m.seatsTotal ? Math.min(100, allocated(m) / m.seatsTotal * 100) : 0 }
+function allocated(m) { return m.sold || 0 }
+function capPct(m)    { return m.capacity ? Math.min(100, allocated(m) / m.capacity * 100) : 0 }
 
 // ── Modal state ───────────────────────────────────────────────────
 const matchModal   = ref(false)
 const editingMatch = ref(null)
 const deleteModal  = ref(false)
 const deletingId   = ref(null)
+
+// ── Refresh ───────────────────────────────────────────────────────
+const isRefreshing = ref(false)
+
+function refreshMatches() {
+    isRefreshing.value = true
+    router.reload({ 
+        only: ['matches'],
+        preserveState: true,
+        preserveScroll: true,
+        onFinish: () => {
+            isRefreshing.value = false
+            toast('Matches refreshed')
+        },
+    })
+}
 
 const stageOptions = [
     { code: 'OPENING',  label: 'Opening'       },
@@ -104,6 +125,65 @@ const form = useForm({
     featured: false, bracketTBD: false,
 })
 
+const deleteForm = useForm({})
+const datePickerRef = ref(null)
+
+// Computed formatted date for display (d-m-Y)
+const formattedDate = computed({
+    get() {
+        if (!form.date) return ''
+        const parts = form.date.split('-')
+        if (parts.length === 3) {
+            return `${parts[2]}-${parts[1]}-${parts[0]}`
+        }
+        return form.date
+    },
+    set(value) {
+        if (!value) {
+            form.date = ''
+            return
+        }
+        // Convert d-m-Y to Y-m-d
+        const parts = value.split('-')
+        if (parts.length === 3) {
+            form.date = `${parts[2]}-${parts[1]}-${parts[0]}`
+        }
+    }
+})
+
+function openDatePicker() {
+    if (datePickerRef.value) {
+        // Try modern showPicker API, fallback to click
+        try {
+            datePickerRef.value.showPicker()
+        } catch (e) {
+            datePickerRef.value.click()
+        }
+    }
+}
+
+// Auto-extract day from date
+watch(() => form.date, (newDate) => {
+    if (newDate) {
+        try {
+            const dateObj = new Date(newDate + 'T00:00:00')
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+            form.day = days[dateObj.getDay()]
+        } catch (e) {
+            form.day = ''
+        }
+    } else {
+        form.day = ''
+    }
+})
+
+// Auto-generate label from team names (only if label is empty)
+watch([() => form.homeTeam, () => form.awayTeam], ([home, away]) => {
+    if (home && away && !form.stageLabel) {
+        form.stageLabel = `${home} v ${away}`
+    }
+})
+
 function onStageChange() {
     const opt = stageOptions.find(s => s.label === form.stage)
     if (opt) form.stageCode = opt.code
@@ -112,6 +192,24 @@ function onStageChange() {
 function openNew() {
     editingMatch.value = null
     form.reset()
+    form.clearErrors()
+    // Explicitly clear all fields
+    form.name = ''
+    form.venueId = ''
+    form.stageCode = ''
+    form.stageLabel = ''
+    form.homeTeam = ''
+    form.homeCode = ''
+    form.awayTeam = ''
+    form.awayCode = ''
+    form.date = ''
+    form.day = ''
+    form.kickoff = ''
+    form.stage = ''
+    form.seatsTotal = ''
+    form.seatsSold = ''
+    form.featured = false
+    form.bracketTBD = false
     matchModal.value = true
 }
 
@@ -128,12 +226,11 @@ function openEdit(match) {
     form.awayTeam   = match.awayTeam   ?? ''
     form.awayCode   = match.awayCode   ?? ''
     form.day        = hasDay ? parts[0] : ''
-    form.date       = hasDay ? parts.slice(1).join(' ') : (match.date ?? '')
+    form.date       = match.rawDate ?? '' // Use raw date in YYYY-MM-DD format for date picker
     form.kickoff    = match.kickoff    ?? ''
     form.stage      = match.stage      ?? ''
-    form.seatsTotal = match.seatsTotal ?? ''
-    form.seatsSold  = match.seatsTotal != null && match.seatsLeft != null
-                        ? match.seatsTotal - match.seatsLeft : ''
+    form.seatsTotal = match.capacity ?? ''
+    form.seatsSold  = match.sold ?? ''
     form.featured   = match.featured   ?? false
     form.bracketTBD = match.bracketTBD ?? false
     form.name       = match.name       ?? ''
@@ -141,26 +238,82 @@ function openEdit(match) {
 }
 
 function saveMatch() {
+    // Clear previous errors
+    form.clearErrors()
+    
+    // Frontend validation
+    let hasErrors = false
+    
+    if (!form.homeTeam || !form.awayTeam) {
+        form.setError('homeTeam', 'Please enter both team names')
+        hasErrors = true
+    }
+    if (!form.venueId) {
+        form.setError('venueId', 'Please select a venue')
+        hasErrors = true
+    }
+    if (!form.stage) {
+        form.setError('stage', 'Please select a stage')
+        hasErrors = true
+    }
+    if (!form.date) {
+        form.setError('date', 'Please enter a date')
+        hasErrors = true
+    }
+    if (!form.kickoff) {
+        form.setError('kickoff', 'Please enter kickoff time')
+        hasErrors = true
+    }
+    
+    if (hasErrors) return
+    
     const name       = form.homeTeam && form.awayTeam ? `${form.homeTeam} v ${form.awayTeam}` : form.name
-    const date       = form.day ? `${form.day} ${form.date}`.trim() : form.date
+    // Send date as-is (YYYY-MM-DD from date picker), backend will extract day
+    const date       = form.date
     const seatsTotal = Number(form.seatsTotal) || 0
     const seatsLeft  = Math.max(0, seatsTotal - (Number(form.seatsSold) || 0))
     const venName    = props.venues.find(v => String(v.id) === String(form.venueId))?.name
 
-    const patch = { ...form.data(), name, date, seatsTotal, seatsLeft, venueName: venName }
+    // Build payload with computed name
+    const payload = {
+        name,
+        venueId: form.venueId,
+        stageCode: form.stageCode,
+        stageLabel: form.stageLabel,
+        homeTeam: form.homeTeam,
+        homeCode: form.homeCode,
+        awayTeam: form.awayTeam,
+        awayCode: form.awayCode,
+        date: form.date,
+        kickoff: form.kickoff,
+        stage: form.stage,
+        capacity: form.seatsTotal,
+        sold: form.seatsSold,
+        featured: form.featured,
+        tbd: form.bracketTBD,
+    }
+
+    const patch = { ...payload, seatsTotal, seatsLeft, venueName: venName }
 
     if (editingMatch.value) {
-        const idx = localMatches.value.findIndex(m => m.id === editingMatch.value.id)
-        if (idx !== -1) localMatches.value[idx] = { ...localMatches.value[idx], ...patch }
-        form.put(route('gms.matches.update', editingMatch.value.id), {
-            onSuccess: () => { matchModal.value = false; toast('Match updated.') },
+        form.transform(() => payload).put(route('gms.matches.update', editingMatch.value.id), {
+            onSuccess: () => { 
+                matchModal.value = false
+                toast('Match updated.')
+                // Reload data to ensure consistency
+                router.reload({ only: ['matches'], preserveScroll: true })
+            },
             onError:   () => toast('Failed to save.', 'error'),
             preserveScroll: true,
         })
     } else {
-        localMatches.value.unshift({ id: 'M' + Date.now(), ...patch })
-        form.post(route('gms.matches.store'), {
-            onSuccess: () => { matchModal.value = false; toast('Match created.') },
+        form.transform(() => payload).post(route('gms.matches.store'), {
+            onSuccess: () => { 
+                matchModal.value = false
+                toast('Match created.')
+                // Reload data to get the real database ID
+                router.reload({ only: ['matches'], preserveScroll: true })
+            },
             onError:   () => toast('Failed to save.', 'error'),
             preserveScroll: true,
         })
@@ -170,9 +323,13 @@ function saveMatch() {
 function openDelete(id) { deletingId.value = id; deleteModal.value = true }
 
 function confirmDelete() {
-    localMatches.value = localMatches.value.filter(m => m.id !== deletingId.value)
-    router.delete(route('gms.matches.destroy', deletingId.value), {
-        onSuccess: () => { deleteModal.value = false; toast('Match deleted.') },
+    deleteForm.delete(route('gms.matches.destroy', deletingId.value), {
+        onSuccess: () => { 
+            deleteModal.value = false
+            toast('Match deleted.')
+            // Reload data after deletion
+            router.reload({ only: ['matches'], preserveScroll: true })
+        },
         onError:   () => toast('Failed to delete.', 'error'),
         preserveScroll: true,
     })
@@ -193,6 +350,15 @@ onBeforeUnmount(() => {})
         </p>
       </div>
       <div class="gms-view-actions">
+        <button 
+          class="gms-btn gms-btn-ghost gms-btn-sm" 
+          @click="refreshMatches"
+          :disabled="isRefreshing"
+          title="Refresh matches"
+          style="margin-right: 8px;"
+        >
+          <GmsIcon name="refresh-cw" :size="14" :class="{ 'gms-spin': isRefreshing }" />
+        </button>
         <button class="gms-btn gms-btn-primary" @click="openNew">
           <GmsIcon name="plus" :size="14" /> New match
         </button>
@@ -294,7 +460,7 @@ onBeforeUnmount(() => {})
                 <div class="mxt-cap-bar">
                   <div class="mxt-cap-fill" :style="{ width: capPct(match) + '%' }"></div>
                 </div>
-                <span class="mxt-cap-text">{{ allocated(match) }}/{{ match.seatsTotal }}</span>
+                <span class="mxt-cap-text">{{ allocated(match) }}/{{ match.capacity }}</span>
               </td>
 
               <!-- Actions -->
@@ -401,7 +567,7 @@ onBeforeUnmount(() => {})
                   @click="form.homeCode = cc ?? ''"
                 >{{ cc ?? '🏆' }}</button>
               </div>
-              <input v-model="form.homeTeam" class="gms-input" placeholder="Team name" />
+              <input v-model="form.homeTeam" class="gms-input" placeholder="Team name" @input="form.clearErrors('homeTeam')" />
             </div>
             <!-- VS -->
             <div class="mxm-vs-sep">v</div>
@@ -417,23 +583,25 @@ onBeforeUnmount(() => {})
                   @click="form.awayCode = cc ?? ''"
                 >{{ cc ?? '🏆' }}</button>
               </div>
-              <input v-model="form.awayTeam" class="gms-input" placeholder="Team name" />
+              <input v-model="form.awayTeam" class="gms-input" placeholder="Team name" @input="form.clearErrors('homeTeam')" />
             </div>
           </div>
+          <div v-if="form.errors.homeTeam" class="gms-error">{{ form.errors.homeTeam }}</div>
         </div>
 
         <!-- Stage + Label -->
         <div class="gms-form-grid">
           <div class="gms-field">
             <label class="gms-label">Stage / round</label>
-            <select v-model="form.stage" class="gms-input" @change="onStageChange">
+            <select v-model="form.stage" class="gms-input" @change="onStageChange(); form.clearErrors('stage')">
               <option value="">Select stage</option>
               <option v-for="s in stageOptions" :key="s.code" :value="s.label">{{ s.label }}</option>
             </select>
+            <div v-if="form.errors.stage" class="gms-error">{{ form.errors.stage }}</div>
           </div>
           <div class="gms-field">
             <label class="gms-label">Label</label>
-            <input v-model="form.stageLabel" class="gms-input" placeholder="Opening Ceremony & Group A" />
+            <input v-model="form.stageLabel" class="gms-input" placeholder="Team A v Team B" />
           </div>
         </div>
 
@@ -441,11 +609,34 @@ onBeforeUnmount(() => {})
         <div class="gms-form-grid">
           <div class="gms-field">
             <label class="gms-label">Date</label>
-            <input v-model="form.date" class="gms-input" placeholder="10 Aug 2026" />
+            <div style="position: relative;">
+              <input 
+                v-model="formattedDate" 
+                type="text" 
+                class="gms-input" 
+                placeholder="dd-mm-yyyy"
+                readonly
+                @click="openDatePicker"
+                style="cursor: pointer; padding-right: 36px;"
+              />
+              <input 
+                ref="datePickerRef"
+                v-model="form.date" 
+                type="date" 
+                style="position: absolute; opacity: 0; width: 1px; height: 1px; left: 0; top: 0;"
+                @input="form.clearErrors('date')"
+              />
+              <GmsIcon 
+                name="calendar" 
+                :size="16" 
+                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--gms-text-3);"
+              />
+            </div>
+            <div v-if="form.errors.date" class="gms-error">{{ form.errors.date }}</div>
           </div>
           <div class="gms-field">
             <label class="gms-label">Day</label>
-            <input v-model="form.day" class="gms-input" placeholder="Mon" maxlength="3" />
+            <input v-model="form.day" class="gms-input" placeholder="Mon" maxlength="3" readonly />
           </div>
         </div>
 
@@ -453,14 +644,16 @@ onBeforeUnmount(() => {})
         <div class="gms-form-grid">
           <div class="gms-field">
             <label class="gms-label">Kick-off</label>
-            <input v-model="form.kickoff" class="gms-input" placeholder="19:00" />
+            <input v-model="form.kickoff" class="gms-input" placeholder="19:00" @input="form.clearErrors('kickoff')" />
+            <div v-if="form.errors.kickoff" class="gms-error">{{ form.errors.kickoff }}</div>
           </div>
           <div class="gms-field">
             <label class="gms-label">Venue</label>
-            <select v-model="form.venueId" class="gms-input">
+            <select v-model="form.venueId" class="gms-input" @change="form.clearErrors('venueId')">
               <option value="">Select venue</option>
               <option v-for="v in venues" :key="v.id" :value="v.id">{{ v.name }}</option>
             </select>
+            <div v-if="form.errors.venueId" class="gms-error">{{ form.errors.venueId }}</div>
           </div>
         </div>
 
@@ -491,7 +684,12 @@ onBeforeUnmount(() => {})
       </div>
       <template #footer>
         <button class="gms-btn gms-btn-ghost" @click="matchModal = false">Cancel</button>
-        <button class="gms-btn gms-btn-primary" @click="saveMatch">
+        <button 
+          class="gms-btn gms-btn-primary" 
+          @click="saveMatch"
+          :disabled="form.processing"
+        >
+          <GmsIcon v-if="form.processing" name="refresh-cw" :size="13" class="gms-spin" style="margin-right: 6px;" />
           {{ editingMatch ? 'Save changes' : 'Create match' }}
         </button>
       </template>
@@ -504,7 +702,14 @@ onBeforeUnmount(() => {})
       </p>
       <template #footer>
         <button class="gms-btn gms-btn-ghost" @click="deleteModal = false">Cancel</button>
-        <button class="gms-btn gms-btn-danger" @click="confirmDelete">Delete</button>
+        <button 
+          class="gms-btn gms-btn-danger" 
+          @click="confirmDelete"
+          :disabled="deleteForm.processing"
+        >
+          <GmsIcon v-if="deleteForm.processing" name="refresh-cw" :size="13" class="gms-spin" style="margin-right: 6px;" />
+          Delete
+        </button>
       </template>
     </GmsModal>
   </div>

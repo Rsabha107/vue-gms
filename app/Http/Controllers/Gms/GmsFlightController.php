@@ -106,12 +106,14 @@ class GmsFlightController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'guestId'  => 'required|exists:guests,id',
-            'flightNo' => 'required|string|max:20',
-            'route'    => 'required|string|max:20',
-            'class'    => 'required|string',
-            'pax'      => 'required|integer|min:1',
-            'date'     => 'required|date',
+            'guestId'     => 'required|exists:guests,id',
+            'class'       => 'required|string',
+            'pax'         => 'required|integer|min:1',
+            'date'        => 'required|date',
+            'outboundDate'=> 'required|date',
+            'origin'      => 'required|string|max:3',
+            'destination' => 'required|string|max:3',
+            'isChange'    => 'sometimes|boolean',
         ]);
 
         // Get current event
@@ -125,12 +127,50 @@ class GmsFlightController extends Controller
         $nextNum = $lastFlight ? (intval(substr($lastFlight->code, 3)) + 1) : 1;
         $code = 'FL-' . str_pad($nextNum, 3, '0', STR_PAD_LEFT);
 
-        FlightRequest::create([
+        // Determine status based on isChange flag
+        $status = ($validated['isChange'] ?? false) ? 'change' : 'new';
+
+        $flightRequest = FlightRequest::create([
             'event_id' => $eventId,
             'guest_id' => $validated['guestId'],
             'code' => $code,
-            'status' => 'new',
+            'status' => $status,
             'pax' => $validated['pax'],
+            'ref' => strtoupper(substr(md5(uniqid()), 0, 6)), // Generate PNR
+        ]);
+
+        // Create inbound leg
+        $flightRequest->legs()->create([
+            'dir' => 'Inbound',
+            'airline' => 'Qatar Airways',
+            'flight_no' => 'QR' . rand(100, 999),
+            'from_code' => strtoupper($validated['destination']),
+            'from_city' => strtoupper($validated['destination']),
+            'to_code' => strtoupper($validated['origin']),
+            'to_city' => 'Doha',
+            'date' => $validated['date'],
+            'dep' => '08:00',
+            'arr' => '12:00',
+            'cls' => $validated['class'],
+            'dur' => '4h 00m',
+            'sort' => 0,
+        ]);
+
+        // Create outbound leg
+        $flightRequest->legs()->create([
+            'dir' => 'Outbound',
+            'airline' => 'Qatar Airways',
+            'flight_no' => 'QR' . rand(100, 999),
+            'from_code' => strtoupper($validated['origin']),
+            'from_city' => 'Doha',
+            'to_code' => strtoupper($validated['destination']),
+            'to_city' => strtoupper($validated['destination']),
+            'date' => $validated['outboundDate'],
+            'dep' => '14:00',
+            'arr' => '18:00',
+            'cls' => $validated['class'],
+            'dur' => '4h 00m',
+            'sort' => 1,
         ]);
 
         return back()->with('success', 'Flight request created.');

@@ -412,7 +412,9 @@ function onConfigBack() {
 function onConfigSaved(saved) {
     const idx = localTemplates.value.findIndex(t => t.id === saved.id)
     if (idx !== -1) {
-        localTemplates.value[idx] = saved
+        localTemplates.value = localTemplates.value.map((t, i) => 
+            i === idx ? saved : t
+        )
     } else {
         localTemplates.value.push(saved)
     }
@@ -577,7 +579,11 @@ function assignTemplate() {
     seatState.value[activeMatch.value.id] = seats
     seatState.value = { ...seatState.value }
     const idx = localMatches.value.findIndex(m => m.id === activeMatch.value.id)
-    if (idx !== -1) localMatches.value[idx] = { ...localMatches.value[idx], templateId: chosenTplId.value }
+    if (idx !== -1) {
+        localMatches.value = localMatches.value.map((m, i) => 
+            i === idx ? { ...m, templateId: chosenTplId.value } : m
+        )
+    }
     templateModal.value = false
     openMatch(activeMatch.value)
     toast('Template applied.')
