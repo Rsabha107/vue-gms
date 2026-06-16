@@ -3,6 +3,7 @@
 use App\Http\Controllers\Gms\GmsArrivalDepartureController;
 use App\Http\Controllers\Gms\GmsAccommodationController;
 use App\Http\Controllers\Gms\GmsDashboardController;
+use App\Http\Controllers\Gms\GmsEmailTemplateController;
 use App\Http\Controllers\Gms\GmsEventController;
 use App\Http\Controllers\Gms\GmsEventsController;
 use App\Http\Controllers\Gms\GmsFlightController;
@@ -49,6 +50,7 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/flights',                 [GmsFlightController::class, 'store'])->name('flights.store');
     Route::put('/flights/{id}',             [GmsFlightController::class, 'update'])->name('flights.update');
     Route::patch('/flights/{id}/status',    [GmsFlightController::class, 'updateStatus'])->name('flights.status');
+    Route::patch('/flights/{id}/legs/{legId}', [GmsFlightController::class, 'updateLeg'])->name('flights.legs.update');
     Route::delete('/flights/{id}',          [GmsFlightController::class, 'destroy'])->name('flights.destroy');
 
     // Accommodation
@@ -86,6 +88,12 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/matches',         [GmsMatchesController::class, 'store'])->name('matches.store');
     Route::put('/matches/{id}',     [GmsMatchesController::class, 'update'])->name('matches.update');
     Route::delete('/matches/{id}',  [GmsMatchesController::class, 'destroy'])->name('matches.destroy');
+
+    // Email Templates (Setup)
+    Route::get('/email-templates',         [GmsEmailTemplateController::class, 'index'])->name('email-templates.index');
+    Route::post('/email-templates',        [GmsEmailTemplateController::class, 'store'])->name('email-templates.store');
+    Route::put('/email-templates/{id}',    [GmsEmailTemplateController::class, 'update'])->name('email-templates.update');
+    Route::delete('/email-templates/{id}', [GmsEmailTemplateController::class, 'destroy'])->name('email-templates.destroy');
 
     // Settings
     Route::get('/settings', function () {

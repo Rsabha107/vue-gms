@@ -20,7 +20,7 @@ const localEvents = ref(props.events.map(e => ({ ...e })))
 
 // ── Active venues computed ────────────────────────────────────────
 const activeVenues = computed(() => {
-    return props.availableVenues.filter(v => v.active_flag === true || v.active_flag === 1)
+    return props.availableVenues.filter(v => v.active_flag !== false && v.active_flag !== 0)
 })
 
 // ── Modal state ───────────────────────────────────────────────────
@@ -55,7 +55,7 @@ function openEdit(evt) {
     form.name = evt.name
     form.subtitle = evt.subtitle ?? ''
     form.location = evt.location
-    form.venue_ids = evt.venues ? evt.venues.map(v => v.id) : []
+    form.venue_ids = evt.venue_ids ?? []
     form.date_start = evt.date_start
     form.date_end = evt.date_end
     form.logo = evt.logo ?? '🏆'
@@ -84,13 +84,17 @@ function saveEvent() {
                 ...localEvents.value[idx], 
                 ...payload,
                 venue: selectedVenues.map(v => v.name).join(', '),
-                venues: selectedVenues.map(v => ({ id: v.id, name: v.name }))
+                venues: selectedVenues.map(v => ({ id: v.id, name: v.name })),
+                venue_ids: form.venue_ids
             }
         }
 
         form.put(route('gms.events.update', editingEvent.value.id), {
             onSuccess: () => { eventModal.value = false; toast('Event updated.') },
-            onError: () => toast('Failed to save.', 'error'),
+            onError: (errors) => {
+                const firstError = Object.values(errors)[0]
+                toast(firstError || 'Failed to save.', 'error')
+            },
             preserveScroll: true,
         })
     } else {
@@ -99,12 +103,16 @@ function saveEvent() {
             id: 'E' + Date.now(), 
             ...payload,
             venue: selectedVenues.map(v => v.name).join(', '),
-            venues: selectedVenues.map(v => ({ id: v.id, name: v.name }))
+            venues: selectedVenues.map(v => ({ id: v.id, name: v.name })),
+            venue_ids: form.venue_ids
         }
         localEvents.value.unshift(newEvent)
         form.post(route('gms.events.store'), {
             onSuccess: () => { eventModal.value = false; toast('Event created.') },
-            onError: () => toast('Failed to save.', 'error'),
+            onError: (errors) => {
+                const firstError = Object.values(errors)[0]
+                toast(firstError || 'Failed to save.', 'error')
+            },
             preserveScroll: true,
         })
     }
@@ -247,16 +255,19 @@ onBeforeUnmount(() => {
       <div class="gms-field">
         <label class="gms-label">Event Name <span style="color: var(--gms-maroon);">*</span></label>
         <input v-model="form.name" class="gms-input" placeholder="e.g., Doha Cup '26" />
+        <div v-if="form.errors.name" class="gms-field-error">{{ form.errors.name }}</div>
       </div>
 
       <div class="gms-field">
         <label class="gms-label">Subtitle</label>
         <input v-model="form.subtitle" class="gms-input" placeholder="e.g., International Football Championship" />
+        <div v-if="form.errors.subtitle" class="gms-field-error">{{ form.errors.subtitle }}</div>
       </div>
 
       <div class="gms-field">
         <label class="gms-label">Location <span style="color: var(--gms-maroon);">*</span></label>
         <input v-model="form.location" class="gms-input" placeholder="e.g., Lusail, Qatar" />
+        <div v-if="form.errors.location" class="gms-field-error">{{ form.errors.location }}</div>
       </div>
 
       <div class="gms-field" style="grid-column: 1 / -1;">
@@ -276,21 +287,25 @@ onBeforeUnmount(() => {
             {{ venue.name }}
           </button>
         </div>
+        <div v-if="form.errors.venue_ids" class="gms-field-error">{{ form.errors.venue_ids }}</div>
       </div>
 
       <div class="gms-field">
         <label class="gms-label">Start Date <span style="color: var(--gms-maroon);">*</span></label>
         <input v-model="form.date_start" type="date" class="gms-input" />
+        <div v-if="form.errors.date_start" class="gms-field-error">{{ form.errors.date_start }}</div>
       </div>
 
       <div class="gms-field">
         <label class="gms-label">End Date <span style="color: var(--gms-maroon);">*</span></label>
         <input v-model="form.date_end" type="date" class="gms-input" />
+        <div v-if="form.errors.date_end" class="gms-field-error">{{ form.errors.date_end }}</div>
       </div>
 
       <div class="gms-field">
         <label class="gms-label">Logo (Emoji)</label>
         <input v-model="form.logo" class="gms-input" placeholder="🏆" maxlength="10" />
+        <div v-if="form.errors.logo" class="gms-field-error">{{ form.errors.logo }}</div>
       </div>
 
       <div class="gms-field">

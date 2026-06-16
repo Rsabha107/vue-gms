@@ -70,6 +70,7 @@ const breadcrumbMap = {
     'gms/events':            'Events',
     'gms/venues':            'Venues',
     'gms/matches':           'Matches',
+    'gms/email-templates':   'Email Templates',
     'gms/settings':          'Settings',
 }
 
@@ -99,6 +100,7 @@ const setup = [
     { name: 'gms.events.index',        label: 'Events',        icon: 'calendar',  href: '/gms/events' },
     { name: 'gms.venues.index',        label: 'Venues',        icon: 'map',       href: '/gms/venues' },
     { name: 'gms.matches.index',       label: 'Matches',       icon: 'trophy',    href: '/gms/matches' },
+    { name: 'gms.email-templates.index', label: 'Email Templates', icon: 'mail',    href: '/gms/email-templates' },
     { name: 'gms.settings',            label: 'Settings',      icon: 'settings',  href: '/gms/settings' },
 ]
 

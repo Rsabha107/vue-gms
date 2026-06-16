@@ -22,6 +22,7 @@ const props = defineProps({
 const toast = inject('toast')
 
 const localReqs = ref(props.requests.map(r => ({ ...r })))
+const viewMode = ref('queue') // queue | schedule
 
 // ── Filters ───────────────────────────────────────────────────────
 const search       = ref('')
@@ -87,11 +88,28 @@ function fmtDate(d, t) {
 function fmtDateShort(d) {
     if (!d) return '—'
     const parts = d.split('-')
-    return `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1])]}`
+    return `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1])]} ${parts[0]}`
 }
 
 function canConfirm(r) {
     return r.status !== 'confirmed' && r.status !== 'cancelled'
+}
+
+// ── Refresh ───────────────────────────────────────────────────────
+const isRefreshing = ref(false)
+
+function refreshFlights() {
+    isRefreshing.value = true
+    router.reload({ 
+        only: ['requests'],
+        onFinish: () => {
+            setTimeout(() => {
+                isRefreshing.value = false
+                localReqs.value = props.requests.map(r => ({ ...r }))
+                toast('Flights refreshed')
+            }, 500)
+        }
+    })
 }
 
 // ── Drawer ────────────────────────────────────────────────────────
@@ -99,6 +117,58 @@ const drawerOpen = ref(false)
 const activeReq  = ref(null)
 
 function openDrawer(r) { activeReq.value = r; drawerOpen.value = true }
+
+// ── Schedule view ─────────────────────────────────────────────────
+const scheduleData = computed(() => {
+    const events = []
+    const tidy = (t) => t.replace(/\s*\+1$/, '')
+    
+    // Build events from non-cancelled flights
+    localReqs.value.filter(f => f.status !== 'cancelled').forEach(f => {
+        const g = props.guests.find(x => x.id === f.guestId) || {}
+        if (f.legs && f.legs.length >= 2) {
+            // Use the leg's date field and format it consistently
+            const inboundLeg = f.legs[0]
+            const outboundLeg = f.legs[1]
+            
+            const inboundDate = inboundLeg.date || f.inboundDate
+            const outboundDate = outboundLeg.date || f.outboundDate
+            
+            events.push({
+                kind: 'arr',
+                rawDate: inboundDate, // Keep raw date for sorting
+                date: fmtDateShort(inboundDate),
+                time: inboundLeg.arr || f.inboundTime || '—',
+                leg: inboundLeg,
+                guest: g,
+                flight: f
+            })
+            events.push({
+                kind: 'dep',
+                rawDate: outboundDate, // Keep raw date for sorting
+                date: fmtDateShort(outboundDate),
+                time: outboundLeg.dep || f.outboundTime || '—',
+                leg: outboundLeg,
+                guest: g,
+                flight: f
+            })
+        }
+    })
+    
+    // Get unique days, sort by raw date, then map to display dates
+    const uniqueDates = [...new Set(events.map(e => e.rawDate))].sort()
+    
+    return uniqueDates.map(rawDate => {
+        const displayDate = fmtDateShort(rawDate)
+        const arr = events
+            .filter(e => e.rawDate === rawDate && e.kind === 'arr')
+            .sort((a, b) => tidy(a.time).localeCompare(tidy(b.time)))
+        const dep = events
+            .filter(e => e.rawDate === rawDate && e.kind === 'dep')
+            .sort((a, b) => tidy(a.time).localeCompare(tidy(b.time)))
+        return { date: displayDate, arrivals: arr, departures: dep }
+    })
+})
 
 function guestTier(r) {
     const g = props.guests.find(g => g.id === r.guestId)
@@ -148,51 +218,111 @@ function reinstateBooking(r) {
 // ── Edit leg modal ────────────────────────────────────────────────
 const legModal    = ref(false)
 const editingLeg  = ref(null) // 'inbound' | 'outbound'
+const isSavingLeg = ref(false)
 const legForm = useForm({ airline: '', flightNo: '', class: 'Business', date: '', duration: '', time: '', arrivalTime: '' })
 
 function openEditLeg(direction) {
     editingLeg.value = direction
     const r = activeReq.value
+    
+    // Find the specific leg from the legs array
+    const leg = r.legs.find(l => l.dir === (direction === 'inbound' ? 'Inbound' : 'Outbound'))
+    
     if (direction === 'inbound') {
-        legForm.airline     = r.airline ?? ''
-        legForm.flightNo    = r.inboundFlight ?? r.flightNo ?? ''
-        legForm.class       = r.class ?? 'Business'
-        legForm.date        = r.date ?? ''
-        legForm.duration    = r.duration ?? ''
-        legForm.time        = r.time ?? ''
-        legForm.arrivalTime = r.arrivalTime ?? ''
+        legForm.airline     = leg?.airline ?? r.airline ?? ''
+        legForm.flightNo    = leg?.flightNo ?? r.inboundFlight ?? r.flightNo ?? ''
+        legForm.class       = leg?.cls ?? r.class ?? 'Business'
+        legForm.date        = leg?.date ?? r.date ?? ''
+        legForm.duration    = leg?.dur ?? r.duration ?? ''
+        legForm.time        = leg?.dep ?? r.time ?? ''
+        legForm.arrivalTime = leg?.arr ?? r.arrivalTime ?? ''
     } else {
-        legForm.airline     = r.airline ?? ''
-        legForm.flightNo    = r.outboundFlight ?? ''
-        legForm.class       = r.class ?? 'Business'
-        legForm.date        = r.outboundDate ?? ''
-        legForm.duration    = r.duration ?? ''
-        legForm.time        = r.outboundTime ?? ''
-        legForm.arrivalTime = r.outboundArrivalTime ?? ''
+        legForm.airline     = leg?.airline ?? r.airline ?? ''
+        legForm.flightNo    = leg?.flightNo ?? r.outboundFlight ?? ''
+        legForm.class       = leg?.cls ?? 'Business' // Load from leg, not shared class
+        legForm.date        = leg?.date ?? r.outboundDate ?? ''
+        legForm.duration    = leg?.dur ?? r.duration ?? ''
+        legForm.time        = leg?.dep ?? r.outboundTime ?? ''
+        legForm.arrivalTime = leg?.arr ?? r.outboundArrivalTime ?? ''
     }
     legModal.value = true
 }
 
 function saveLeg() {
-    const idx = localReqs.value.findIndex(x => x.id === activeReq.value.id)
-    if (idx !== -1) {
-        if (editingLeg.value === 'inbound') {
-            Object.assign(localReqs.value[idx], {
-                airline: legForm.airline, inboundFlight: legForm.flightNo, flightNo: legForm.flightNo,
-                class: legForm.class, date: legForm.date, duration: legForm.duration,
-                time: legForm.time, arrivalTime: legForm.arrivalTime,
-            })
-        } else {
-            Object.assign(localReqs.value[idx], {
-                airline: legForm.airline, outboundFlight: legForm.flightNo,
-                class: legForm.class, outboundDate: legForm.date, duration: legForm.duration,
-                outboundTime: legForm.time, outboundArrivalTime: legForm.arrivalTime,
-            })
-        }
-        activeReq.value = { ...localReqs.value[idx] }
+    const r = activeReq.value
+    const leg = r.legs.find(l => l.dir === (editingLeg.value === 'inbound' ? 'Inbound' : 'Outbound'))
+    
+    if (!leg || !leg.id) {
+        toast('Leg not found', 'error')
+        return
     }
-    legModal.value = false
-    toast('Leg updated.')
+
+    isSavingLeg.value = true
+
+    const legData = {
+        airline: legForm.airline,
+        flight_no: legForm.flightNo,
+        cls: legForm.class,
+        date: legForm.date,
+        dep: legForm.time,
+        arr: legForm.arrivalTime,
+        dur: legForm.duration,
+    }
+
+    router.patch(route('gms.flights.legs.update', { id: r.id, legId: leg.id }), legData, {
+        onSuccess: () => {
+            // Update local state
+            const idx = localReqs.value.findIndex(x => x.id === r.id)
+            if (idx !== -1) {
+                // Update the specific leg in the legs array
+                const legIdx = localReqs.value[idx].legs.findIndex(l => l.id === leg.id)
+                if (legIdx !== -1) {
+                    Object.assign(localReqs.value[idx].legs[legIdx], {
+                        airline: legForm.airline,
+                        flightNo: legForm.flightNo,
+                        cls: legForm.class,
+                        date: legForm.date,
+                        dep: legForm.time,
+                        arr: legForm.arrivalTime,
+                        dur: legForm.duration,
+                    })
+                }
+
+                if (editingLeg.value === 'inbound') {
+                    // Update inbound-specific fields (including shared class)
+                    Object.assign(localReqs.value[idx], {
+                        airline: legForm.airline,
+                        inboundFlight: legForm.flightNo,
+                        flightNo: legForm.flightNo,
+                        class: legForm.class, // Only inbound updates the shared class
+                        date: legForm.date,
+                        duration: legForm.duration,
+                        time: legForm.time,
+                        arrivalTime: legForm.arrivalTime,
+                    })
+                } else {
+                    // Update outbound-specific fields (NOT the shared class)
+                    Object.assign(localReqs.value[idx], {
+                        airline: legForm.airline,
+                        outboundFlight: legForm.flightNo,
+                        outboundDate: legForm.date,
+                        duration: legForm.duration,
+                        outboundTime: legForm.time,
+                        outboundArrivalTime: legForm.arrivalTime,
+                    })
+                }
+                activeReq.value = { ...localReqs.value[idx] }
+            }
+            isSavingLeg.value = false
+            legModal.value = false
+            toast('Leg updated.')
+        },
+        onError: () => {
+            isSavingLeg.value = false
+            toast('Failed to update leg.', 'error')
+        },
+        preserveScroll: true,
+    })
 }
 
 // ── New request modal ─────────────────────────────────────────────
@@ -201,6 +331,12 @@ const form = useForm({
     guestId: '', flightNo: '', route: '', origin: '', destination: '',
     class: 'Business', pax: 1, date: '', time: '',
     outboundDate: '', outboundTime: '', airline: '', notes: '',
+})
+
+// Only show international guests who don't already have a flight request
+const availableGuests = computed(() => {
+    const requestedGuestIds = new Set(localReqs.value.map(r => r.guestId))
+    return props.guests.filter(g => !requestedGuestIds.has(g.id))
 })
 
 function saveNew() {
@@ -224,7 +360,7 @@ function saveNew() {
 
 <template>
   <div class="gms-view">
-
+    <div class="gms-view-pad">
     <!-- Header -->
     <div class="gms-view-header">
       <div>
@@ -232,17 +368,38 @@ function saveNew() {
         <p class="gms-view-subtitle">Inbound &amp; outbound air travel for international guests of {{ event?.name ?? 'this event' }}.</p>
       </div>
       <div class="gms-view-actions">
+        <button 
+          class="gms-btn gms-btn-ghost gms-btn-sm" 
+          @click="refreshFlights"
+          :disabled="isRefreshing"
+          title="Refresh flights"
+          style="margin-right: 8px;"
+        >
+          <GmsIcon name="refresh-cw" :size="14" :class="{ 'gms-spin': isRefreshing }" />
+        </button>
         <GmsBtn variant="ghost" icon="download" :iconSize="14">Export</GmsBtn>
         <GmsBtn variant="primary" icon="plus" :iconSize="14" @click="newModal = true">New flight request</GmsBtn>
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="gms-seg" style="width:fit-content;margin-bottom:22px;">
-      <button v-for="t in tabs" :key="t.key" :class="{ on: statusFilter === t.key }" @click="statusFilter = t.key">
-        {{ t.label }}<span v-if="t.key !== 'all'" class="gms-seg-count">{{ countFor(t.key) }}</span>
+    <!-- View toggle -->
+    <div class="gms-seg" style="width: fit-content; margin-bottom: 20px;">
+      <button
+        :class="{ on: viewMode === 'queue' }"
+        @click="viewMode = 'queue'"
+      >
+        Request queue
+      </button>
+      <button
+        :class="{ on: viewMode === 'schedule' }"
+        @click="viewMode = 'schedule'"
+      >
+        Schedule
       </button>
     </div>
+
+    <!-- Request queue view -->
+    <template v-if="viewMode === 'queue'">
 
     <!-- Stats -->
     <div class="gms-stats" style="margin-bottom:24px;">
@@ -253,12 +410,16 @@ function saveNew() {
     </div>
 
     <!-- Toolbar -->
-    <div class="gms-toolbar">
+    <div class="gms-toolbar" style="margin-bottom:22px;">
       <div class="gms-search-wrap">
         <GmsIcon name="search" :size="14" class="gms-search-icon" />
         <input v-model="search" class="gms-search-input" placeholder="Search guest, PNR or flight…" />
       </div>
-      <span class="mxt-count" style="margin-left:auto;">{{ filtered.length }} of {{ localReqs.length }}</span>
+      <div class="gms-seg" style="margin-left:auto;">
+        <button v-for="t in tabs" :key="t.key" :class="{ on: statusFilter === t.key }" @click="statusFilter = t.key">
+          {{ t.label }}<span v-if="t.key !== 'all'" class="gms-seg-count">{{ countFor(t.key) }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- Table -->
@@ -346,6 +507,97 @@ function saveNew() {
         </div>
       </div>
     </div>
+
+    </template>
+
+    <!-- Schedule view -->
+    <template v-if="viewMode === 'schedule'">
+      <div class="fl-sched">
+        <div v-for="day in scheduleData" :key="day.date" class="fl-day">
+          <div class="fl-day-h">
+            <span class="fl-day-d">{{ day.date }}</span>
+            <span class="gms-muted" style="font-size:12px;">
+              {{ day.arrivals.length }} arrival{{ day.arrivals.length !== 1 ? 's' : '' }} · 
+              {{ day.departures.length }} departure{{ day.departures.length !== 1 ? 's' : '' }}
+            </span>
+          </div>
+          <div class="fl-day-cols">
+            <!-- Arrivals column -->
+            <div class="fl-col">
+              <div class="fl-col-h arr">
+                <span class="fl-pl">
+                  <GmsIcon name="plane" :size="15" />
+                </span>
+                Arrivals
+              </div>
+              <div v-if="day.arrivals.length === 0" class="gms-muted" style="font-size:12px;padding:6px 2px;">None</div>
+              <div
+                v-for="(ev, i) in day.arrivals"
+                :key="i"
+                class="fl-ev"
+                @click="openDrawer(ev.flight)"
+              >
+                <span class="fl-ev-t gms-mono">{{ ev.time.replace(/\s*\+1$/, '') }}</span>
+                <GmsAvatar :name="ev.guest.name" size="sm" />
+                <div style="flex:1;min-width:0;">
+                  <div class="fl-ev-n">{{ ev.guest.name }}</div>
+                  <div class="gms-muted" style="font-size:11px;">
+                    {{ ev.leg.fromCode }} → DOH · {{ ev.leg.flightNo }}
+                  </div>
+                </div>
+                <GmsPill
+                  v-if="ev.flight.status !== 'confirmed'"
+                  type="custom"
+                  :value="displayStatus(ev.flight).label"
+                  :bg="displayStatus(ev.flight).bg"
+                  :fg="displayStatus(ev.flight).fg"
+                />
+              </div>
+
+            <!-- Departures column -->
+            </div>
+            <div class="fl-col">
+              <div class="fl-col-h dep">
+                <span class="fl-pl">
+                  <GmsIcon name="plane" :size="15" />
+                </span>
+                Departures
+              </div>
+              <div v-if="day.departures.length === 0" class="gms-muted" style="font-size:12px;padding:6px 2px;">None</div>
+              <div
+                v-for="(ev, i) in day.departures"
+                :key="i"
+                class="fl-ev"
+                @click="openDrawer(ev.flight)"
+              >
+                <span class="fl-ev-t gms-mono">{{ ev.time.replace(/\s*\+1$/, '') }}</span>
+                <GmsAvatar :name="ev.guest.name" size="sm" />
+                <div style="flex:1;min-width:0;">
+                  <div class="fl-ev-n">{{ ev.guest.name }}</div>
+                  <div class="gms-muted" style="font-size:11px;">
+                    DOH → {{ ev.leg.toCode }} · {{ ev.leg.flightNo }}
+                  </div>
+                </div>
+                <GmsPill
+                  v-if="ev.flight.status !== 'confirmed'"
+                  type="custom"
+                  :value="displayStatus(ev.flight).label"
+                  :bg="displayStatus(ev.flight).bg"
+                  :fg="displayStatus(ev.flight).fg"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="scheduleData.length === 0" class="gms-empty" style="margin-top:40px;">
+          <div class="gms-empty-title">No flights scheduled</div>
+          <div class="gms-empty-subtitle">Add flight requests to see the schedule</div>
+        </div>
+      </div>
+    </template>
+
+    </div>
   </div>
 
   <!-- ── Detail drawer ── -->
@@ -376,8 +628,10 @@ function saveNew() {
       <div class="flt-leg" style="margin-top:8px;">
         <div class="flt-leg-header">
           <div class="flt-leg-tag">
-            <GmsIcon name="plane-land" :size="14" style="color:var(--gms-text-3);" />
-            <span class="flt-leg-dir">Inbound</span>
+            <span class="flt-leg-dir flt-leg-dir-in">
+              <GmsIcon name="plane" :size="15" />
+              Inbound
+            </span>
             <span class="flt-leg-code">{{ activeReq.inboundFlight }}</span>
           </div>
           <span class="flt-leg-date">{{ fmtDateShort(activeReq.date) }}</span>
@@ -392,7 +646,7 @@ function saveNew() {
             <span class="flt-leg-dur">{{ activeReq.duration }}</span>
             <div class="flt-leg-line">
               <div class="flt-leg-dash" />
-              <div class="flt-leg-plane-ico"><GmsIcon name="plane-land" :size="14" /></div>
+              <div class="flt-leg-plane-ico flt-leg-plane-in"><GmsIcon name="plane" :size="14" /></div>
               <div class="flt-leg-dash" />
             </div>
             <span class="flt-leg-carrier">{{ activeReq.airline }}</span>
@@ -405,7 +659,7 @@ function saveNew() {
         </div>
         <div class="flt-leg-foot">
           <div style="display:flex;align-items:center;gap:8px;">
-            <span :class="classPillClass(activeReq.class)">{{ activeReq.class }}</span>
+            <span :class="classPillClass(activeReq.legs?.find(l => l.dir === 'Inbound')?.cls ?? activeReq.class)">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.cls ?? activeReq.class }}</span>
             <span class="flt-leg-terminal">{{ activeReq.inboundTerminal }}</span>
           </div>
           <button class="flt-edit-btn" @click="openEditLeg('inbound')"><GmsIcon name="edit" :size="12" /> Edit</button>
@@ -416,8 +670,10 @@ function saveNew() {
       <div class="flt-leg">
         <div class="flt-leg-header">
           <div class="flt-leg-tag">
-            <GmsIcon name="plane-depart" :size="14" style="color:var(--gms-text-3);" />
-            <span class="flt-leg-dir">Outbound</span>
+            <span class="flt-leg-dir flt-leg-dir-out">
+              <GmsIcon name="plane" :size="15" />
+              Outbound
+            </span>
             <span class="flt-leg-code">{{ activeReq.outboundFlight }}</span>
           </div>
           <span class="flt-leg-date">{{ fmtDateShort(activeReq.outboundDate) }}</span>
@@ -432,7 +688,7 @@ function saveNew() {
             <span class="flt-leg-dur">{{ activeReq.duration }}</span>
             <div class="flt-leg-line">
               <div class="flt-leg-dash" />
-              <div class="flt-leg-plane-ico"><GmsIcon name="plane-depart" :size="14" /></div>
+              <div class="flt-leg-plane-ico flt-leg-plane-out"><GmsIcon name="plane" :size="14" /></div>
               <div class="flt-leg-dash" />
             </div>
             <span class="flt-leg-carrier">{{ activeReq.airline }}</span>
@@ -445,7 +701,7 @@ function saveNew() {
         </div>
         <div class="flt-leg-foot">
           <div style="display:flex;align-items:center;gap:8px;">
-            <span :class="classPillClass(activeReq.class)">{{ activeReq.class }}</span>
+            <span :class="classPillClass(activeReq.legs?.find(l => l.dir === 'Outbound')?.cls ?? activeReq.class)">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.cls ?? activeReq.class }}</span>
             <span class="flt-leg-terminal">{{ activeReq.outboundTerminal }}</span>
           </div>
           <button class="flt-edit-btn" @click="openEditLeg('outbound')"><GmsIcon name="edit" :size="12" /> Edit</button>
@@ -487,9 +743,14 @@ function saveNew() {
       <div class="gms-field">
         <label class="gms-label">Guest</label>
         <select v-model="form.guestId" class="gms-input gms-select">
-          <option value="">— Select —</option>
-          <option v-for="g in guests" :key="g.id" :value="g.id">{{ g.name }}</option>
+          <option value="">— Select international guest —</option>
+          <option v-for="g in availableGuests" :key="g.id" :value="g.id">
+            {{ g.name }}{{ g.nationality ? ` (${g.nationality})` : '' }}
+          </option>
         </select>
+        <p v-if="availableGuests.length === 0" style="font-size:12px;color:var(--gms-text-3);margin-top:6px;">
+          All international guests already have flight requests.
+        </p>
       </div>
       <div class="gms-form-grid">
         <div class="gms-field">
@@ -600,8 +861,11 @@ function saveNew() {
     </template>
 
     <template #footer>
-      <GmsBtn variant="ghost" @click="legModal = false">Cancel</GmsBtn>
-      <GmsBtn variant="primary" :disabled="!legForm.flightNo" @click="saveLeg">Save leg</GmsBtn>
+      <GmsBtn variant="ghost" @click="legModal = false" :disabled="isSavingLeg">Cancel</GmsBtn>
+      <GmsBtn variant="primary" :disabled="!legForm.flightNo || isSavingLeg" @click="saveLeg">
+        <GmsIcon v-if="isSavingLeg" name="refresh-cw" :size="12" class="gms-spin" style="margin-right: 4px;" />
+        {{ isSavingLeg ? 'Saving...' : 'Save leg' }}
+      </GmsBtn>
     </template>
   </GmsModal>
 </template>

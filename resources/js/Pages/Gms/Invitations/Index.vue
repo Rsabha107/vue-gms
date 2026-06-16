@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, inject } from 'vue'
-import { useForm } from '@inertiajs/vue3'
+import { useForm, Link } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
 import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
@@ -19,13 +19,21 @@ const props = defineProps({
 const toast = inject('toast')
 
 // ── Filters ───────────────────────────────────────────────────────
+const view     = ref('list') // 'list' | 'services'
 const search   = ref('')
 const statusFilter = ref('all')
 const statuses = ['all', 'invited', 'pending', 'confirmed', 'declined']
 
 const filtered = computed(() => {
     let list = props.guests
-    if (statusFilter.value !== 'all') list = list.filter(g => g.status === statusFilter.value)
+    
+    // For services view, only show confirmed/accepted guests
+    if (view.value === 'services') {
+        list = list.filter(g => g.status === 'confirmed' || g.status === 'accepted')
+    } else if (statusFilter.value !== 'all') {
+        list = list.filter(g => g.status === statusFilter.value)
+    }
+    
     if (search.value) {
         const q = search.value.toLowerCase()
         list = list.filter(g => g.name.toLowerCase().includes(q) || g.title.toLowerCase().includes(q))
@@ -41,6 +49,11 @@ function countFor(s) {
 function tierLabel(id) {
     return props.tiers.find(t => t.id === id)?.name ?? id
 }
+
+// Stats for list view
+const acceptedCount = computed(() => {
+    return props.guests.filter(g => g.status === 'confirmed' || g.status === 'accepted').length
+})
 
 // ── Selection ─────────────────────────────────────────────────────
 const selected = ref(new Set())
@@ -70,7 +83,7 @@ const chosenTplId  = ref(props.emailTemplates[0]?.id ?? '')
 const form = useForm({ guestIds: [], templateId: '' })
 
 function openSend() {
-    if (selected.value.size === 0) { toast('Select at least one guest.', 'info'); return }
+    // Open invitation wizard/modal
     chosenTplId.value = props.emailTemplates[0]?.id ?? ''
     sendModal.value   = true
 }
@@ -89,92 +102,113 @@ function sendInvitations() {
     })
 }
 
-// ── Template editor modal ─────────────────────────────────────────
-const tplModal = ref(false)
-const localTemplates = ref(props.emailTemplates.map(t => ({ ...t })))
-const editingTpl = ref(null)
-const tplForm = useForm({ name: '', subject: '', body: '' })
 
-function openTplEdit(tpl) {
-    editingTpl.value  = tpl
-    tplForm.name    = tpl.name
-    tplForm.subject = tpl.subject
-    tplForm.body    = tpl.body
-    tplModal.value  = true
-}
 </script>
 
 <template>
   <div class="gms-view">
+    <div class="gms-view-pad">
     <div class="gms-view-header">
       <div>
         <h1 class="gms-view-title">Invitations</h1>
         <p class="gms-view-subtitle">Manage outreach to registered guests</p>
       </div>
       <div class="gms-view-actions">
-        <button
-          class="gms-btn gms-btn-primary"
-          :disabled="selected.size === 0"
-          @click="openSend"
-        >
-          <GmsIcon name="send" :size="14" />
-          Send to Selected
-          <span v-if="selected.size" style="background:rgba(255,255,255,0.25);border-radius:999px;padding:1px 7px;font-size:11px;">{{ selected.size }}</span>
+        <button class="gms-btn" @click="() => toast('Export feature coming soon')">
+          <GmsIcon name="download" :size="14" />
+          Export
+        </button>
+        <button class="gms-btn gms-btn-primary" @click="openSend">
+          <GmsIcon name="plus" :size="14" />
+          New invitation
         </button>
       </div>
     </div>
 
-    <!-- Status filters -->
-    <div class="gms-toolbar">
+    <!-- View toggle tabs -->
+    <div class="gms-seg" style="width: fit-content; margin-bottom: 20px;">
+      <button
+        :class="{ on: view === 'list' }"
+        @click="view = 'list'"
+      >
+        Invitation list
+      </button>
+      <button
+        :class="{ on: view === 'services' }"
+        @click="view = 'services'"
+      >
+        Guest services overview
+      </button>
+    </div>
+
+    <!-- Mini stats (list view only) -->
+    <div v-if="view === 'list'" class="gms-stats">
+      <div class="gms-stat">
+        <div class="gms-stat-strip" style="background: var(--gms-maroon);"></div>
+        <div class="gms-stat-number">{{ props.guests.length }}</div>
+        <div class="gms-stat-label">Sent</div>
+      </div>
+      <div class="gms-stat">
+        <div class="gms-stat-strip" style="background: var(--good);"></div>
+        <div class="gms-stat-number">{{ acceptedCount }}</div>
+        <div class="gms-stat-label">Accepted</div>
+      </div>
+      <div class="gms-stat">
+        <div class="gms-stat-strip" style="background: var(--warn);"></div>
+        <div class="gms-stat-number">{{ countFor('pending') }}</div>
+        <div class="gms-stat-label">Pending</div>
+      </div>
+      <div class="gms-stat">
+        <div class="gms-stat-strip" style="background: var(--bad);"></div>
+        <div class="gms-stat-number">{{ countFor('declined') }}</div>
+        <div class="gms-stat-label">Declined</div>
+      </div>
+    </div>
+
+    <!-- Status filters (list view only) -->
+    <div v-if="view === 'list'" class="gms-toolbar">
       <div class="gms-search-wrap">
         <GmsIcon name="search" :size="14" class="gms-search-icon" />
         <input v-model="search" class="gms-search-input" placeholder="Search guests…" />
       </div>
-      <button
-        v-for="s in statuses" :key="s"
-        class="gms-filter-btn"
-        :class="{ active: statusFilter === s }"
-        @click="statusFilter = s"
-      >
-        {{ s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }}
-        <span class="gms-filter-count">{{ countFor(s) }}</span>
-      </button>
+      <div class="gms-seg">
+        <button
+          v-for="s in statuses" :key="s"
+          :class="{ on: statusFilter === s }"
+          @click="statusFilter = s"
+        >
+          {{ s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }}
+        </button>
+      </div>
     </div>
 
-    <!-- Guest table -->
-    <div class="gms-card">
+    <!-- Guest table (list view) -->
+    <div v-if="view === 'list'" class="gms-card">
       <div class="gms-card-body-0">
         <div class="gms-table-wrap">
           <table class="gms-table">
             <thead>
               <tr>
-                <th style="width:40px;">
-                  <input type="checkbox" :checked="allSelected" @change="toggleAll" style="cursor:pointer;" />
-                </th>
                 <th>Guest</th>
-                <th>Title / Role</th>
-                <th>Tier</th>
+                <th>Service</th>
+                <th>Sessions</th>
                 <th>Status</th>
-                <th>Email</th>
+                <th>Sent / Accepted</th>
+                <th>Passport</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr
-                v-for="g in filtered"
-                :key="g.id"
-                @click="toggleSelect(g.id)"
-                :style="selected.has(g.id) ? 'background:var(--gms-maroon-light)' : ''"
-              >
-                <td @click.stop>
-                  <input type="checkbox" :checked="selected.has(g.id)" @change="toggleSelect(g.id)" style="cursor:pointer;" />
-                </td>
+              <tr v-for="g in filtered" :key="g.id">
                 <td>
-                  <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="display:flex;align-items:center;gap:10px;">
                     <GmsAvatar :name="g.name" size="sm" />
-                    <span style="font-weight:600;">{{ g.name }}</span>
+                    <div>
+                      <div style="font-weight:600;font-size:13px;">{{ g.name }}</div>
+                      <div style="font-size:11.5px;color:var(--gms-text-3);">{{ g.email }}</div>
+                    </div>
                   </div>
                 </td>
-                <td><span class="gms-muted gms-small">{{ g.title }}</span></td>
                 <td>
                   <span
                     class="gms-pill"
@@ -185,11 +219,34 @@ function openTplEdit(tpl) {
                     }"
                   >{{ tierLabel(g.tier) }}</span>
                 </td>
-                <td><GmsPill :value="g.status" /></td>
-                <td><span class="gms-muted gms-small gms-mono">{{ g.email }}</span></td>
+                <td>
+                  <span style="font-size:12.5px;color:var(--gms-text-2);">—</span>
+                </td>
+                <td>
+                  <GmsPill :value="g.status" />
+                </td>
+                <td>
+                  <div class="gms-mono" style="font-size:11.5px;color:var(--gms-text-3);">
+                    <div>—</div>
+                    <div></div>
+                  </div>
+                </td>
+                <td>
+                  <span class="gms-pill" style="background:var(--warn-soft);color:var(--warn);font-size:10.5px;">Pending</span>
+                </td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
+                    <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" title="Edit">
+                      <GmsIcon name="edit" :size="14" />
+                    </button>
+                    <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" title="More">
+                      <GmsIcon name="more-vertical" :size="14" />
+                    </button>
+                  </div>
+                </td>
               </tr>
               <tr v-if="!filtered.length">
-                <td colspan="6">
+                <td colspan="7">
                   <div class="gms-empty">
                     <div class="gms-empty-title">No guests match this filter</div>
                   </div>
@@ -201,89 +258,88 @@ function openTplEdit(tpl) {
       </div>
     </div>
 
-    <!-- Email templates -->
-    <div class="gms-card" style="margin-top:20px;">
-      <div class="gms-card-header">
-        <span class="gms-card-title">Email Templates</span>
-      </div>
+    <!-- Services overview table (services view) -->
+    <div v-if="view === 'services'" class="gms-card">
       <div class="gms-card-body-0">
-        <table class="gms-table">
-          <thead>
-            <tr>
-              <th>Template</th>
-              <th>Subject</th>
-              <th>Tier</th>
-              <th>Last Used</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="t in localTemplates" :key="t.id">
-              <td><span style="font-weight:600;">{{ t.name }}</span></td>
-              <td><span class="gms-small gms-truncate" style="max-width:280px;display:block;">{{ t.subject }}</span></td>
-              <td>
-                <span v-if="t.tier" class="gms-pill" :style="{background:tiers.find(x=>x.id===t.tier)?.bg,color:tiers.find(x=>x.id===t.tier)?.color}">
-                  {{ tiers.find(x=>x.id===t.tier)?.name }}
-                </span>
-                <span v-else class="gms-muted gms-small">All</span>
-              </td>
-              <td><span class="gms-muted gms-small gms-mono">{{ t.lastUsed ?? '—' }}</span></td>
-              <td>
-                <div class="gms-table-actions">
-                  <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" @click="openTplEdit(t)">
-                    <GmsIcon name="edit" :size="13" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="gms-toolbar" style="border-bottom: 1px solid var(--gms-border); padding: 12px 16px;">
+          <div class="gms-search-wrap">
+            <GmsIcon name="search" :size="14" class="gms-search-icon" />
+            <input v-model="search" class="gms-search-input" placeholder="Search confirmed guests…" />
+          </div>
+        </div>
+        <div class="gms-table-wrap" style="overflow-x:auto;">
+          <table class="gms-table" style="min-width:860px;">
+            <thead>
+              <tr>
+                <th>Guest</th>
+                <th>Group</th>
+                <th>Invite</th>
+                <th>Flight</th>
+                <th>Hotel</th>
+                <th>Seat</th>
+                <th>Transport</th>
+                <th>A &amp; D</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="g in filtered" :key="g.id">
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <GmsAvatar :name="g.name" size="sm" />
+                    <span style="font-weight:600;">{{ g.name }}</span>
+                  </div>
+                </td>
+                <td><span class="gms-muted gms-small">{{ g.group }}</span></td>
+                <td><GmsPill :value="g.status" /></td>
+                <td><span class="gms-muted">—</span></td>
+                <td><span class="gms-muted">—</span></td>
+                <td><span class="gms-muted">—</span></td>
+                <td><span class="gms-muted">—</span></td>
+                <td><span class="gms-muted">—</span></td>
+              </tr>
+              <tr v-if="!filtered.length">
+                <td colspan="8">
+                  <div class="gms-empty">
+                    <div class="gms-empty-title">No confirmed guests</div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
+    </div>
+
     </div>
   </div>
 
   <!-- Send modal -->
-  <GmsModal :open="sendModal" title="Send Invitations" @close="sendModal = false">
+  <GmsModal :open="sendModal" title="New Invitation" @close="sendModal = false">
     <p style="font-size:13.5px;color:var(--gms-text-2);margin-bottom:16px;">
-      Sending to <strong>{{ selected.size }}</strong> guest(s).
+      Create a new invitation. Full wizard coming soon.
     </p>
     <div class="gms-field">
       <label class="gms-label">Email Template</label>
       <select v-model="chosenTplId" class="gms-input gms-select">
         <option v-for="t in emailTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
       </select>
+      <div style="font-size:11px;color:var(--gms-text-3);margin-top:6px;">
+        <Link href="/gms/email-templates" style="color:var(--gms-maroon);text-decoration:none;font-weight:500;">
+          Manage templates →
+        </Link>
+      </div>
     </div>
     <div v-if="chosenTplId" style="margin-top:14px;padding:12px;background:var(--gms-surface-2);border-radius:8px;font-size:12.5px;color:var(--gms-text-2);">
       <strong>{{ emailTemplates.find(t=>t.id===chosenTplId)?.subject }}</strong>
     </div>
     <template #footer>
       <button class="gms-btn gms-btn-ghost" @click="sendModal = false">Cancel</button>
-      <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="sendInvitations">
+      <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="() => { sendModal = false; toast('Invitation wizard coming soon') }">
         <GmsIcon name="send" :size="13" />
-        Send Invitations
+        Create Invitation
       </button>
     </template>
   </GmsModal>
 
-  <!-- Template edit modal -->
-  <GmsModal :open="tplModal" title="Edit Template" size="lg" @close="tplModal = false">
-    <div style="display:flex;flex-direction:column;gap:14px;">
-      <div class="gms-field">
-        <label class="gms-label">Name</label>
-        <input v-model="tplForm.name" class="gms-input" />
-      </div>
-      <div class="gms-field">
-        <label class="gms-label">Subject</label>
-        <input v-model="tplForm.subject" class="gms-input" />
-      </div>
-      <div class="gms-field">
-        <label class="gms-label">Body</label>
-        <textarea v-model="tplForm.body" class="gms-input gms-textarea" rows="8" />
-      </div>
-    </div>
-    <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="tplModal = false">Cancel</button>
-      <button class="gms-btn gms-btn-primary" @click="tplModal = false">Save Template</button>
-    </template>
-  </GmsModal>
+
 </template>

@@ -89,11 +89,11 @@ class GmsMockData
     public static function getTiers(): array
     {
         return [
-            ['id' => 'T1', 'name' => 'Diamond',  'color' => '#0ea5e9', 'bg' => '#e0f2fe', 'rank' => 1, 'facilities' => ['VIP Royal Lounge', 'Chauffeur Escort', 'Presidential Suite', 'Fine Dining', 'Dedicated Host', 'Airport Fast-Track']],
-            ['id' => 'T2', 'name' => 'Platinum', 'color' => '#8b5cf6', 'bg' => '#ede9fe', 'rank' => 2, 'facilities' => ['Executive Lounge', 'Private Driver', 'Luxury Suite', 'Premium Dining', 'Personal Host']],
-            ['id' => 'T3', 'name' => 'Gold',     'color' => '#c4973a', 'bg' => '#fef3c7', 'rank' => 3, 'facilities' => ['Business Lounge', 'Shuttle Service', 'Premium Room', 'Restaurant Access']],
-            ['id' => 'T4', 'name' => 'Silver',   'color' => '#6b7280', 'bg' => '#f3f4f6', 'rank' => 4, 'facilities' => ['Lounge Access', 'Group Shuttle']],
-            ['id' => 'T5', 'name' => 'Media',    'color' => '#8a1f3d', 'bg' => '#fce7f3', 'rank' => 5, 'facilities' => ['Press Box', 'Media Kit', 'Photo Access']],
+            ['id' => 'T1', 'name' => 'Platinum', 'color' => '#5b4a8a', 'bg' => '#ece9f3', 'rank' => 1, 'facilities' => ['VIP Royal Lounge', 'Chauffeur Escort', 'Presidential Suite', 'Fine Dining', 'Dedicated Host', 'Airport Fast-Track']],
+            ['id' => 'T2', 'name' => 'Platinum', 'color' => '#5b4a8a', 'bg' => '#ece9f3', 'rank' => 2, 'facilities' => ['Executive Lounge', 'Private Driver', 'Luxury Suite', 'Premium Dining', 'Personal Host']],
+            ['id' => 'T3', 'name' => 'Gold',     'color' => '#9a7430', 'bg' => '#f3ecdd', 'rank' => 3, 'facilities' => ['Business Lounge', 'Shuttle Service', 'Premium Room', 'Restaurant Access']],
+            ['id' => 'T4', 'name' => 'Silver',   'color' => '#7a756c', 'bg' => '#eceae6', 'rank' => 4, 'facilities' => ['Lounge Access', 'Group Shuttle']],
+            ['id' => 'T5', 'name' => 'Silver',   'color' => '#7a756c', 'bg' => '#eceae6', 'rank' => 5, 'facilities' => ['Press Box', 'Media Kit', 'Photo Access']],
         ];
     }
 

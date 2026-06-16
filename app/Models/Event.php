@@ -31,7 +31,7 @@ class Event extends Model
      */
     public function venues()
     {
-        return $this->belongsToMany(\App\Models\Venue::class, 'venue_event');
+        return $this->belongsToMany(\App\Models\Venue::class, 'event_venue');
     }
 
     /**

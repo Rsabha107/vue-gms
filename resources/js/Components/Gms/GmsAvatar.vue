@@ -7,11 +7,10 @@ const props = defineProps({
     color: { type: String,  default: null },
 })
 
+// Color palette matching React prototype - single solid colors with white text
 const palettes = [
-    ['#fde68a','#92400e'], ['#c7d2fe','#312e81'], ['#fecaca','#991b1b'],
-    ['#bbf7d0','#14532d'], ['#e9d5ff','#581c87'], ['#fed7aa','#7c2d12'],
-    ['#cffafe','#164e63'], ['#fce7f3','#831843'], ['#d1fae5','#064e3b'],
-    ['#dbeafe','#1e3a8a'],
+    '#8a1f3d', '#a9844a', '#3a6a8a', '#3f7d52', 
+    '#7a5a8a', '#b06038', '#566b8a', '#8a6a2a'
 ]
 
 const initials = computed(() => {
@@ -21,8 +20,8 @@ const initials = computed(() => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 })
 
-const palette = computed(() => {
-    if (props.color) return [props.color, '#fff']
+const backgroundColor = computed(() => {
+    if (props.color) return props.color
     let hash = 0
     for (const ch of props.name) hash = (hash * 31 + ch.charCodeAt(0)) & 0x7fffffff
     return palettes[hash % palettes.length]
@@ -35,6 +34,6 @@ const sizeClass = computed(() => `gms-avatar-${props.size}`)
   <div
     class="gms-avatar"
     :class="sizeClass"
-    :style="{ background: palette[0], color: palette[1] }"
+    :style="{ background: backgroundColor, color: '#fff' }"
   >{{ initials }}</div>
 </template>

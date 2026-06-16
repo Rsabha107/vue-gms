@@ -1,0 +1,160 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class Guest extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    protected $fillable = [
+        'event_id',
+        'reference_number',
+        'name',
+        'firstName',
+        'lastName',
+        'title',
+        'guestType',
+        'qid',
+        'tier',
+        'group_id',
+        'nationality',
+        'status_id',
+        'email',
+        'phone',
+        'host',
+        'hotel',
+        'dietaryNotes',
+        'notes',
+        'facilities',
+        'companionList',
+        'companions',
+    ];
+
+    protected $casts = [
+        'facilities' => 'array',
+        'companionList' => 'array',
+        'companions' => 'integer',
+    ];
+
+    protected $attributes = [
+        'guestType' => 'local',
+        'status_id' => 'invited',
+    ];
+
+    /**
+     * Get the event for this guest
+     */
+    public function event()
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    /**
+     * Get the status for this guest
+     */
+    public function status()
+    {
+        return $this->belongsTo(GuestStatus::class, 'status_id');
+    }
+
+    /**
+     * Get the tier information for this guest
+     */
+    public function tierInfo()
+    {
+        return $this->belongsTo(ServiceLevel::class, 'tier', 'id');
+    }
+
+    /**
+     * Get the group for this guest
+     */
+    public function group()
+    {
+        return $this->belongsTo(Group::class, 'group_id', 'id');
+    }
+
+    /**
+     * Get all invitations for this guest
+     */
+    public function invitations()
+    {
+        return $this->hasMany(Invitation::class, 'guest_id', 'id');
+    }
+
+    /**
+     * Get all flight requests for this guest
+     */
+    public function flightRequests()
+    {
+        return $this->hasMany(FlightRequest::class);
+    }
+
+    /**
+     * Scope for confirmed guests
+     */
+    public function scopeConfirmed($query)
+    {
+        return $query->where('status_id', 'confirmed');
+    }
+
+    /**
+     * Scope for pending guests
+     */
+    public function scopePending($query)
+    {
+        return $query->where('status_id', 'pending');
+    }
+
+    /**
+     * Scope for invited guests
+     */
+    public function scopeInvited($query)
+    {
+        return $query->where('status_id', 'invited');
+    }
+
+    /**
+     * Scope for declined guests
+     */
+    public function scopeDeclined($query)
+    {
+        return $query->where('status_id', 'declined');
+    }
+
+    /**
+     * Scope for local guests
+     */
+    public function scopeLocal($query)
+    {
+        return $query->where('guestType', 'local');
+    }
+
+    /**
+     * Scope for international guests
+     */
+    public function scopeInternational($query)
+    {
+        return $query->where('guestType', 'international');
+    }
+
+    /**
+     * Scope for searching guests
+     */
+    public function scopeSearch($query, $search)
+    {
+        if (empty($search)) {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($search) {
+            $q->where('name', 'like', "%{$search}%")
+              ->orWhere('email', 'like', "%{$search}%")
+              ->orWhere('title', 'like', "%{$search}%")
+              ->orWhere('id', 'like', "%{$search}%");
+        });
+    }
+}

@@ -25,11 +25,6 @@ class VenueSeeder extends Seeder
                 DB::table('venues')->where('id', $existing->id)->update(array_merge($data, ['updated_at' => $now]));
             } else {
                 DB::table('venues')->insert(array_merge($data, [
-                    'title'       => $data['name'],
-                    'short_name'  => $data['name'],
-                    'active_flag' => 1,
-                    'created_by'  => 1,
-                    'updated_by'  => 1,
                     'created_at'  => $now,
                     'updated_at'  => $now,
                 ]));
