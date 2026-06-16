@@ -77,6 +77,11 @@ const resSel     = ref([])    // seat ids selected for bulk-reserve
 const resOrg     = ref('LOC')
 const resCustom  = ref('')
 
+// ── Drag & Drop state ─────────────────────────────────────────────
+const draggedGuest = ref(null)  // guestId being dragged from panel
+const draggedSeat  = ref(null)  // seatId being dragged (for seat-to-seat moves)
+const dragOverSeat = ref(null)  // seatId being hovered during drag
+
 // ── Hover popover ─────────────────────────────────────────────────
 const hover = ref(null)  // {id, rect, below}
 let hoverTimer = null
@@ -88,6 +93,9 @@ const pinPos  = ref({ x: 0, y: 0 })
 // ── Flash animation ───────────────────────────────────────────────
 const flash = ref(null)
 let flashTimer = null
+
+// ── Names/Dots toggle ──────────────────────────────────────────────
+const showNames = ref(false)
 
 // ── Template picker ───────────────────────────────────────────────
 const templateModal = ref(false)
@@ -362,6 +370,12 @@ function seatClick(seat, event) {
 }
 
 function guestClick(g) {
+    // Don't allow clicking guests that are already seated
+    if (seatOf(g.id)) {
+        toast('Guest already seated — unassign first to reassign')
+        return
+    }
+    
     if (pendingSeat.value) {
         assignSeat(pendingSeat.value, g.id)
         toast(`${g.name.split(' ').slice(-1)} → ${pendingSeat.value}`)
@@ -381,6 +395,164 @@ function seatEnter(seat, event) {
 function seatLeave() { clearTimeout(hoverTimer); hoverTimer = setTimeout(() => hover.value = null, 130) }
 function popKeep()   { clearTimeout(hoverTimer) }
 function popLeave()  { clearTimeout(hoverTimer); hoverTimer = setTimeout(() => hover.value = null, 130) }
+
+function startAssigning(seatId) {
+    pendingSeat.value = seatId
+    floatPanel.value = true
+    hover.value = null
+    toast('Pick a guest from the Assign panel')
+}
+
+function hoverIssueTicket(seatId) {
+    issueTicket(seatId)
+    toast('Ticket issued 🎫')
+    hover.value = null
+}
+
+function hoverUnassignSeat(seatId) {
+    unassignSeat(seatId)
+    toast('Seat freed')
+    hover.value = null
+}
+
+function hoverRevokeTicket(seatId) {
+    revokeTicket(seatId)
+    toast('Ticket revoked')
+    hover.value = null
+}
+
+function hoverRelease(seatId) {
+    releaseSeats([seatId])
+    toast('Released')
+    hover.value = null
+}
+
+function pinIssueTicket(seatId) {
+    issueTicket(seatId)
+    toast('Ticket issued 🎫')
+    pinSeat.value = null
+}
+
+function pinUnassignSeat(seatId) {
+    unassignSeat(seatId)
+    toast('Seat freed')
+    pinSeat.value = null
+}
+
+// ── Drag & Drop handlers ──────────────────────────────────────────
+function onGuestDragStart(guest, event) {
+    // Don't allow dragging seated guests from panel
+    if (seatOf(guest.id)) {
+        event.preventDefault()
+        return
+    }
+    draggedGuest.value = guest.id
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', guest.id)
+}
+
+function onGuestDragEnd() {
+    draggedGuest.value = null
+    dragOverSeat.value = null
+}
+
+function onSeatDragStart(seat, event) {
+    // Only allow dragging assigned/ticket seats in assign mode
+    if (!seat.guestId || seat.hidden || mode.value !== 'assign') {
+        event.preventDefault()
+        return
+    }
+    draggedSeat.value = seat.id
+    draggedGuest.value = seat.guestId
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', seat.id)
+}
+
+function onSeatDragEnd() {
+    draggedSeat.value = null
+    draggedGuest.value = null
+    dragOverSeat.value = null
+}
+
+function onSeatDragOver(seat, event) {
+    if (seat.hidden || mode.value !== 'assign') {
+        return
+    }
+    
+    // Allow drop on available seats OR on other seats (for swapping)
+    const isDraggingSeat = draggedSeat.value !== null
+    const canDrop = seat.status === 'available' || (isDraggingSeat && seat.id !== draggedSeat.value)
+    
+    if (!canDrop) {
+        return
+    }
+    
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    dragOverSeat.value = seat.id
+}
+
+function onSeatDragLeave(seat) {
+    if (dragOverSeat.value === seat.id) {
+        dragOverSeat.value = null
+    }
+}
+
+function onSeatDrop(seat, event) {
+    event.preventDefault()
+    
+    const guestId = draggedGuest.value
+    const sourceSeatId = draggedSeat.value
+    
+    if (!guestId) return
+    
+    // Case 1: Dragging from guest panel to available seat
+    if (!sourceSeatId) {
+        if (seat.status !== 'available' || seat.hidden) {
+            toast('Cannot assign to this seat', 'error')
+            draggedGuest.value = null
+            dragOverSeat.value = null
+            return
+        }
+        
+        const guest = guestById(guestId)
+        if (!guest) return
+        
+        assignSeat(seat.id, guestId)
+        toast(`${guest.name.split(' ').slice(-1)} → ${seat.id}`)
+    }
+    // Case 2: Dragging from one seat to another (move or swap)
+    else {
+        if (seat.hidden || seat.id === sourceSeatId) {
+            draggedSeat.value = null
+            draggedGuest.value = null
+            dragOverSeat.value = null
+            return
+        }
+        
+        const guest = guestById(guestId)
+        if (!guest) return
+        
+        // If target seat is available, just move
+        if (seat.status === 'available') {
+            unassignSeat(sourceSeatId)
+            assignSeat(seat.id, guestId)
+            toast(`${guest.name.split(' ').slice(-1)} moved to ${seat.id}`)
+        }
+        // If target seat has a guest, swap
+        else if (seat.guestId) {
+            const targetGuest = guestById(seat.guestId)
+            if (!targetGuest) return
+            
+            swapSeats(sourceSeatId, seat.id)
+            toast(`Swapped ${guest.name.split(' ').slice(-1)} ↔ ${targetGuest.name.split(' ').slice(-1)}`)
+        }
+    }
+    
+    draggedSeat.value = null
+    draggedGuest.value = null
+    dragOverSeat.value = null
+}
 
 // ── Bulk reserve ──────────────────────────────────────────────────
 const resLabel = computed(() => (resCustom.value.trim() || resOrg.value).toUpperCase())
@@ -536,12 +708,23 @@ function onConfigSaved(saved) {
 
 // ── Helpers ───────────────────────────────────────────────────────
 const guestById = id => props.guests.find(g => g.id === id)
+
+// Extract guest surname (last word of name)
+const guestSurname = id => {
+    const g = guestById(id)
+    if (!g) return ''
+    const parts = g.name.trim().split(/\s+/)
+    return parts[parts.length - 1]
+}
+
 const tierFor   = id => props.tiers.find(t => t.id === id)
 const venueFor  = id => props.venues.find(v => v.id === id)
 const tplName   = tid => localTemplates.value.find(t => t.id === tid)?.name ?? null
 
-function tierColor(tierId) {
-    return tierFor(tierId)?.color ?? 'var(--gms-text-3)'
+// Get tier color by tier name (used for colored dots in chip mode)
+function tierColor(tierName) {
+    const t = props.tiers.find(t => t.name === tierName)
+    return t?.color || 'var(--gms-gold)'
 }
 
 function matchMonth(d) { return d ? new Date(d).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase() : '' }
@@ -603,6 +786,7 @@ function smapSeatClass(seat) {
     const isResSel = mode.value === 'reserve' && resSel.value.includes(seat.id)
     return [
         'gms-seat',
+        showNames.value ? 'chip' : '',
         seat.hidden ? 'hidden' : seat.status,
         isPick    ? 'pick'   : '',
         isResSel  ? 'ressel' : '',
@@ -1085,6 +1269,10 @@ function deleteTemplate(tplId) {
               <button class="gms-zlabel" @click="zoom=1" title="Reset zoom">{{ Math.round(zoom*100) }}%</button>
               <button @click="zoomBy(0.1)"  :disabled="zoom >= Z_MAX" title="Zoom in">+</button>
             </div>
+            <div class="gms-seg" style="flex:none;">
+              <button :class="{on: !showNames}" @click="showNames = false" title="Show dots">Dots</button>
+              <button :class="{on: showNames}" @click="showNames = true" title="Show names">Names</button>
+            </div>
             <button class="gms-btn gms-btn-sm" :class="floatPanel ? 'gms-btn-primary' : ''"
               @click="floatPanel = !floatPanel" title="Toggle guest assignment panel">
               <GmsIcon name="users" :size="13" /> Assign
@@ -1134,7 +1322,7 @@ function deleteTemplate(tplId) {
 
         <!-- ══ SEAT MAP (small squares) ═════════════════════ -->
         <div v-if="mapTab === 'map'" class="gms-smap">
-          <div class="gms-smap-inner" :style="{zoom}">
+          <div class="gms-smap-inner" :class="{chips: showNames}" :style="{zoom}">
             <div class="gms-stand">
               <template v-for="(block, bi) in visibleBlocks" :key="block.id">
                 <div class="gms-smap-block">
@@ -1147,13 +1335,46 @@ function deleteTemplate(tplId) {
                       <template v-for="seat in row.seats" :key="seat.id">
                         <div
                           :data-seat="seat.id"
-                          :class="smapSeatClass(seat)"
+                          :class="[smapSeatClass(seat), dragOverSeat===seat.id ? 'drag-over' : '', draggedSeat===seat.id ? 'dragging' : '']"
                           :style="smapSeatStyle(seat)"
+                          :draggable="seat.guestId && !seat.hidden && mode==='assign'"
                           :title="seat.id + (seat.guestId ? ' – ' + guestById(seat.guestId)?.name : '') + (seat.resLabel ? ' [' + seat.resLabel + ']' : '')"
                           @click="seatClick(seat, $event)"
                           @mouseenter="seatEnter(seat, $event)"
                           @mouseleave="seatLeave()"
-                        />
+                          @dragstart="onSeatDragStart(seat, $event)"
+                          @dragend="onSeatDragEnd"
+                          @dragover="onSeatDragOver(seat, $event)"
+                          @dragleave="onSeatDragLeave(seat)"
+                          @drop="onSeatDrop(seat, $event)"
+                        >
+                          <template v-if="showNames">
+                            <!-- Assigned seat chip: dot + surname + seat number -->
+                            <template v-if="seat.status === 'assigned' && seat.guestId">
+                              <span class="sc-dot" :style="{background: tierColor(guestById(seat.guestId)?.tier)}" />
+                              <span class="sc-nm">{{ guestSurname(seat.guestId) }}</span>
+                              <span class="sc-no">{{ seat.col }}</span>
+                            </template>
+                            <!-- Ticket seat chip: checkmark + surname + seat number -->
+                            <template v-else-if="seat.status === 'ticket' && seat.guestId">
+                              <span class="sc-mk"><GmsIcon name="check" :size="10" /></span>
+                              <span class="sc-nm">{{ guestSurname(seat.guestId) }}</span>
+                              <span class="sc-no">{{ seat.col }}</span>
+                            </template>
+                            <!-- Reserved seat chip: org label -->
+                            <template v-else-if="seat.status === 'reserved' && seat.resLabel">
+                              <span class="sc-res">{{ seat.resLabel }}</span>
+                            </template>
+                            <!-- Available seat chip: just seat number -->
+                            <template v-else-if="seat.status === 'available'">
+                              <span class="sc-no">{{ seat.col }}</span>
+                            </template>
+                          </template>
+                          <!-- Dot view: show seat column number -->
+                          <template v-else>
+                            {{ seat.col }}
+                          </template>
+                        </div>
                         <span v-if="row.aisles.includes(seat.col) && seat.col < (row.seats[row.seats.length-1]?.col ?? 0)" class="gms-aisle-gap" />
                       </template>
                       <span class="gms-rl">{{ row.label }}</span>
@@ -1168,7 +1389,7 @@ function deleteTemplate(tplId) {
           </div>
           <!-- Seat map legend -->
           <div class="gms-seat-legend">
-            <span class="k"><span class="sw" style="background:var(--gms-surface-2);border-color:var(--gms-border);" />Available</span>
+            <span class="k"><span class="sw" style="background:var(--gms-surface-3);border-color:var(--gms-border);" />Available</span>
             <span class="k"><span class="sw" style="background:repeating-linear-gradient(45deg,#e2ddd8 0 3px,#d4cec9 3px 6px);" />Reserved</span>
             <span class="k"><span class="sw" style="background:var(--gms-maroon);border-color:var(--gms-maroon);" />Assigned</span>
             <span class="k"><span class="sw" style="background:var(--gms-text);border-color:var(--gms-text);" />Ticket issued</span>
@@ -1191,11 +1412,17 @@ function deleteTemplate(tplId) {
                       <template v-for="seat in row.seats" :key="seat.id">
                         <div
                           :data-seat="seat.id"
-                          :class="pseatClass(seat)"
+                          :class="[pseatClass(seat), dragOverSeat===seat.id ? 'drag-over' : '', draggedSeat===seat.id ? 'dragging' : '']"
                           :style="pseatInfo(seat).style ?? {}"
+                          :draggable="seat.guestId && !seat.hidden && mode==='assign'"
                           @click="seatClick(seat, $event)"
                           @mouseenter="seatEnter(seat, $event)"
                           @mouseleave="seatLeave()"
+                          @dragstart="onSeatDragStart(seat, $event)"
+                          @dragend="onSeatDragEnd"
+                          @dragover="onSeatDragOver(seat, $event)"
+                          @dragleave="onSeatDragLeave(seat)"
+                          @drop="onSeatDrop(seat, $event)"
                         >
                           <span class="gms-pid">{{ seat.id }}</span>
                           <span class="gms-pnm" :style="pseatInfo(seat).oc && !seat.hidden ? {color: pseatInfo(seat).oc} : {}">
@@ -1268,8 +1495,11 @@ function deleteTemplate(tplId) {
       <div class="gms-gpanel-list">
         <div
           v-for="g in filteredGuests" :key="g.id"
-          :class="['gms-gp-item', pickGuest===g.id ? 'pick' : '']"
+          :class="['gms-gp-item', pickGuest===g.id ? 'pick' : '', seatOf(g.id) ? 'disabled' : '', draggedGuest===g.id ? 'dragging' : '']"
+          :draggable="!seatOf(g.id) && mode==='assign'"
           @click="guestClick(g)"
+          @dragstart="onGuestDragStart(g, $event)"
+          @dragend="onGuestDragEnd"
         >
           <GmsAvatar :name="g.name" size="sm" />
           <div style="flex:1;min-width:0;">
@@ -1343,32 +1573,32 @@ function deleteTemplate(tplId) {
       <div class="gms-sp-acts">
         <template v-if="hoverSeat.status==='assigned'">
           <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
-            @click="issueTicket(hoverSeat.id);toast('Ticket issued 🎫');hover.value=null">
+            @click="hoverIssueTicket(hoverSeat.id)">
             <GmsIcon name="ticket" :size="12" /> Ticket
           </button>
           <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="unassignSeat(hoverSeat.id);toast('Seat freed');hover.value=null">
+            @click="hoverUnassignSeat(hoverSeat.id)">
             <GmsIcon name="x" :size="12" /> Unassign
           </button>
         </template>
         <template v-else-if="hoverSeat.status==='ticket'">
           <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="revokeTicket(hoverSeat.id);toast('Ticket revoked');hover.value=null">
+            @click="hoverRevokeTicket(hoverSeat.id)">
             <GmsIcon name="arrow-right" :size="12" /> Revoke ticket
           </button>
           <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="unassignSeat(hoverSeat.id);toast('Seat freed');hover.value=null">
+            @click="hoverUnassignSeat(hoverSeat.id)">
             <GmsIcon name="x" :size="12" /> Unassign
           </button>
         </template>
         <template v-else>
           <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
-            @click="pendingSeat.value=hoverSeat.id;toast('Pick a guest from the Assign panel');floatPanel.value=true;hover.value=null">
+            @click="startAssigning(hoverSeat.id)">
             <GmsIcon name="users" :size="12" /> Assign guest
           </button>
           <button v-if="hoverSeat.status==='reserved'"
             class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="releaseSeats([hoverSeat.id]);toast('Released');hover.value=null">
+            @click="hoverRelease(hoverSeat.id)">
             <GmsIcon name="x" :size="12" /> Release
           </button>
         </template>
@@ -1409,12 +1639,12 @@ function deleteTemplate(tplId) {
       <div class="gms-sp-acts" style="margin-top:10px;">
         <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
           @mousedown.stop
-          @click="issueTicket(pinSeat);toast('Ticket issued 🎫');pinSeat.value=null">
+          @click="pinIssueTicket(pinSeat)">
           <GmsIcon name="ticket" :size="12" /> Ticket
         </button>
         <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
           @mousedown.stop
-          @click="unassignSeat(pinSeat);toast('Seat freed');pinSeat.value=null">
+          @click="pinUnassignSeat(pinSeat)">
           <GmsIcon name="x" :size="12" /> Unassign
         </button>
       </div>

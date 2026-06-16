@@ -61,6 +61,22 @@ function delBlock(id) {
 }
 function patchBlock(patch) { setBlocks(bs => bs.map(b => b.id === selId.value ? { ...b, ...patch } : b)) }
 
+function updateBlockCode(newCode) {
+    newCode = newCode.trim()
+    if (!newCode || newCode === selId.value) return
+    
+    // Check if code already exists
+    const exists = draft.value.blocks.some(b => b.id === newCode && b.id !== selId.value)
+    if (exists) {
+        alert('Block code "' + newCode + '" already exists. Please use a unique code.')
+        return
+    }
+    
+    const oldId = selId.value
+    setBlocks(bs => bs.map(b => b.id === oldId ? { ...b, id: newCode } : b))
+    selId.value = newCode
+}
+
 // ── Row helpers ───────────────────────────────────────────────────
 function addRow(count = 1) {
     for (let k = 0; k < count; k++) {
@@ -257,8 +273,12 @@ function save() {
           </div>
         </div>
 
-        <!-- Block name + tier -->
+        <!-- Block code, name + tier -->
         <div class="gms-lc-editor-head">
+          <div class="gms-field" style="margin-bottom:0;">
+            <label class="gms-label">Block code</label>
+            <input class="gms-input" :value="selBlock.id" @blur="updateBlockCode($event.target.value)" @keydown.enter="$event.target.blur()" placeholder="A" maxlength="8" style="margin-top:4px;font-family:var(--gms-font-mono);" />
+          </div>
           <div class="gms-field" style="flex:1;margin-bottom:0;">
             <label class="gms-label">Block name</label>
             <input class="gms-input" :value="selBlock.label" @input="patchBlock({label: $event.target.value})" style="margin-top:4px;" />

@@ -25,7 +25,10 @@ class SeatGeneratorService
         foreach ($template->blocks as $block) {
             foreach ($block->rows as $row) {
                 $rowLabel = (string) $row->label;
-                $rowId = str_pad($rowLabel, 2, '0', STR_PAD_LEFT);
+                // Only pad with zeros if the label is numeric
+                $rowId = is_numeric($rowLabel) 
+                    ? str_pad($rowLabel, 2, '0', STR_PAD_LEFT)
+                    : $rowLabel;
 
                 for ($col = 1; $col <= $row->seats; $col++) {
                     $colId = str_pad((string) $col, 2, '0', STR_PAD_LEFT);
@@ -85,7 +88,10 @@ class SeatGeneratorService
             foreach ($template->blocks as $block) {
                 foreach ($block->rows as $row) {
                     $rowLabel = (string) $row->label;
-                    $rowId = str_pad($rowLabel, 2, '0', STR_PAD_LEFT);
+                    // Only pad with zeros if the label is numeric
+                    $rowId = is_numeric($rowLabel) 
+                        ? str_pad($rowLabel, 2, '0', STR_PAD_LEFT)
+                        : $rowLabel;
 
                     for ($col = 1; $col <= $row->seats; $col++) {
                         $colId = str_pad((string) $col, 2, '0', STR_PAD_LEFT);
