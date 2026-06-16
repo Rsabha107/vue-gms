@@ -2644,7 +2644,7 @@
 .gms-sp-meta   { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: 11.5px; }
 .gms-sp-org    { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid; border-radius: 9px; margin-top: 10px; font-size: 11.5px; font-weight: 600; background: var(--gms-surface-2); }
 .gms-sp-org-code { color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px; letter-spacing: .4px; flex: none; }
-.gms-sp-acts   { display: flex; gap: 7px; }
+.gms-sp-acts   { display: flex; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gms-border); }
 .gms-sp-close  {
   flex: none; width: 22px; height: 22px;
   display: grid; place-items: center;
@@ -4988,8 +4988,155 @@
 .sl-fac-toggle:hover { border-color: var(--gms-border-2); }
 .sl-fac-toggle.on {
   border-color: var(--gms-maroon);
-  background: var(--gms-maroon-light);
+  background: var(--gms-maroon-tint);
 }
+.sl-fac-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--gms-border);
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s;
+}
+.sl-fac-toggle.on .sl-fac-icon {
+  border-color: var(--gms-maroon);
+  background: var(--gms-maroon);
+  color: var(--gms-surface);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SEATING TEMPLATES
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Template grid & cards */
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
+  gap: 14px;
+}
+
+.tpl-card {
+  background: var(--gms-surface);
+  border: 1px solid var(--gms-border);
+  border-radius: var(--gms-radius-lg);
+  padding: 15px 16px;
+  box-shadow: var(--gms-shadow-sm);
+  cursor: pointer;
+  transition: .14s;
+  display: flex;
+  flex-direction: column;
+}
+
+.tpl-card:hover {
+  border-color: var(--gms-maroon);
+  box-shadow: 0 6px 18px -8px rgba(138, 31, 61, 0.25);
+  transform: translateY(-1px);
+}
+
+.tpl-card-h {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.tpl-ic {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--gms-maroon-soft);
+  color: var(--gms-maroon);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.tpl-name {
+  font-weight: 600;
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gms-text);
+}
+
+.tpl-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.tpl-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--gms-surface-2);
+  color: var(--gms-text-2);
+  border: 1px solid var(--gms-border);
+}
+
+.tpl-chip.vvip {
+  background: var(--gms-maroon-tint);
+  color: var(--gms-maroon);
+  border-color: transparent;
+}
+
+.tpl-card.tpl-new {
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-align: center;
+  border-style: dashed;
+  background: var(--gms-surface-2);
+  min-height: 150px;
+}
+
+.tpl-card.tpl-new:hover {
+  border-color: var(--gms-maroon);
+  background: var(--gms-maroon-tint);
+}
+
+/* Section headers (for venue grouping) */
+.tpl-sec {
+  margin-bottom: 24px;
+}
+
+.tpl-sec-h {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gms-text);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tpl-sec-venue {
+  color: var(--gms-text);
+}
+
+.tpl-sec-city {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--gms-text-3);
+}
+
+.tpl-empty {
+  font-size: 13px;
+  color: var(--gms-text-3);
+  padding: 4px 2px 8px;
+}
+
+/* Template actions row */
+.tpl-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .sl-toggle-icon {
   width: 34px;
   height: 34px;

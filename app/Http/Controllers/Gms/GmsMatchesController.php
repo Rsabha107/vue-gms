@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Gms;
 
 use App\Http\Controllers\Controller;
+use App\Models\Event;
 use App\Models\GameMatch;
 use App\Models\Venue;
 use App\Services\Gms\GmsMockData;
@@ -59,15 +60,24 @@ class GmsMatchesController extends Controller
                 ];
             });
 
+        // Get venues assigned to this event
+        $venues = [];
+        if ($eventId) {
+            $eventModel = Event::find($eventId);
+            if ($eventModel) {
+                $venues = $eventModel->venues()->orderBy('name')->get()->map(fn($v) => [
+                    'id' => $v->id,
+                    'name' => $v->name,
+                    'city' => $v->city,
+                    'country' => $v->country,
+                    'capacity' => $v->capacity,
+                ]);
+            }
+        }
+
         return Inertia::render('Gms/Matches/Index', [
             'matches' => $matches,
-            'venues' => Venue::orderBy('name')->get()->map(fn($v) => [
-                'id' => $v->id,
-                'name' => $v->name,
-                'city' => $v->city,
-                'country' => $v->country,
-                'capacity' => $v->capacity,
-            ]),
+            'venues' => $venues,
             'event' => $event,
         ]);
     }

@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, inject, nextTick } from 'vue'
+import { ref, computed, inject, nextTick, watch } from 'vue'
+import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
@@ -36,13 +37,22 @@ const ORGS = [
 const orgOf    = code => ORGS.find(o => o.code === code)
 const orgColor = code => { const o = orgOf(code); return o ? o.color : 'var(--gms-gold)' }
 
-// ── View state machine: 'list' | 'map' ───────────────────────────
+// ── View state machine: 'list' | 'map' | 'templates' ─────────────
 const view        = ref('list')
 const activeMatch = ref(null)
 
 // ── Local mutable copies ──────────────────────────────────────────
 const localMatches = ref(props.matches.map(m => ({ ...m })))
 const seatState    = ref({ ...props.matchSeats })
+
+// Sync with props updates (after template assignment, etc)
+watch(() => props.matches, (newMatches) => {
+    localMatches.value = newMatches.map(m => ({ ...m }))
+}, { deep: true })
+
+watch(() => props.matchSeats, (newSeats) => {
+    seatState.value = { ...newSeats }
+}, { deep: true })
 
 // ── Map state ─────────────────────────────────────────────────────
 const mapTab    = ref('map')   // 'map' | 'planner' | 'list'
@@ -109,9 +119,37 @@ function backToList() {
     pinSeat.value     = null
 }
 
+function openTemplatesView() {
+    view.value = 'templates'
+}
+
+function backFromTemplates() {
+    view.value = 'list'
+}
+
+function openNewTemplate(venueId) {
+    configIsNew.value    = true
+    configTplId.value    = null
+    configReturnTo.value = 'templates'
+    // Set active venue context for configurator
+    activeMatch.value = { venueId }
+    configuring.value = true
+}
+
+function openEditTemplate(tpl) {
+    configIsNew.value    = false
+    configTplId.value    = tpl.id
+    configReturnTo.value = 'templates'
+    // Set active venue context for configurator
+    activeMatch.value = { venueId: tpl.venueId }
+    configuring.value = true
+}
+
 function openTemplatePicker(m) {
     activeMatch.value   = m
-    chosenTplId.value   = props.templates[0]?.id ?? ''
+    // Set first template from this venue
+    const venueTemplates = localTemplates.value.filter(t => t.venueId === m.venueId)
+    chosenTplId.value   = venueTemplates[0]?.id ?? ''
     templateModal.value = true
 }
 
@@ -119,6 +157,12 @@ function openTemplatePicker(m) {
 const activeSeats = computed(() => {
     if (!activeMatch.value) return []
     return seatState.value[activeMatch.value.id] ?? []
+})
+
+// ── Templates for active match's venue ───────────────────────────
+const activeVenueTemplates = computed(() => {
+    if (!activeMatch.value) return localTemplates.value
+    return localTemplates.value.filter(t => t.venueId === activeMatch.value.venueId)
 })
 
 const seatLookup = computed(() => {
@@ -204,31 +248,48 @@ function matchesFilt(s) {
 }
 
 // ── Mutations ─────────────────────────────────────────────────────
-function mutateSeat(seatId, update) {
+function mutateSeat(seatId, update, action) {
     const seats = seatState.value[activeMatch.value.id]
     if (!seats) return
     const idx = seats.findIndex(s => s.id === seatId)
     if (idx === -1) return
+    
+    // Optimistic update
     seats[idx] = { ...seats[idx], ...update }
     seatState.value = { ...seatState.value }
-    axios.post(`/gms/seating/${activeMatch.value.id}/seats/${seatId}`, { ...update, _method: 'POST' }).catch(() => {})
+    
+    // Build API payload
+    const payload = { action }
+    if (update.guestId !== undefined) payload.guestId = update.guestId
+    if (update.resLabel !== undefined) payload.resLabel = update.resLabel
+    
+    // Persist to database
+    axios.post(`/gms/seating/${activeMatch.value.id}/seats/${seatId}`, payload)
+        .catch(err => {
+            console.error('Failed to update seat:', err)
+            toast('Failed to update seat', 'error')
+            // Reload seats on error
+            router.reload({ only: ['matchSeats'] })
+        })
 }
 
-function assignSeat(seatId, guestId)    { mutateSeat(seatId, { status: 'assigned', guestId, resLabel: null }) }
-function unassignSeat(seatId)           { mutateSeat(seatId, { status: 'available', guestId: null, resLabel: null }) }
-function issueTicket(seatId)            { mutateSeat(seatId, { status: 'ticket' }) }
-function revokeTicket(seatId)           { mutateSeat(seatId, { status: 'assigned' }) }
-function reserveSeats(ids, label)       { ids.forEach(id => mutateSeat(id, { status: 'reserved', resLabel: label, guestId: null })) }
-function releaseSeats(ids)              { ids.forEach(id => mutateSeat(id, { status: 'available', resLabel: null, guestId: null })) }
-function setSeatsHidden(ids, hidden)    { ids.forEach(id => mutateSeat(id, { hidden })) }
+function assignSeat(seatId, guestId)    { mutateSeat(seatId, { status: 'assigned', guestId, resLabel: null }, 'assign') }
+function unassignSeat(seatId)           { mutateSeat(seatId, { status: 'available', guestId: null, resLabel: null }, 'unassign') }
+function issueTicket(seatId)            { mutateSeat(seatId, { status: 'ticket' }, 'issue_ticket') }
+function revokeTicket(seatId)           { mutateSeat(seatId, { status: 'assigned' }, 'revoke_ticket') }
+function reserveSeats(ids, label)       { ids.forEach(id => mutateSeat(id, { status: 'reserved', resLabel: label, guestId: null }, 'reserve')) }
+function releaseSeats(ids)              { ids.forEach(id => mutateSeat(id, { status: 'available', resLabel: null, guestId: null }, 'release')) }
+function setSeatsHidden(ids, hidden)    { ids.forEach(id => mutateSeat(id, { hidden }, hidden ? 'hide' : 'unhide')) }
 
 function swapSeats(sid1, sid2) {
     const s1 = seatById(sid1), s2 = seatById(sid2)
     if (!s1 || !s2) return
     const g1 = s1.guestId, st1 = s1.status
     const g2 = s2.guestId, st2 = s2.status
-    mutateSeat(sid1, { guestId: g2, status: st2 })
-    mutateSeat(sid2, { guestId: g1, status: st1 })
+    
+    // Swap by reassigning each seat with the other's guest
+    mutateSeat(sid1, { guestId: g2, status: st2, resLabel: null }, 'assign')
+    mutateSeat(sid2, { guestId: g1, status: st1, resLabel: null }, 'assign')
 }
 
 // ── Mode switching ────────────────────────────────────────────────
@@ -392,6 +453,12 @@ function startPopDrag(e) {
 // ── Local templates (editable copy) ──────────────────────────────
 const localTemplates = ref(props.templates.map(t => JSON.parse(JSON.stringify(t))))
 
+// ── Active venues (only venues with matches in this event) ───────
+const activeVenues = computed(() => {
+    const venueIds = new Set(localMatches.value.map(m => m.venueId))
+    return props.venues.filter(v => venueIds.has(v.id))
+})
+
 // ── Configurator state ────────────────────────────────────────────
 const configuring     = ref(false)   // true = show configurator
 const configIsNew     = ref(false)
@@ -407,48 +474,64 @@ function openConfigurator(mode, templateId = null) {
 
 function onConfigBack() {
     configuring.value = false
+    if (configReturnTo.value === 'templates') {
+        view.value = 'templates'
+    }
 }
 
 function onConfigSaved(saved) {
-    const idx = localTemplates.value.findIndex(t => t.id === saved.id)
-    if (idx !== -1) {
-        localTemplates.value = localTemplates.value.map((t, i) => 
-            i === idx ? saved : t
-        )
-    } else {
-        localTemplates.value.push(saved)
+    // Determine if this is a create or update
+    const isCreate = saved.isNew || !localTemplates.value.find(t => t.id === saved.id)
+    
+    // Build payload
+    const payload = {
+        venueId: saved.venueId,
+        name: saved.name,
+        blocks: saved.blocks
     }
-    // Regenerate seat map if the current match uses this template
-    if (activeMatch.value) {
-        const currentTplId = localMatches.value.find(m => m.id === activeMatch.value.id)?.templateId
-            || props.matchSeeds[activeMatch.value.id]
-        if (currentTplId === saved.id) {
-            const tpl = localTemplates.value.find(t => t.id === saved.id)
-            if (tpl) {
-                const seats = []
-                for (const b of tpl.blocks) {
-                    for (const row of (b.rows || [])) {
-                        const rowLabel = String(row.label)
-                        const rowId    = rowLabel.padStart(2, '0')
-                        for (let c = 1; c <= row.seats; c++) {
-                            const col = String(c).padStart(2, '0')
-                            const id  = `${b.id}-${rowId}-${col}`
-                            // preserve existing seat state if seat still exists
-                            const existing = seatState.value[activeMatch.value.id]?.find(s => s.id === id)
-                            seats.push(existing ?? {
-                                id, block: b.id, blockLabel: b.label, blockTier: b.tier || '', blockColor: b.color,
-                                row: rowLabel, rowLabel, col: c,
-                                status: 'available', guestId: null, resLabel: null, hidden: false,
-                            })
+    
+    if (isCreate) {
+        // Create new template
+        router.post(route('gms.seating.templates.store'), payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                configuring.value = false
+                if (configReturnTo.value === 'templates') {
+                    view.value = 'templates'
+                    router.reload({ only: ['templates'] })
+                }
+                toast('Template created successfully')
+            },
+            onError: (errors) => {
+                toast(errors.error || 'Failed to create template', 'error')
+            }
+        })
+    } else {
+        // Update existing template
+        router.put(route('gms.seating.templates.update', saved.id), payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                configuring.value = false
+                if (configReturnTo.value === 'templates') {
+                    view.value = 'templates'
+                    router.reload({ only: ['templates'] })
+                } else {
+                    // Regenerate seat map if the current match uses this template
+                    if (activeMatch.value && activeMatch.value.id) {
+                        const currentTplId = localMatches.value.find(m => m.id === activeMatch.value.id)?.templateId
+                            || props.matchSeeds[activeMatch.value.id]
+                        if (currentTplId === saved.id) {
+                            router.reload({ only: ['templates', 'matchSeats'] })
                         }
                     }
                 }
-                seatState.value = { ...seatState.value, [activeMatch.value.id]: seats }
+                toast('Template updated successfully')
+            },
+            onError: (errors) => {
+                toast(errors.error || 'Failed to update template', 'error')
             }
-        }
+        })
     }
-    configuring.value = false
-    toast(saved.isNew ? 'Template created.' : 'Template saved.')
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -558,35 +641,73 @@ const hoverSeat = computed(() => hover.value ? seatById(hover.value.id) : null)
 // ── Template application ──────────────────────────────────────────
 function assignTemplate() {
     if (!chosenTplId.value) return
-    const tpl = localTemplates.value.find(t => t.id === chosenTplId.value)
-    if (!tpl) return
-    const seats = []
-    for (const b of tpl.blocks) {
-        for (const row of (b.rows || [])) {
-            const rowLabel = String(row.label)
-            const rowId    = rowLabel.padStart(2, '0')
-            for (let c = 1; c <= row.seats; c++) {
-                const col = String(c).padStart(2, '0')
-                seats.push({
-                    id: `${b.id}-${rowId}-${col}`,
-                    block: b.id, blockLabel: b.label, blockTier: b.tier || '', blockColor: b.color,
-                    row: rowLabel, rowLabel, col: c,
-                    status: 'available', guestId: null, resLabel: null, hidden: false,
-                })
-            }
+    if (!activeMatch.value) return
+
+    router.post(route('gms.seating.matches.assignTemplate', activeMatch.value.id), {
+        templateId: chosenTplId.value
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            templateModal.value = false
+            // Reload to get fresh seats from database
+            router.reload({ 
+                only: ['matches', 'matchSeeds', 'matchSeats'],
+                onSuccess: () => {
+                    openMatch(activeMatch.value)
+                    toast('Template applied successfully')
+                }
+            })
+        },
+        onError: (errors) => {
+            toast(errors.error || 'Failed to assign template', 'error')
         }
+    })
+}
+
+// ── Template management (for templates view) ──────────────────────
+function tplSeats(t) {
+    return t.blocks.reduce((a, b) => a + (b.rows || []).reduce((x, r) => x + r.seats, 0), 0)
+}
+
+function tplUsedBy(tplId) {
+    return localMatches.value.filter(m => m.templateId === tplId).length + 
+           Object.values(props.matchSeeds).filter(tid => tid === tplId).length
+}
+
+function duplicateTemplate(tpl) {
+    if (confirm(`Duplicate "${tpl.name}"?`)) {
+        router.post(route('gms.seating.templates.duplicate', tpl.id), {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                toast('Template duplicated successfully')
+                router.reload({ only: ['templates'] })
+            },
+            onError: () => {
+                toast('Failed to duplicate template', 'error')
+            }
+        })
     }
-    seatState.value[activeMatch.value.id] = seats
-    seatState.value = { ...seatState.value }
-    const idx = localMatches.value.findIndex(m => m.id === activeMatch.value.id)
-    if (idx !== -1) {
-        localMatches.value = localMatches.value.map((m, i) => 
-            i === idx ? { ...m, templateId: chosenTplId.value } : m
-        )
+}
+
+function deleteTemplate(tplId) {
+    const used = tplUsedBy(tplId)
+    if (used > 0) {
+        toast(`Cannot delete: template is used by ${used} match${used === 1 ? '' : 'es'}`, 'error')
+        return
     }
-    templateModal.value = false
-    openMatch(activeMatch.value)
-    toast('Template applied.')
+    const tpl = props.templates.find(t => t.id === tplId)
+    if (confirm(`Delete "${tpl?.name ?? 'this template'}"? This action cannot be undone.`)) {
+        router.delete(route('gms.seating.templates.destroy', tplId), {
+            preserveScroll: true,
+            onSuccess: () => {
+                toast('Template deleted successfully')
+                router.reload({ only: ['templates'] })
+            },
+            onError: (errors) => {
+                toast(errors.error || 'Failed to delete template', 'error')
+            }
+        })
+    }
 }
 </script>
 
@@ -607,12 +728,18 @@ function assignTemplate() {
        MATCH LIST
   ══════════════════════════════════════════════════════════════ -->
   <div v-else-if="view === 'list'" class="gms-view">
+    <div class="gms-view-pad">
     <div class="gms-view-header">
       <div>
         <h1 class="gms-view-title">Seating</h1>
         <p style="font-size:13px;color:var(--gms-text-3);margin-top:2px;">
           Manage seat assignments per match. Each match draws from a venue seating template.
         </p>
+      </div>
+      <div class="gms-view-actions">
+        <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="openTemplatesView">
+          <GmsIcon name="settings" :size="14" /> Manage templates
+        </button>
       </div>
     </div>
 
@@ -691,12 +818,96 @@ function assignTemplate() {
         </table>
       </div>
     </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       TEMPLATES VIEW
+  ══════════════════════════════════════════════════════════════ -->
+  <div v-else-if="view === 'templates'" class="gms-view">
+    <div class="gms-view-pad">
+    <div class="gms-view-header">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="backFromTemplates" style="padding:3px 8px;">
+            ← Seating
+          </button>
+        </div>
+        <h1 class="gms-view-title">Seating templates</h1>
+        <p style="font-size:13px;color:var(--gms-text-3);margin-top:2px;">
+          Reusable seating blueprints, grouped by venue. A match picks one of these.
+        </p>
+      </div>
+    </div>
+
+    <!-- Empty state if no venues assigned to event -->
+    <div v-if="venues.length === 0" class="gms-empty" style="padding:40px 0;text-align:center;">
+      <div class="gms-empty-title">No venues assigned to this event</div>
+      <div class="gms-empty-subtitle">Go to Setup → Events and assign venues to create seating templates.</div>
+    </div>
+
+    <!-- Per-venue template groups (all event venues) -->
+    <div v-for="venue in venues" :key="venue.id" class="tpl-sec">
+      <div class="tpl-sec-h">
+        <span class="tpl-sec-venue">{{ venue.name }}</span>
+        <span class="tpl-sec-city">{{ venue.city }}</span>
+        <button class="gms-btn gms-btn-sm" style="margin-left:auto;" @click="openNewTemplate(venue.id)">
+          <GmsIcon name="plus" :size="13" /> New template
+        </button>
+      </div>
+
+      <!-- Templates for this venue -->
+      <template v-if="templates.filter(t => t.venueId === venue.id).length === 0">
+        <div class="tpl-empty">No templates yet.</div>
+      </template>
+
+      <div v-else class="tpl-grid">
+        <div v-for="tpl in templates.filter(t => t.venueId === venue.id)" :key="tpl.id" class="tpl-card">
+          <div class="tpl-card-h">
+            <span class="tpl-ic">
+              <GmsIcon name="grid" :size="16" />
+            </span>
+            <div style="flex:1;min-width:0;">
+              <div class="tpl-name">{{ tpl.name }}</div>
+              <div style="font-size:12px;color:var(--gms-text-3);">
+                {{ tpl.blocks.length }} block{{ tpl.blocks.length === 1 ? '' : 's' }} ·
+                {{ tplSeats(tpl) }} seats ·
+                used by {{ tplUsedBy(tpl.id) }} match{{ tplUsedBy(tpl.id) === 1 ? '' : 'es' }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Block chips -->
+          <div class="tpl-blocks">
+            <span v-for="b in tpl.blocks" :key="b.id" class="tpl-chip" :class="{ vvip: b.tier === 'VVIP' }">
+              {{ b.label }}
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="tpl-actions">
+            <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;" @click="openEditTemplate(tpl)">
+              <GmsIcon name="edit" :size="12" /> Edit
+            </button>
+            <button class="gms-btn gms-btn-sm" title="Duplicate" @click="duplicateTemplate(tpl)">
+              <GmsIcon name="copy" :size="12" />
+            </button>
+            <button v-if="tplUsedBy(tpl.id) === 0" class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" 
+              title="Delete template" @click="deleteTemplate(tpl.id)">
+              <GmsIcon name="trash" :size="12" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════
        SEAT MAP VIEW
   ══════════════════════════════════════════════════════════════ -->
   <div v-else-if="view === 'map'" class="gms-view">
+    <div class="gms-view-pad">
 
     <!-- Header ─────────────────────────────────────────────────────── -->
     <div class="gms-seat-header">
@@ -1132,32 +1343,32 @@ function assignTemplate() {
       <div class="gms-sp-acts">
         <template v-if="hoverSeat.status==='assigned'">
           <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
-            @click="issueTicket(hoverSeat.id);toast('Ticket issued 🎫');hover=null">
+            @click="issueTicket(hoverSeat.id);toast('Ticket issued 🎫');hover.value=null">
             <GmsIcon name="ticket" :size="12" /> Ticket
           </button>
           <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="unassignSeat(hoverSeat.id);toast('Seat freed');hover=null">
+            @click="unassignSeat(hoverSeat.id);toast('Seat freed');hover.value=null">
             <GmsIcon name="x" :size="12" /> Unassign
           </button>
         </template>
         <template v-else-if="hoverSeat.status==='ticket'">
           <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="revokeTicket(hoverSeat.id);toast('Ticket revoked');hover=null">
+            @click="revokeTicket(hoverSeat.id);toast('Ticket revoked');hover.value=null">
             <GmsIcon name="arrow-right" :size="12" /> Revoke ticket
           </button>
           <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="unassignSeat(hoverSeat.id);toast('Seat freed');hover=null">
+            @click="unassignSeat(hoverSeat.id);toast('Seat freed');hover.value=null">
             <GmsIcon name="x" :size="12" /> Unassign
           </button>
         </template>
         <template v-else>
           <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
-            @click="pendingSeat=hoverSeat.id;toast('Pick a guest from the Assign panel');floatPanel=true;hover=null">
+            @click="pendingSeat.value=hoverSeat.id;toast('Pick a guest from the Assign panel');floatPanel.value=true;hover.value=null">
             <GmsIcon name="users" :size="12" /> Assign guest
           </button>
           <button v-if="hoverSeat.status==='reserved'"
             class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
-            @click="releaseSeats([hoverSeat.id]);toast('Released');hover=null">
+            @click="releaseSeats([hoverSeat.id]);toast('Released');hover.value=null">
             <GmsIcon name="x" :size="12" /> Release
           </button>
         </template>
@@ -1181,7 +1392,7 @@ function assignTemplate() {
           }" />
           {{ seatById(pinSeat).status === 'ticket' ? 'Ticket issued' : 'Assigned' }}
         </span>
-        <button class="gms-sp-close" @click="pinSeat=null" @mousedown.stop title="Close">
+        <button class="gms-sp-close" @click="pinSeat.value=null" @mousedown.stop title="Close">
           <GmsIcon name="x" :size="13" />
         </button>
       </div>
@@ -1198,15 +1409,16 @@ function assignTemplate() {
       <div class="gms-sp-acts" style="margin-top:10px;">
         <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
           @mousedown.stop
-          @click="issueTicket(pinSeat);toast('Ticket issued 🎫');pinSeat=null">
+          @click="issueTicket(pinSeat);toast('Ticket issued 🎫');pinSeat.value=null">
           <GmsIcon name="ticket" :size="12" /> Ticket
         </button>
         <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
           @mousedown.stop
-          @click="unassignSeat(pinSeat);toast('Seat freed');pinSeat=null">
+          @click="unassignSeat(pinSeat);toast('Seat freed');pinSeat.value=null">
           <GmsIcon name="x" :size="12" /> Unassign
         </button>
       </div>
+    </div>
     </div>
   </div>
 
@@ -1217,9 +1429,19 @@ function assignTemplate() {
     <p style="font-size:13px;color:var(--gms-text-2);margin-bottom:14px;">
       Select a template to generate the seat map for this match. Assignments won't affect other matches.
     </p>
-    <div style="display:flex;flex-direction:column;gap:8px;">
+
+    <!-- Empty state when no templates for this venue -->
+    <div v-if="activeVenueTemplates.length === 0" class="gms-empty" style="padding:24px;text-align:center;">
+      <div class="gms-empty-title">No templates for {{ venueFor(activeMatch?.venueId)?.name }}</div>
+      <div class="gms-empty-subtitle" style="margin-bottom:12px;">Create a seating template first to assign it to matches.</div>
+      <button class="gms-btn gms-btn-primary gms-btn-sm" @click="templateModal=false; openTemplatesView()">
+        <GmsIcon name="plus" :size="13" /> Create Template
+      </button>
+    </div>
+
+    <div v-else style="display:flex;flex-direction:column;gap:8px;">
       <label
-        v-for="t in localTemplates"
+        v-for="t in activeVenueTemplates"
         :key="t.id"
         :style="[
           {display:'flex',alignItems:'center',gap:10,padding:'12px',borderRadius:'8px',cursor:'pointer',transition:'border-color 120ms',border:'1px solid var(--gms-border)'},
@@ -1245,7 +1467,7 @@ function assignTemplate() {
     </div>
     <template #footer>
       <button class="gms-btn gms-btn-ghost" @click="templateModal=false">Cancel</button>
-      <button class="gms-btn gms-btn-primary" @click="assignTemplate">Apply Template</button>
+      <button v-if="activeVenueTemplates.length > 0" class="gms-btn gms-btn-primary" @click="assignTemplate">Apply Template</button>
     </template>
   </GmsModal>
 </template>

@@ -37,6 +37,10 @@ Route::prefix('gms')->name('gms.')->group(function () {
     // Seating
     Route::get('/seating',                                     [GmsSeatingController::class, 'index'])->name('seating.index');
     Route::post('/seating/templates',                          [GmsSeatingController::class, 'storeTemplate'])->name('seating.templates.store');
+    Route::put('/seating/templates/{id}',                      [GmsSeatingController::class, 'updateTemplate'])->name('seating.templates.update');
+    Route::post('/seating/templates/{id}/duplicate',           [GmsSeatingController::class, 'duplicateTemplate'])->name('seating.templates.duplicate');
+    Route::delete('/seating/templates/{id}',                   [GmsSeatingController::class, 'destroyTemplate'])->name('seating.templates.destroy');
+    Route::post('/seating/matches/{matchId}/assign-template',  [GmsSeatingController::class, 'assignTemplateToMatch'])->name('seating.matches.assignTemplate');
     Route::post('/seating/{matchId}/seats/{seatId}',          [GmsSeatingController::class, 'assignSeat'])->name('seating.seat.update');
 
     // Service Levels
