@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject, nextTick, watch } from 'vue'
+import { ref, computed, inject, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
@@ -24,6 +24,31 @@ const props = defineProps({
 })
 
 const toast = inject('toast')
+
+// ── Mobile detection ─────────────────────────────────────────────
+const isMobile = ref(false)
+function checkMobile() { isMobile.value = window.innerWidth <= 768 }
+
+// ── Click outside handler for pinned card ─────────────────────────
+function handleClickOutside(event) {
+    if (!pinSeat.value) return
+    // Check if click is outside the pinned card
+    const pinnedCard = document.querySelector('.gms-seat-pop.pinned')
+    if (pinnedCard && !pinnedCard.contains(event.target)) {
+        pinSeat.value = null
+    }
+}
+
+onMounted(() => {
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    document.addEventListener('click', handleClickOutside, true)
+})
+
+onUnmounted(() => {
+    window.removeEventListener('resize', checkMobile)
+    document.removeEventListener('click', handleClickOutside, true)
+})
 
 // ── Organisations ────────────────────────────────────────────────
 const ORGS = [
@@ -563,12 +588,14 @@ function doReserve() {
     toast(`${resSel.value.length} seat${resSel.value.length > 1 ? 's' : ''} reserved for ${resLabel.value}`)
     resSel.value = []
     resCustom.value = ''
+    mode.value = 'assign'  // Exit reserve mode after saving
 }
 function doRelease() {
     if (!resSel.value.length) return
     releaseSeats(resSel.value)
     toast(`${resSel.value.length} seat${resSel.value.length > 1 ? 's' : ''} released`)
     resSel.value = []
+    mode.value = 'assign'  // Exit reserve mode after releasing
 }
 
 // ── Reservation summary ───────────────────────────────────────────
@@ -928,15 +955,15 @@ function deleteTemplate(tplId) {
     </div>
 
     <!-- Stats row -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
+    <div class="gms-seating-stats">
       <GmsMiniStat label="Matches" :value="localMatches.length" color="var(--gms-maroon)" />
       <GmsMiniStat label="Templates" :value="templates.length" color="#3b82f6" />
       <GmsMiniStat label="With template" :value="localMatches.filter(m=>m.templateId||seatState[m.id]?.length).length" color="var(--gms-gold)" />
       <GmsMiniStat label="Need template" :value="localMatches.filter(m=>!m.templateId&&!seatState[m.id]?.length).length" color="#d97706" />
     </div>
 
-    <!-- Match table -->
-    <div class="gms-card">
+    <!-- Match table (hidden on mobile, replaced by cards below) -->
+    <div class="gms-card gms-match-tbl-wrap">
       <div class="gms-card-body-0">
         <table class="gms-table">
           <thead>
@@ -1000,6 +1027,39 @@ function deleteTemplate(tplId) {
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    <!-- Mobile match cards (shown ≤ 768 px instead of table) -->
+    <div class="gms-match-m-list">
+      <div
+        v-for="m in localMatches" :key="m.id"
+        class="gms-match-m-card"
+        @click="m.templateId || seatState[m.id]?.length ? openMatch(m) : openTemplatePicker(m)"
+      >
+        <div class="gms-match-date-badge" style="width:44px;padding:5px 4px;flex-shrink:0;">
+          <div class="month">{{ matchMonth(m.date) }}</div>
+          <div class="day" style="font-size:18px;">{{ matchDay(m.date) }}</div>
+        </div>
+        <div class="gms-match-m-info">
+          <div class="gms-match-m-name">{{ m.name }}</div>
+          <div class="gms-match-m-meta">{{ m.stage }} · {{ venueFor(m.venueId)?.name ?? m.venueId }}</div>
+          <div class="gms-match-m-meta" style="margin-top:4px;">
+            <span v-if="m.templateId || seatState[m.id]?.length"
+              class="gms-pill" style="background:var(--gms-invited-bg);color:var(--gms-invited-fg);font-size:10px;font-weight:600;">
+              {{ tplName(m.templateId || matchSeeds[m.id]) ?? 'Custom' }}
+            </span>
+            <span v-else class="gms-pill" style="background:var(--gms-pending-bg);color:var(--gms-pending-fg);font-size:10px;">
+              No template
+            </span>
+          </div>
+        </div>
+        <div class="gms-match-m-right">
+          <template v-if="m.templateId || seatState[m.id]?.length">
+            <div class="gms-match-m-pct">{{ fillPct(m) }}%</div>
+            <div class="gms-match-m-pct-lbl">filled</div>
+          </template>
+          <GmsIcon name="chevron-right" :size="16" style="color:var(--gms-text-3);margin-top:4px;" />
+        </div>
       </div>
     </div>
     </div>
@@ -1099,7 +1159,7 @@ function deleteTemplate(tplId) {
       <!-- Back link -->
       <div class="gms-seat-back" @click="backToList">← Seating</div>
 
-      <!-- Title row: title left, buttons right -->
+      <!-- Title row -->
       <div class="gms-seat-title-row">
         <div class="gms-seat-title-area">
           <h1 class="gms-seat-title">{{ activeMatch?.name }}</h1>
@@ -1109,35 +1169,35 @@ function deleteTemplate(tplId) {
             <span class="gms-seat-tpl-name">{{ tplName(localMatches.find(m=>m.id===activeMatch?.id)?.templateId || matchSeeds[activeMatch?.id]) ?? 'No template' }}</span>
           </div>
         </div>
+      </div>
 
-        <!-- Action buttons -->
-        <div class="gms-seat-actions">
-          <button class="gms-btn gms-btn-sm"
-            @click="openConfigurator('edit', localMatches.find(m=>m.id===activeMatch?.id)?.templateId || matchSeeds[activeMatch?.id])">
-            <GmsIcon name="settings" :size="13" /> Edit layout
-          </button>
-          <button class="gms-btn gms-btn-sm" @click="openTemplatePicker(activeMatch)">
-            <GmsIcon name="map" :size="13" /> Change template
-          </button>
-          <button class="gms-btn gms-btn-sm" @click="toast('Add block not available in this view')">
-            <GmsIcon name="plus" :size="13" /> Add block
-          </button>
-          <button class="gms-btn gms-btn-sm" @click="toast('Snapshot saved to downloads')">
-            <GmsIcon name="eye" :size="13" /> Snapshot
-          </button>
-          <button class="gms-btn gms-btn-sm" @click="toast('Seating exported to Excel')">
-            <GmsIcon name="download" :size="13" /> Export
-          </button>
-          <button class="gms-btn gms-btn-sm" :class="mode==='reserve' ? 'gms-btn-primary' : ''" @click="switchMode('reserve')">
-            <GmsIcon name="ticket" :size="13" /> {{ mode === 'reserve' ? 'Reserving…' : 'Reserve' }}
-          </button>
-          <button class="gms-btn gms-btn-sm" :class="mode==='swap' ? 'gms-btn-primary' : ''" @click="switchMode('swap')">
-            <GmsIcon name="arrow-right" :size="13" /> {{ mode === 'swap' ? 'Swapping…' : 'Swap' }}
-          </button>
-          <button class="gms-btn gms-btn-sm" :class="mode==='hide' ? 'gms-btn-primary' : ''" @click="switchMode('hide')">
-            <GmsIcon name="eye" :size="13" /> {{ mode === 'hide' ? 'Hiding…' : 'Hide' }}
-          </button>
-        </div>
+      <!-- Action buttons -->
+      <div class="gms-seat-actions" style="margin-top: 16px; margin-bottom: 18px;">
+        <button class="gms-btn gms-btn-sm"
+          @click="openConfigurator('edit', localMatches.find(m=>m.id===activeMatch?.id)?.templateId || matchSeeds[activeMatch?.id])">
+          <GmsIcon name="settings" :size="13" /> Edit layout
+        </button>
+        <button class="gms-btn gms-btn-sm" @click="openTemplatePicker(activeMatch)">
+          <GmsIcon name="map" :size="13" /> Change template
+        </button>
+        <button class="gms-btn gms-btn-sm" @click="toast('Add block not available in this view')">
+          <GmsIcon name="plus" :size="13" /> Add block
+        </button>
+        <button class="gms-btn gms-btn-sm" @click="toast('Snapshot saved to downloads')">
+          <GmsIcon name="eye" :size="13" /> Snapshot
+        </button>
+        <button class="gms-btn gms-btn-sm" @click="toast('Seating exported to Excel')">
+          <GmsIcon name="download" :size="13" /> Export
+        </button>
+        <button class="gms-btn gms-btn-sm" :class="mode==='reserve' ? 'gms-btn-primary' : ''" @click="switchMode('reserve')">
+          <GmsIcon name="ticket" :size="13" /> {{ mode === 'reserve' ? 'Reserving…' : 'Reserve' }}
+        </button>
+        <button class="gms-btn gms-btn-sm" :class="mode==='swap' ? 'gms-btn-primary' : ''" @click="switchMode('swap')">
+          <GmsIcon name="arrow-right" :size="13" /> {{ mode === 'swap' ? 'Swapping…' : 'Swap' }}
+        </button>
+        <button class="gms-btn gms-btn-sm" :class="mode==='hide' ? 'gms-btn-primary' : ''" @click="switchMode('hide')">
+          <GmsIcon name="eye" :size="13" /> {{ mode === 'hide' ? 'Hiding…' : 'Hide' }}
+        </button>
       </div>
 
     </div>
@@ -1225,10 +1285,10 @@ function deleteTemplate(tplId) {
 
     <!-- ── MAP / PLANNER SHARED CONTROLS ─────────────────── -->
     <template v-else>
-      <div class="gms-card" style="padding:18px 20px;">
+      <div class="gms-card gms-seat-ctrl-card" style="padding:18px 20px;">
 
         <!-- Filter + zoom row -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+        <div class="gms-seat-filter-row" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
           <!-- Block filter -->
           <div class="gms-seg">
             <button :class="fBlock==='all' ? 'gms-seat-tab on' : ''" @click="fBlock='all'">All blocks</button>
@@ -1622,7 +1682,7 @@ function deleteTemplate(tplId) {
           }" />
           {{ seatById(pinSeat).status === 'ticket' ? 'Ticket issued' : 'Assigned' }}
         </span>
-        <button class="gms-sp-close" @click="pinSeat.value=null" @mousedown.stop title="Close">
+        <button class="gms-sp-close" @click="pinSeat=null" @mousedown.stop title="Close">
           <GmsIcon name="x" :size="13" />
         </button>
       </div>
@@ -1649,6 +1709,25 @@ function deleteTemplate(tplId) {
         </button>
       </div>
     </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         MOBILE: backdrop + FAB (hidden on desktop via CSS)
+    ══════════════════════════════════════════════════════════ -->
+    <div
+      v-if="floatPanel && mapTab !== 'list' && isMobile"
+      class="gms-gpanel-backdrop"
+      @click="floatPanel = false"
+    />
+    <button
+      v-if="mapTab !== 'list'"
+      class="gms-map-fab"
+      :class="floatPanel ? 'panel-open' : ''"
+      :title="floatPanel ? 'Close guest panel' : 'Open guest panel'"
+      @click="floatPanel = !floatPanel"
+    >
+      <GmsIcon :name="floatPanel ? 'x' : 'users'" :size="22" />
+    </button>
+
     </div>
   </div>
 

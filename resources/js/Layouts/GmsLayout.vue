@@ -12,6 +12,14 @@ const event    = computed(() => page.props.event ?? { name: "Doha Cup '26", loca
 const events   = computed(() => page.props.gmsEvents ?? [])
 const currentUrl = computed(() => page.url)
 
+// ── Sidebar collapse state ────────────────────────────────────────
+const sidebarCollapsed = ref(localStorage.getItem('gms-sidebar-collapsed') === 'true')
+
+function toggleSidebar() {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+    localStorage.setItem('gms-sidebar-collapsed', sidebarCollapsed.value.toString())
+}
+
 // ── Event selector ────────────────────────────────────────────────
 const eventSelectorOpen = ref(false)
 
@@ -117,12 +125,17 @@ function isActive(item) {
   <div class="gms-shell">
 
     <!-- ── Sidebar ──────────────────────────────────────────────── -->
-    <aside class="gms-sidebar">
+    <aside class="gms-sidebar" :class="{collapsed: sidebarCollapsed}">
+      <!-- Toggle button -->
+      <button class="gms-sidebar-toggle" @click="toggleSidebar" :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+        <GmsIcon :name="sidebarCollapsed ? 'chevron-right' : 'chevron-left'" :size="14" />
+      </button>
+      
       <!-- Logo -->
       <div class="gms-sidebar-logo">
         <Link href="/gms" class="gms-sidebar-logo-mark">
           <div class="gms-logo-icon">G</div>
-          <div class="gms-logo-text">
+          <div class="gms-logo-text" v-show="!sidebarCollapsed">
             <strong>GMS</strong>
             <span>Protocol Suite</span>
           </div>
@@ -130,7 +143,7 @@ function isActive(item) {
       </div>
 
       <!-- Event selector -->
-      <div style="margin: 14px 16px 8px; position: relative;">
+      <div style="margin: 14px 16px 8px; position: relative;" v-show="!sidebarCollapsed">
         <button 
           class="gms-event-switch"
           @click="toggleEventSelector"
@@ -169,37 +182,40 @@ function isActive(item) {
       <!-- Nav -->
       <nav class="gms-sidebar-nav">
         <div class="gms-nav-section">
-          <div class="gms-nav-section-label">Core</div>
+          <div class="gms-nav-section-label" v-show="!sidebarCollapsed">Core</div>
           <template v-for="item in nav" :key="item.name">
             <Link :href="item.href"
                   class="gms-nav-item"
-                  :class="{ active: isActive(item) }">
+                  :class="{ active: isActive(item) }"
+                  :title="sidebarCollapsed ? item.label : ''">
               <GmsIcon :name="item.icon" :size="16" class="gms-nav-icon" />
-              {{ item.label }}
+              <span v-show="!sidebarCollapsed">{{ item.label }}</span>
             </Link>
           </template>
         </div>
 
         <div class="gms-nav-section" style="margin-top: 4px;">
-          <div class="gms-nav-section-label">Modules</div>
+          <div class="gms-nav-section-label" v-show="!sidebarCollapsed">Modules</div>
           <template v-for="item in modules" :key="item.name">
             <Link :href="item.href"
                   class="gms-nav-item"
-                  :class="{ active: isActive(item) }">
+                  :class="{ active: isActive(item) }"
+                  :title="sidebarCollapsed ? item.label : ''">
               <GmsIcon :name="item.icon" :size="16" class="gms-nav-icon" />
-              {{ item.label }}
+              <span v-show="!sidebarCollapsed">{{ item.label }}</span>
             </Link>
           </template>
         </div>
 
         <div class="gms-nav-section" style="margin-top: 4px;">
-          <div class="gms-nav-section-label">Setup</div>
+          <div class="gms-nav-section-label" v-show="!sidebarCollapsed">Setup</div>
           <template v-for="item in setup" :key="item.name">
             <Link :href="item.href"
                   class="gms-nav-item"
-                  :class="{ active: isActive(item) }">
+                  :class="{ active: isActive(item) }"
+                  :title="sidebarCollapsed ? item.label : ''">
               <GmsIcon :name="item.icon" :size="16" class="gms-nav-icon" />
-              {{ item.label }}
+              <span v-show="!sidebarCollapsed">{{ item.label }}</span>
             </Link>
           </template>
         </div>
@@ -209,7 +225,7 @@ function isActive(item) {
       <div class="gms-sidebar-footer">
         <div class="gms-sidebar-user">
           <GmsAvatar v-if="auth?.user" :name="auth.user.name" size="sm" />
-          <div class="gms-sidebar-user-info">
+          <div class="gms-sidebar-user-info" v-show="!sidebarCollapsed">
             <div class="gms-sidebar-user-name">{{ auth?.user?.name ?? 'User' }}</div>
             <div class="gms-sidebar-user-role">Protocol Officer</div>
           </div>

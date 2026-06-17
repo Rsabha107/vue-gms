@@ -158,9 +158,38 @@
   background: var(--gms-espresso);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   z-index: 40;
+  transition: width 250ms ease;
+}
+
+.gms-sidebar.collapsed {
+  width: 64px;
+}
+
+.gms-sidebar-toggle {
+  position: absolute;
+  top: 26px;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--gms-maroon);
+  border: 1px solid rgba(255,255,255,0.15);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 50;
+  transition: transform 150ms, background 150ms;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.gms-sidebar-toggle:hover {
+  background: var(--gms-maroon-600);
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(138, 31, 61, 0.4);
 }
 
 .gms-sidebar-logo {
@@ -370,6 +399,25 @@
 }
 .gms-nav-item.active .gms-nav-icon,
 .gms-nav-item:hover .gms-nav-icon { opacity: 1; }
+
+/* Collapsed sidebar nav items */
+.gms-sidebar.collapsed .gms-nav-item {
+  justify-content: center;
+  padding: 10px 8px;
+}
+
+.gms-sidebar.collapsed .gms-sidebar-logo-mark {
+  justify-content: center;
+}
+
+.gms-sidebar.collapsed .gms-sidebar-user {
+  justify-content: center;
+  padding: 10px 8px;
+}
+
+.gms-sidebar.collapsed .gms-nav-section-label {
+  display: none;
+}
 
 .gms-nav-badge {
   margin-left: auto;
@@ -5795,3 +5843,313 @@
 .vn-city  { font-size: 13px; color: var(--gms-maroon); }
 .vn-count { font-size: 13px; color: var(--gms-text-3); }
 .vn-count.has { color: #2563eb; font-weight: 600; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SEATING — BASE CLASSES (desktop defaults, mobile overrides below)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Stats row in seating list view */
+.gms-seating-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+/* Mobile match card list — hidden on desktop, shown on mobile */
+.gms-match-m-list { display: none; }
+
+/* Mobile match cards */
+.gms-match-m-card {
+  background: var(--gms-surface);
+  border: 1px solid var(--gms-border);
+  border-radius: var(--gms-radius-lg);
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: box-shadow 120ms, border-color 120ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.gms-match-m-card:active { border-color: var(--gms-maroon); box-shadow: var(--gms-shadow-sm); }
+.gms-match-m-info { flex: 1; min-width: 0; }
+.gms-match-m-name { font-weight: 700; font-size: 14px; color: var(--gms-text); }
+.gms-match-m-meta {
+  font-size: 12px; color: var(--gms-text-3); margin-top: 3px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.gms-match-m-right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0;
+}
+.gms-match-m-pct {
+  font-family: var(--gms-font-display);
+  font-size: 24px; color: var(--gms-maroon); line-height: 1; font-weight: 400;
+}
+.gms-match-m-pct-lbl {
+  font-size: 10px; color: var(--gms-text-3);
+  text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  text-align: right;
+}
+
+/* FAB — hidden on desktop */
+.gms-map-fab {
+  display: none;
+  position: fixed;
+  bottom: 28px;
+  right: 22px;
+  z-index: 97;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--gms-maroon);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 20px rgba(138,31,61,.45);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: transform 140ms cubic-bezier(.34,1.56,.64,1), background 120ms, box-shadow 120ms;
+  flex-shrink: 0;
+}
+.gms-map-fab:hover { box-shadow: 0 6px 26px rgba(138,31,61,.55); }
+.gms-map-fab:active { transform: scale(.9); }
+.gms-map-fab.panel-open { background: var(--gms-espresso); }
+
+/* Panel backdrop — hidden on desktop */
+.gms-gpanel-backdrop { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE (≤ 768 px) — portrait phones + small tablets
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Stats grids */
+  .gms-seating-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .gms-stats-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+
+  /* Match list — hide table, show cards */
+  .gms-match-tbl-wrap { display: none !important; }
+  .gms-match-m-list { display: flex; flex-direction: column; gap: 10px; }
+
+  /* Seating header */
+  .gms-seat-title-row { flex-direction: column; align-items: flex-start !important; gap: 10px; }
+  .gms-seat-title { font-size: 24px !important; }
+
+  /* Action buttons — single horizontally-scrolling row */
+  .gms-seat-actions {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap !important;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 6px;
+    padding-bottom: 4px;
+  }
+  .gms-seat-actions::-webkit-scrollbar { display: none; }
+  .gms-seat-actions .gms-btn-sm { flex-shrink: 0; white-space: nowrap; }
+
+  /* Segmented controls — scroll instead of wrap */
+  .gms-seg {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+  }
+  .gms-seg::-webkit-scrollbar { display: none; }
+  .gms-seg button { white-space: nowrap; flex-shrink: 0; }
+
+  /* Seat control card & filter row */
+  .gms-seat-ctrl-card { padding: 14px !important; }
+  .gms-seat-filter-row { gap: 6px !important; margin-bottom: 12px !important; }
+
+  /* Seat map — enable smooth touch panning */
+  .gms-smap, .gms-pmap {
+    touch-action: pan-x pan-y pinch-zoom;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  /* Seats — bigger tap targets */
+  .gms-seat { width: 26px; height: 26px; font-size: 8.5px; border-radius: 5px; }
+  .gms-seat:hover { transform: none; box-shadow: none; }
+  .gms-seat.chip { width: 88px; height: 28px; }
+  .gms-pseat { min-width: 96px; padding: 7px 10px; }
+  .gms-pseat:hover { transform: none; box-shadow: none; }
+
+  /* Legend wraps */
+  .gms-seat-legend { flex-wrap: wrap; gap: 6px 12px; font-size: 11px; margin-top: 10px; }
+
+  /* Planner tools row */
+  .gms-planner-tools {
+    width: 100%; flex-wrap: wrap; justify-content: flex-start;
+    gap: 6px; margin-left: 0 !important;
+  }
+
+  /* Reserve bar stacks vertically */
+  .gms-res-bar-row { flex-direction: column; align-items: stretch !important; gap: 8px; }
+  .gms-res-bar-row .gms-btn { width: 100%; justify-content: center; }
+
+  /* Template grid — single column */
+  .tpl-grid { grid-template-columns: 1fr !important; }
+
+  /* ── Bottom-sheet guest panel ──────────────────────────────────────
+     The floating panel slides up from the bottom as a native-feeling
+     bottom sheet, with a drag handle and blurred backdrop.
+  ─────────────────────────────────────────────────────────────────── */
+  .gms-gpanel {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 68vh !important;
+    border-radius: 20px 20px 0 0 !important;
+    z-index: 100;
+    box-shadow: 0 -10px 40px rgba(0,0,0,.28) !important;
+    animation: gms-sheet-up 280ms cubic-bezier(.22,1,.36,1) both !important;
+  }
+  @keyframes gms-sheet-up {
+    from { transform: translateY(100%); opacity: .6; }
+    to   { transform: translateY(0);   opacity: 1; }
+  }
+
+  /* Drag handle pill above the header */
+  .gms-gpanel::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    background: rgba(255,255,255,.32);
+    border-radius: 2px;
+    margin: 10px auto 2px;
+    flex-shrink: 0;
+  }
+
+  .gms-gpanel-drag { cursor: default !important; border-radius: 0 !important; }
+  .gms-gpanel-list { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+  /* Guest list items — comfortable touch targets */
+  .gms-gp-item { padding: 11px 14px; gap: 11px; min-height: 52px; }
+  .gms-gn { font-size: 13.5px; }
+  .gms-gm { font-size: 11.5px; }
+
+  /* Blurred backdrop behind the panel */
+  .gms-gpanel-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.38);
+    z-index: 99;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    animation: gms-bk-in 220ms ease both;
+  }
+  @keyframes gms-bk-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Show FAB */
+  .gms-map-fab { display: flex; }
+
+  /* Hover popover constrained to viewport */
+  .gms-seat-pop { max-width: calc(100vw - 20px); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SMALL PHONES (≤ 480 px)
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .gms-view { padding: 12px !important; }
+  .gms-seating-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .gms-stats-grid { grid-template-columns: 1fr !important; }
+  .gms-seat-title { font-size: 20px !important; }
+  .gms-seat-subtitle { font-size: 11px !important; }
+
+  .gms-seat { width: 23px; height: 23px; font-size: 7.5px; }
+  .gms-seat.chip { width: 76px; height: 26px; }
+  .gms-pseat { min-width: 84px; padding: 6px 8px; font-size: 10.5px; }
+
+  .gms-gpanel { max-height: 73vh !important; }
+
+  .gms-btn { font-size: 12px; }
+  .gms-btn-sm { font-size: 11px; padding: 5px 10px; }
+  .gms-table th, .gms-table td { padding: 8px 6px; font-size: 12px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LANDSCAPE PHONES (height ≤ 500 px, orientation: landscape)
+   Guest panel becomes a right-side drawer instead of bottom sheet.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-height: 500px) and (orientation: landscape) {
+  .gms-seat-header { margin-bottom: 8px; }
+  .gms-seat-title { font-size: 18px !important; margin-bottom: 0 !important; }
+  .gms-seat-subtitle { display: none !important; }
+  .gms-seat-title-row { gap: 8px; }
+  .gms-seat-actions {
+    overflow-x: auto; flex-wrap: nowrap !important;
+    scrollbar-width: none; padding-bottom: 2px;
+  }
+  .gms-seat-actions::-webkit-scrollbar { display: none; }
+  .gms-seat-ctrl-card { padding: 10px 12px !important; }
+  .gms-seating-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+  /* Side-drawer in landscape — slides in from the right */
+  .gms-gpanel {
+    top: 0 !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    left: auto !important;
+    width: 280px !important;
+    max-width: 280px !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    box-shadow: -6px 0 28px rgba(0,0,0,.24) !important;
+    animation: gms-slide-in-right 240ms cubic-bezier(.22,1,.36,1) both !important;
+  }
+  @keyframes gms-slide-in-right {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+  }
+  .gms-gpanel::before { display: none !important; }
+  .gms-gpanel-drag { border-radius: 0 !important; }
+
+  .gms-gpanel-backdrop {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.28);
+    z-index: 99;
+  }
+
+  .gms-map-fab { display: flex; bottom: 18px; right: 16px; width: 46px; height: 46px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TABLET (769 px – 1024 px)
+   ═══════════════════════════════════════════════════════════════════ */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .gms-seat-actions { flex-wrap: wrap; gap: 5px; }
+  .gms-gpanel { max-height: min(76vh, 580px); }
+  .gms-seating-stats { grid-template-columns: repeat(2, 1fr); }
+  .gms-gp-item { padding: 10px 12px; min-height: 48px; }
+  .gms-gn { font-size: 13px; }
+}
+
+/* ── Touch-device optimisations ──────────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  .gms-seat { min-width: 26px; min-height: 26px; }
+  .gms-seat:hover { transform: none; box-shadow: none; }
+  .gms-pseat:hover { transform: none; box-shadow: none; }
+  .gms-btn { min-height: 40px; }
+  .gms-btn-sm { min-height: 36px; }
+  .gms-nav-item { min-height: 44px; }
+  .gms-gp-item { min-height: 50px; }
+  [draggable="true"] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
