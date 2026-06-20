@@ -10,6 +10,8 @@ import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
 import GmsBtn from '@/Components/Gms/GmsBtn.vue'
 import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
+import GmsSearchableSelect from '@/Components/Gms/GmsSearchableSelect.vue'
+import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -23,6 +25,7 @@ const props = defineProps({
     matches: { type: Array,  default: () => [] },
     venues:  { type: Array,  default: () => [] },
     emailTemplates: { type: Array, default: () => [] },
+    nationalities: { type: Array, default: () => [] },
     errors:  { type: Object, default: () => ({}) },
     auth:    { type: Object, default: () => ({}) },
     flash:   { type: Object, default: () => ({}) },
@@ -131,9 +134,13 @@ const visibleColumnsCount = computed(() =>
     2 + Object.values(columnVisibility.value).filter(Boolean).length
 )
 
-const nationalities = computed(() =>
-    [...new Set(localGuests.value.map(g => g.nationality).filter(Boolean))].sort()
-)
+const nationalities = computed(() => {
+    const codes = [...new Set(localGuests.value.map(g => g.nationality).filter(Boolean))].sort()
+    return codes.map(code => ({
+        value: code,
+        label: countryName(code)
+    }))
+})
 
 // Stats helpers
 const platinumCount = computed(() => 
@@ -172,6 +179,8 @@ const drawerTab       = ref('overview')
 const tierPickerOpen  = ref(false)
 const companionsExpanded = ref(true)
 const preferencesExpanded = ref(true)
+const invitationDetailModal = ref(false)
+const activeInvitation = ref(null)
 
 // Facility overrides
 const newFacilityName = ref('')
@@ -184,7 +193,40 @@ function openDrawer(g) {
     companionsExpanded.value = true
     preferencesExpanded.value = true
     newFacilityName.value = ''
+    invitationDetailModal.value = false
+    activeInvitation.value = null
     drawerOpen.value   = true
+}
+
+function viewInvitationDetails(invitation) {
+    activeInvitation.value = invitation
+    invitationDetailModal.value = true
+}
+
+// Get all confirmed matches from a guest's invitations
+function getConfirmedMatches(guest) {
+    if (!guest?.invitations) return []
+    
+    const confirmedMatches = []
+    guest.invitations.forEach(invitation => {
+        invitation.matches?.forEach(match => {
+            if (match.response === 'yes') {
+                confirmedMatches.push({
+                    invitation,
+                    match
+                })
+            }
+        })
+    })
+    return confirmedMatches
+}
+
+// Format match date to "Thu 18 Jun 2026" format
+function formatMatchDateTime(dateString) {
+    if (!dateString) return 'TBD'
+    const date = new Date(dateString)
+    const options = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }
+    return date.toLocaleDateString('en-GB', options)
 }
 
 // Get merged facilities: tier baseline + guest overrides
@@ -432,7 +474,13 @@ function saveGuest() {
 
     if (editingGuest.value) {
         const idx = localGuests.value.findIndex(g => g.id === editingGuest.value.id)
-        if (idx !== -1) localGuests.value[idx] = { ...localGuests.value[idx], ...payload }
+        if (idx !== -1) {
+            localGuests.value[idx] = { ...localGuests.value[idx], ...payload }
+            // Update activeGuest if drawer is open with this guest
+            if (activeGuest.value?.id === editingGuest.value.id) {
+                activeGuest.value = localGuests.value[idx]
+            }
+        }
 
         form.transform(() => payload).put(route('gms.guests.update', editingGuest.value.id), {
             onSuccess: () => { 
@@ -614,6 +662,9 @@ const inviteRecipient   = ref(null)
 const recipientPickerOpen  = ref(false)
 const recipientSearch      = ref('')
 const selectedMatches   = ref([])
+const guestPreviewModal = ref(false)
+const matchRsvp         = ref({}) // { matchId: 'yes'|'no'|null }
+const sendingInvitation = ref(false)
 
 const filteredRecipients = computed(() => {
     const q = recipientSearch.value.toLowerCase()
@@ -732,11 +783,35 @@ const previewEmail = computed(() => {
 })
 
 function sendInvitation() {
-    if (!inviteRecipient.value || !selectedMatches.value.length) return
+    if (!inviteRecipient.value || !selectedMatches.value.length || sendingInvitation.value) return
     
-    // TODO: Implement actual invitation sending via backend
-    toast(`Invitation sent to ${inviteRecipient.value.name}`)
-    inviteModal.value = false
+    sendingInvitation.value = true
+    
+    const payload = {
+        guestId: inviteRecipient.value.id,
+        subject: emailSubject.value,
+        body: emailBody.value,
+        matchIds: selectedMatches.value,
+        rsvpDeadline: rsvpDeadline.value,
+    }
+
+    router.post(route('gms.invitations.send'), payload, {
+        onSuccess: () => {
+            sendingInvitation.value = false
+            inviteModal.value = false
+            // Reset state
+            inviteRecipient.value = null
+            selectedMatches.value = []
+            inviteStep.value = 1
+        },
+        onError: (errors) => {
+            sendingInvitation.value = false
+            console.error('Invitation send errors:', errors)
+            const firstError = Object.values(errors)[0]
+            toast(firstError || 'Failed to send invitation.', 'error')
+        },
+        preserveScroll: true,
+    })
 }
 
 function insertTag(tag) {
@@ -753,6 +828,12 @@ const flagEmoji = (cc) => {
     return cc.toUpperCase().replace(/./g, c =>
         String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0))
     )
+}
+
+const countryName = (cc) => {
+    if (!cc) return ''
+    const country = props.nationalities.find(c => c.value === cc.toUpperCase())
+    return country ? country.label : cc
 }
 
 // Close actions menu when clicking outside
@@ -823,9 +904,11 @@ onUnmounted(() => {
         label="Nationality"
         all-label="All nationalities"
         :options="nationalities"
+        value-key="value"
+        label-key="label"
       >
         <template #item="{ option }">
-          {{ flagEmoji(option) }} {{ option }}
+          {{ flagEmoji(option.value) }} {{ option.label }}
         </template>
       </GmsFilterDropdown>
 
@@ -931,7 +1014,7 @@ onUnmounted(() => {
                 </td>
                 <td v-if="columnVisibility.nationality">
                   <span style="font-size:13px;">{{ flagEmoji(g.nationality) }}</span>
-                  <span class="gms-muted gms-small" style="margin-left:4px;">{{ g.nationality }}</span>
+                  <span class="gms-muted gms-small" style="margin-left:4px;">{{ countryName(g.nationality) }}</span>
                 </td>
                 <td v-if="columnVisibility.status"><GmsPill :value="g.status_id" /></td>
                 <td v-if="columnVisibility.host"><span class="gms-muted gms-small">{{ hostFor(g.host)?.name ?? '—' }}</span></td>
@@ -1006,7 +1089,7 @@ onUnmounted(() => {
         <div class="gd-meta">
           <span style="font-family:var(--gms-font-mono);font-size:11px;">{{ activeGuest.id }}</span>
           <span class="gd-meta-dot">·</span>
-          <span>{{ flagEmoji(activeGuest.nationality) }} {{ activeGuest.nationality }}</span>
+          <span>{{ flagEmoji(activeGuest.nationality) }} {{ countryName(activeGuest.nationality) }}</span>
           <span class="gd-meta-dot">·</span>
           <span>{{ activeGuest.nationality === 'QA' ? 'Local' : 'International' }}</span>
         </div>
@@ -1256,9 +1339,47 @@ onUnmounted(() => {
 
       <!-- ── Invitations tab ── -->
       <template v-else-if="drawerTab === 'invitations'">
-        <div class="gms-empty" style="padding:40px 0;">
-          <div class="gms-empty-title">No invitations yet</div>
-          <div class="gms-empty-sub">Send an invite to get started.</div>
+        <div v-if="!getConfirmedMatches(activeGuest).length" class="gms-empty" style="padding:40px 0;">
+          <div class="gms-empty-title">No confirmed matches</div>
+          <div class="gms-empty-sub">Send invitations to get started.</div>
+        </div>
+        
+        <div v-else style="display:flex;flex-direction:column;gap:10px;">
+          <div 
+            v-for="item in getConfirmedMatches(activeGuest)" 
+            :key="`${item.invitation.id}-${item.match.id}`"
+            class="gms-card"
+            style="padding:12px;cursor:pointer;transition:all 0.15s;border:1px solid var(--gms-border);"
+            @click="viewInvitationDetails(item.invitation)"
+            @mouseenter="$event.currentTarget.style.borderColor = 'var(--gms-maroon)'"
+            @mouseleave="$event.currentTarget.style.borderColor = 'var(--gms-border)'"
+          >
+            <!-- Match Stage Badge -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span class="gms-pill" style="background:var(--gms-maroon-tint);color:var(--gms-maroon);font-size:10px;font-weight:700;text-transform:uppercase;">
+                {{ item.match.stage }}
+              </span>
+              <span class="gms-pill" style="background:var(--good-soft);color:var(--good);font-size:10px;">
+                ✓ Confirmed
+              </span>
+            </div>
+            
+            <!-- Match Teams -->
+            <div style="font-weight:600;font-size:14px;margin-bottom:6px;color:var(--gms-text);">
+              {{ item.match.homeTeam }} vs {{ item.match.awayTeam }}
+            </div>
+            
+            <!-- Match Details -->
+            <div style="font-size:12px;color:var(--gms-text-2);margin-bottom:2px;">
+              {{ item.match.venue }} • {{ formatMatchDateTime(item.match.date) }} • {{ item.match.time }}
+            </div>
+            
+            <!-- Invitation Reference -->
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--gms-border);font-size:11px;color:var(--gms-text-3);display:flex;align-items:center;justify-content:space-between;">
+              <span>From invitation: {{ item.invitation.subject }}</span>
+              <GmsIcon name="arrow-right" :size="12" style="opacity:0.5;" />
+            </div>
+          </div>
         </div>
       </template>
     </template>
@@ -1344,7 +1465,13 @@ onUnmounted(() => {
         <!-- Nationality -->
         <div class="gms-field">
           <label class="gms-label">Nationality</label>
-          <input v-model="form.nationality" class="gms-input" placeholder="Nationality" maxlength="2" style="text-transform:uppercase;" />
+          <GmsSearchableSelect
+            v-model="form.nationality"
+            :options="nationalities"
+            placeholder="Select country..."
+            value-key="value"
+            label-key="label"
+          />
         </div>
 
         <!-- Group -->
@@ -1696,7 +1823,12 @@ onUnmounted(() => {
           </div>
           <div class="gms-field">
             <label class="gms-label">RSVP Deadline <span style="color:var(--gms-maroon);">*</span></label>
-            <input v-model="rsvpDeadline" class="gms-input" placeholder="e.g., 5 Aug 2026" />
+            <GmsDatePicker 
+              v-model="rsvpDeadline" 
+              placeholder="Select deadline date..." 
+              date-format="d/m/Y"
+              :min-date="new Date().toISOString().split('T')[0]"
+            />
           </div>
         </div>
         <div>
@@ -1758,7 +1890,7 @@ onUnmounted(() => {
       <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--gms-maroon-tint);border-radius:10px;margin-top:16px;">
         <GmsIcon name="mail" :size="20" style="color:var(--gms-maroon);flex-shrink:0;" />
         <div style="flex:1;font-size:13px;color:var(--gms-text);">See exactly what the guest receives and how they choose matches.</div>
-        <button class="gms-btn gms-btn-ghost" style="flex-shrink:0;" @click="toast('Guest preview coming soon')">
+        <button class="gms-btn gms-btn-ghost" style="flex-shrink:0;" @click="guestPreviewModal = true">
           Preview as guest →
         </button>
       </div>
@@ -1774,11 +1906,166 @@ onUnmounted(() => {
             <GmsIcon name="chevron-left" :size="13" /> Back
           </button>
           <button v-if="inviteStep < 3" class="gms-btn gms-btn-primary" @click="nextInviteStep">Continue</button>
-          <button v-if="inviteStep === 3" class="gms-btn gms-btn-primary" :disabled="!selectedMatches.length" @click="sendInvitation">
-            <GmsIcon name="mail" :size="13" /> Send Invitation
+          <button v-if="inviteStep === 3" class="gms-btn gms-btn-primary" :disabled="!selectedMatches.length || sendingInvitation" @click="sendInvitation">
+            <GmsIcon v-if="!sendingInvitation" name="mail" :size="13" />
+            <svg v-else style="width:13px;height:13px;animation:spin 0.6s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="12" cy="12" r="10" opacity="0.25"/>
+              <path d="M12 2 A10 10 0 0 1 22 12" opacity="1"/>
+            </svg>
+            {{ sendingInvitation ? 'Sending...' : 'Send Invitation' }}
           </button>
         </div>
       </div>
     </template>
   </GmsModal>
+
+  <!-- ── Guest Preview Modal ──────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition name="gms-modal-overlay">
+      <div v-if="guestPreviewModal" class="ginv-scrim" @click.self="guestPreviewModal = false">
+        <Transition name="gms-modal" appear>
+          <div v-if="guestPreviewModal" class="ginv">
+            <button class="ginv-close" @click="guestPreviewModal = false">
+              <GmsIcon name="x" :size="16" />
+            </button>
+            
+            <div class="ginv-head">
+              <div class="crest">🏆</div>
+              <div class="ev">{{ event?.name ?? 'Doha Cup \'26' }}</div>
+              <div class="dt">{{ event?.date_start ? new Date(event.date_start).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'August 10-22, 2026' }}</div>
+            </div>
+            
+            <div class="ginv-body">
+              <div class="ginv-greet">{{ previewEmailText }}</div>
+              
+              <div class="ginv-sec-h">Choose Your Matches</div>
+              <div class="ginv-sec-sub">Select which matches you'd like to attend</div>
+              
+              <div v-for="mid in selectedMatches" :key="mid" class="rsvp-match" :class="{ yes: matchRsvp[mid] === 'yes', no: matchRsvp[mid] === 'no' }">
+                <div class="rsvp-top">
+                  <div class="rsvp-stage">{{ matches.find(m => m.id === mid)?.stageCode }}</div>
+                  <div class="rsvp-teams">
+                    {{ matches.find(m => m.id === mid)?.homeTeam || 'TBD' }} vs {{ matches.find(m => m.id === mid)?.awayTeam || 'TBD' }}
+                  </div>
+                </div>
+                <div class="rsvp-meta">
+                  <span>🏟️ {{ matches.find(m => m.id === mid)?.venueName }}</span>
+                  <span>•</span>
+                  <span>{{ matches.find(m => m.id === mid)?.date }}</span>
+                  <span>•</span>
+                  <span>{{ matches.find(m => m.id === mid)?.kickoff }}</span>
+                </div>
+                <div class="rsvp-btns">
+                  <button class="rsvp-btn" :class="{ 'on-yes': matchRsvp[mid] === 'yes' }" @click="matchRsvp[mid] = matchRsvp[mid] === 'yes' ? null : 'yes'">
+                    <svg v-if="matchRsvp[mid] === 'yes'" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" transform="scale(0.7) translate(-2, -2)"/></svg>
+                    Yes, I'll attend
+                  </button>
+                  <button class="rsvp-btn" :class="{ 'on-no': matchRsvp[mid] === 'no' }" @click="matchRsvp[mid] = matchRsvp[mid] === 'no' ? null : 'no'">
+                    <svg v-if="matchRsvp[mid] === 'no'" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18" transform="scale(0.7) translate(-2, -2)"/><line x1="6" y1="6" x2="18" y2="18" transform="scale(0.7) translate(-2, -2)"/></svg>
+                    No, thanks
+                  </button>
+                </div>
+              </div>
+              
+              <div style="margin-top:24px;padding:14px;background:var(--gms-surface-2);border-radius:10px;text-align:center;font-size:12px;color:var(--gms-text-3);">
+                This is a preview. Actual guests will be able to select their matches.
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Invitation Detail Modal -->
+  <GmsModal 
+    :open="invitationDetailModal" 
+    title="Invitation Details"
+    size="lg"
+    @close="invitationDetailModal = false"
+  >
+    <div v-if="activeInvitation" style="display:flex;flex-direction:column;gap:20px;">
+      <!-- Status & Dates -->
+      <div style="display:flex;gap:16px;padding:12px;background:var(--gms-surface);border:1px solid var(--gms-border);border-radius:8px;">
+        <div style="flex:1;">
+          <div style="font-size:11px;color:var(--gms-text-3);margin-bottom:4px;">Status</div>
+          <GmsPill :value="activeInvitation.status" />
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:11px;color:var(--gms-text-3);margin-bottom:4px;">Sent</div>
+          <div style="font-size:13px;font-weight:600;">{{ activeInvitation.sent_at ? new Date(activeInvitation.sent_at).toLocaleDateString() : '—' }}</div>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:11px;color:var(--gms-text-3);margin-bottom:4px;">Responded</div>
+          <div style="font-size:13px;font-weight:600;">{{ activeInvitation.responded_at ? new Date(activeInvitation.responded_at).toLocaleDateString() : 'Pending' }}</div>
+        </div>
+      </div>
+
+      <!-- Subject -->
+      <div>
+        <div class="gms-section-title" style="margin-bottom:8px;">Subject</div>
+        <div style="padding:10px 12px;background:var(--gms-surface);border:1px solid var(--gms-border);border-radius:8px;font-size:13px;">
+          {{ activeInvitation.subject }}
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div>
+        <div class="gms-section-title" style="margin-bottom:8px;">Message</div>
+        <div style="padding:12px;background:var(--gms-surface);border:1px solid var(--gms-border);border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;max-height:200px;overflow-y:auto;">
+          {{ activeInvitation.body }}
+        </div>
+      </div>
+
+      <!-- Matches -->
+      <div>
+        <div class="gms-section-title" style="margin-bottom:8px;">Matches Offered ({{ activeInvitation.matches.length }})</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div 
+            v-for="match in activeInvitation.matches" 
+            :key="match.id"
+            style="padding:10px 12px;background:var(--gms-surface);border:1px solid var(--gms-border);border-radius:8px;"
+          >
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span class="gms-pill" style="background:var(--gms-maroon-tint);color:var(--gms-maroon);font-size:10px;font-weight:700;text-transform:uppercase;">
+                {{ match.stage }}
+              </span>
+              <span v-if="match.response" class="gms-pill" :style="{
+                background: match.response === 'yes' ? 'var(--good-soft)' : 'var(--bad-soft)',
+                color: match.response === 'yes' ? 'var(--good)' : 'var(--bad)',
+                fontSize:'10px'
+              }">
+                {{ match.response === 'yes' ? '✓ Attending' : '✕ Declined' }}
+              </span>
+            </div>
+            <div style="font-weight:600;font-size:13px;margin-bottom:2px;">
+              {{ match.homeTeam }} vs {{ match.awayTeam }}
+            </div>
+            <div style="font-size:11.5px;color:var(--gms-text-3);">
+              {{ match.venue }} • {{ formatMatchDateTime(match.date) }} • {{ match.time }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <template #footer>
+      <button class="gms-btn gms-btn-ghost" @click="invitationDetailModal = false">Close</button>
+      <button 
+        v-if="activeInvitation?.rsvp_token"
+        class="gms-btn gms-btn-primary"
+        @click="() => window.open(`/rsvp/${activeInvitation.rsvp_token}`, '_blank')"
+      >
+        <GmsIcon name="arrow-right" :size="13" />
+        View RSVP Page
+      </button>
+    </template>
+  </GmsModal>
 </template>
+
+<style scoped>
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+</style>

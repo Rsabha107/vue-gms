@@ -32,8 +32,12 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::delete('/guests/{id}',  [GmsGuestController::class, 'destroy'])->name('guests.destroy');
 
     // Invitations
-    Route::get('/invitations',       [GmsInvitationController::class, 'index'])->name('invitations.index');
-    Route::post('/invitations/send', [GmsInvitationController::class, 'send'])->name('invitations.send');
+    Route::get('/invitations',                    [GmsInvitationController::class, 'index'])->name('invitations.index');
+    Route::post('/invitations/send',              [GmsInvitationController::class, 'send'])->name('invitations.send');
+    Route::post('/invitations/{id}/accept-behalf', [GmsInvitationController::class, 'acceptOnBehalf'])->name('invitations.acceptOnBehalf');
+    Route::post('/invitations/{id}/mark-confirmed', [GmsInvitationController::class, 'markConfirmed'])->name('invitations.markConfirmed');
+    Route::post('/invitations/{id}/mark-declined', [GmsInvitationController::class, 'markDeclined'])->name('invitations.markDeclined');
+    Route::post('/invitations/{id}/reset-pending', [GmsInvitationController::class, 'resetToPending'])->name('invitations.resetToPending');
 
     // Seating
     Route::get('/seating',                                     [GmsSeatingController::class, 'index'])->name('seating.index');

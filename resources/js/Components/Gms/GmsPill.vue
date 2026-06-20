@@ -10,31 +10,43 @@ const props = defineProps({
 })
 
 const statusMap = {
-    confirmed: { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e', label: 'Confirmed' },
-    pending:   { bg: '#fef9c3', fg: '#a16207', dot: '#ca8a04', label: 'Pending' },
-    invited:   { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6', label: 'Invited' },
-    declined:  { bg: '#fee2e2', fg: '#dc2626', dot: '#ef4444', label: 'Declined' },
-    cancelled: { bg: '#f3f4f6', fg: '#6b7280', dot: '#9ca3af', label: 'Cancelled' },
-    confirmed_flight: { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e', label: 'Confirmed' },
-    arrival:   { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6', label: 'Arrival' },
-    departure: { bg: '#fce7f3', fg: '#9d174d', dot: '#ec4899', label: 'Departure' },
+    confirmed: { class: 'good', label: 'Confirmed' },
+    pending:   { class: 'warn', label: 'Pending' },
+    invited:   { class: 'info', label: 'Invited' },
+    declined:  { class: 'bad', label: 'Declined' },
+    cancelled: { class: 'grey', label: 'Cancelled' },
+    confirmed_flight: { class: 'good', label: 'Confirmed' },
+    arrival:   { class: 'info', label: 'Arrival' },
+    departure: { class: 'pink', label: 'Departure' },
+    // RSVP rollup statuses
+    accepted:  { class: 'good', label: 'Accepted' },
+    partial:   { class: 'warn', label: 'Partial' },
+    awaiting:  { class: 'info', label: 'Awaiting' },
+    sent:      { class: 'purple', label: 'Sent' },
+    // Service request statuses
+    new:       { class: 'info', label: 'New' },
+    change:    { class: 'warn', label: 'Change' },
 }
 
 const style = computed(() => {
     if (props.type === 'tier') {
         const tier = props.tiers.find(t => t.id === props.value)
-        if (tier) return { bg: tier.bg ?? '#f3f4f6', fg: tier.color ?? '#374151', dot: tier.color, label: tier.name }
+        if (tier) return { bg: tier.bg ?? '#f3f4f6', fg: tier.color ?? '#374151', label: tier.name, useClass: false }
     }
     if (props.type === 'custom' && props.bg) {
-        return { bg: props.bg, fg: props.fg ?? '#374151', dot: props.fg, label: props.value }
+        return { bg: props.bg, fg: props.fg ?? '#374151', label: props.value, useClass: false }
     }
-    return statusMap[props.value] ?? { bg: '#f3f4f6', fg: '#6b7280', dot: '#9ca3af', label: props.value }
+    const statusInfo = statusMap[props.value] ?? { class: 'grey', label: props.value }
+    return { ...statusInfo, useClass: true }
 })
 </script>
 
 <template>
-  <span class="gms-pill" :style="{ background: style.bg, color: style.fg }">
-    <span class="gms-pill-dot" :style="{ background: style.dot }" />
+  <span 
+    class="gms-pill" 
+    :class="style.useClass ? style.class : ''"
+    :style="!style.useClass ? { background: style.bg, color: style.fg } : {}"
+  >
     {{ style.label }}
   </span>
 </template>

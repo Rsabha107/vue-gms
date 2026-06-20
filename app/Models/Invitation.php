@@ -54,6 +54,16 @@ class Invitation extends Model
     }
 
     /**
+     * Get the matches offered in this invitation
+     */
+    public function matches()
+    {
+        return $this->belongsToMany(GameMatch::class, 'invitation_matches', 'invitation_id', 'game_match_id')
+            ->withPivot('response')
+            ->withTimestamps();
+    }
+
+    /**
      * Scope for sent invitations
      */
     public function scopeSent($query)
@@ -91,5 +101,31 @@ class Invitation extends Model
     public function isSent(): bool
     {
         return !is_null($this->sent_at);
+    }
+
+    /**
+     * Update invitation status based on match responses
+     * Status logic:
+     * - 'sent': No responses yet (all null)
+     * - 'accepted': All matches accepted (all 'yes') - guest action
+     * - 'partial': Some accepted, some declined (mix of 'yes' and 'no')
+     * - 'declined': All matches declined (all 'no')
+     * - 'confirmed': Admin-only override (not set by this method)
+     */
+    public function updateStatusFromResponses(): void
+    {
+        $responses = $this->matches()->pluck('response')->filter();
+        
+        if ($responses->isEmpty()) {
+            $this->status = 'sent';
+        } elseif ($responses->every(fn($r) => $r === 'yes')) {
+            $this->status = 'accepted';
+        } elseif ($responses->every(fn($r) => $r === 'no')) {
+            $this->status = 'declined';
+        } else {
+            $this->status = 'partial';
+        }
+        
+        $this->save();
     }
 }

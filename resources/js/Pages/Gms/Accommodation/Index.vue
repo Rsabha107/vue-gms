@@ -9,6 +9,7 @@ import GmsDrawer from '@/Components/Gms/GmsDrawer.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 import GmsBtn from '@/Components/Gms/GmsBtn.vue'
+import GmsGuestPicker from '@/Components/Gms/GmsGuestPicker.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -57,6 +58,22 @@ function fmtDateShort(d) {
     return `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1])]} ${year}`
 }
 
+const isRefreshing = ref(false)
+
+function refreshRequests() {
+    isRefreshing.value = true
+    router.reload({ 
+        only: ['requests'],
+        onFinish: () => {
+            setTimeout(() => {
+                isRefreshing.value = false
+                localReqs.value = props.requests.map(r => ({ ...r }))
+                toast('Requests refreshed')
+            }, 500)
+        }
+    })
+}
+
 const drawerOpen = ref(false)
 const activeReq  = ref(null)
 const confirmDelete = ref(false)
@@ -67,11 +84,27 @@ function openDrawer(r) {
     confirmDelete.value = false
 }
 
+function canConfirm(r) {
+    return r.status !== 'confirmed' && r.status !== 'cancelled'
+}
+
 function changeStatus(id, status) {
     const idx = localReqs.value.findIndex(r => r.id === id)
     if (idx !== -1) localReqs.value[idx] = { ...localReqs.value[idx], status }
     router.patch(route('gms.accommodation.status', id), { status }, {
         onSuccess: () => toast(`Status updated to ${status}.`),
+        preserveScroll: true,
+    })
+}
+
+function reinstateRequest(r) {
+    const idx = localReqs.value.findIndex(x => x.id === r.id)
+    if (idx !== -1) localReqs.value[idx] = { ...localReqs.value[idx], status: 'new' }
+    if (activeReq.value?.id === r.id) activeReq.value = { ...activeReq.value, status: 'new' }
+    drawerOpen.value = false
+    router.patch(route('gms.accommodation.status', r.id), { status: 'new' }, {
+        onSuccess: () => toast('Request reinstated.'),
+        onError:   () => toast('Failed to update.', 'error'),
         preserveScroll: true,
     })
 }
@@ -91,9 +124,31 @@ function deleteReq(r) {
 }
 
 const newModal = ref(false)
+const selectedGuestId = ref(null)
 const editModal = ref(false)
 const editingReq = ref(null)
 const form = useForm({ guestId: '', hotel: '', roomType: '', checkIn: '', checkOut: '', notes: '' })
+
+// Sort guests: international first
+const sortedGuestList = computed(() => {
+    return props.guests.slice().sort((a, b) => {
+        const aIntl = a.guestType === 'international' ? 0 : 1
+        const bIntl = b.guestType === 'international' ? 0 : 1
+        return aIntl - bIntl
+    })
+})
+
+// Guest IDs that already have accommodations
+const existingAccommodationGuestIds = computed(() => {
+    return localReqs.value
+        .filter(r => r.status !== 'cancelled')
+        .map(r => r.guestId)
+})
+
+function pickGuest(guest) {
+    selectedGuestId.value = guest.id
+    form.guestId = guest.id
+}
 
 function nightsBetween(a, b) {
     if (!a || !b) return 0
@@ -126,6 +181,7 @@ function saveNew() {
                 status: 'new',
             })
             newModal.value = false
+            selectedGuestId.value = null
             form.reset()
             toast('Accommodation request created.')
         },
@@ -161,6 +217,7 @@ function saveEdit() {
 </script>
 
 <template>
+  <div>
   <div class="gms-view">
     <div class="gms-view-pad">
     <div class="gms-view-header">
@@ -169,6 +226,15 @@ function saveEdit() {
         <p class="gms-view-subtitle">Hotel bookings &amp; room nights for guests of {{ event?.name ?? 'this event' }}.</p>
       </div>
       <div class="gms-view-actions">
+        <button 
+          class="gms-btn gms-btn-ghost gms-btn-sm" 
+          @click="refreshRequests"
+          :disabled="isRefreshing"
+          title="Refresh requests"
+          style="margin-right: 8px;"
+        >
+          <GmsIcon name="refresh-cw" :size="14" :class="{ 'gms-spin': isRefreshing }" />
+        </button>
         <button class="gms-btn gms-btn-primary" @click="newModal = true">
           <GmsIcon name="plus" :size="14" /> New Request
         </button>
@@ -271,20 +337,26 @@ function saveEdit() {
         >
           {{ confirmDelete ? 'Confirm delete?' : 'Delete' }}
         </GmsBtn>
-        <GmsBtn variant="ghost" icon="x" :iconSize="13" @click="changeStatus(activeReq.id,'cancelled'); drawerOpen=false">Cancel</GmsBtn>
-        <GmsBtn v-if="activeReq.status !== 'confirmed'" variant="primary" icon="check" :iconSize="13" @click="changeStatus(activeReq.id,'confirmed'); drawerOpen=false">Confirm</GmsBtn>
+        <GmsBtn v-if="canConfirm(activeReq)" variant="ghost" icon="x" :iconSize="13" @click="changeStatus(activeReq.id,'cancelled'); drawerOpen=false">Cancel</GmsBtn>
+        <GmsBtn v-if="canConfirm(activeReq)" variant="primary" icon="check" :iconSize="13" @click="changeStatus(activeReq.id,'confirmed'); drawerOpen=false">Confirm</GmsBtn>
+        <GmsBtn v-if="!canConfirm(activeReq)" variant="primary" icon="refresh-cw" :iconSize="13" @click="reinstateRequest(activeReq)">Re-instate</GmsBtn>
       </div>
     </template>
   </GmsDrawer>
 
-  <GmsModal :open="newModal" title="New Accommodation Request" @close="newModal = false">
+  <GmsModal :open="newModal" title="New Accommodation Request" @close="newModal = false; selectedGuestId = null; form.reset()">
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="gms-field">
         <label class="gms-label">Guest</label>
-        <select v-model="form.guestId" class="gms-input gms-select">
-          <option value="">— Select —</option>
-          <option v-for="g in guests" :key="g.id" :value="g.id">{{ g.name }}</option>
-        </select>
+        <GmsGuestPicker
+          :guests="sortedGuestList"
+          :selected-guest-id="selectedGuestId"
+          :tiers="props.tiers"
+          :show-existing-indicator="true"
+          :existing-guest-ids="existingAccommodationGuestIds"
+          existing-label="has accommodation"
+          @select="pickGuest"
+        />
       </div>
       <div class="gms-form-grid">
         <div class="gms-field">
@@ -313,7 +385,7 @@ function saveEdit() {
       </div>
     </div>
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="newModal = false">Cancel</button>
+      <button class="gms-btn gms-btn-ghost" @click="newModal = false; selectedGuestId = null">Cancel</button>
       <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="saveNew">Create Request</button>
     </template>
   </GmsModal>
@@ -322,10 +394,12 @@ function saveEdit() {
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="gms-field">
         <label class="gms-label">Guest</label>
-        <select v-model="form.guestId" class="gms-input gms-select">
-          <option value="">— Select —</option>
-          <option v-for="g in guests" :key="g.id" :value="g.id">{{ g.name }}</option>
-        </select>
+        <input 
+          :value="editingReq?.guestName ?? ''" 
+          class="gms-input" 
+          disabled 
+          style="background: var(--gms-bg); color: var(--gms-text-2); cursor: not-allowed;"
+        />
       </div>
       <div class="gms-form-grid">
         <div class="gms-field">
@@ -358,4 +432,5 @@ function saveEdit() {
       <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="saveEdit">Save Changes</button>
     </template>
   </GmsModal>
+  </div>
 </template>

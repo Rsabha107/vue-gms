@@ -43,6 +43,32 @@ function switchEvent(eventId) {
     })
 }
 
+// ── User menu dropdown ────────────────────────────────────────────
+const userMenuOpen = ref(false)
+const userMenuRef = ref(null)
+
+function toggleUserMenu() {
+    userMenuOpen.value = !userMenuOpen.value
+}
+
+function handleClickOutside(e) {
+    if (userMenuRef.value && !userMenuRef.value.contains(e.target)) {
+        userMenuOpen.value = false
+    }
+    if (eventSelectorOpen.value && !e.target.closest('.gms-event-selector')) {
+        eventSelectorOpen.value = false
+    }
+}
+
+function logout() {
+    userMenuOpen.value = false
+    router.post(route('logout'), {}, {
+        onSuccess: () => {
+            window.location.href = '/login'
+        }
+    })
+}
+
 // ── Toast system ─────────────────────────────────────────────────
 const toasts = ref([])
 let toastId = 0
@@ -60,10 +86,19 @@ function closeCmd() { cmdOpen.value = false }
 
 function handleKey(e) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); cmdOpen.value = !cmdOpen.value }
-    if (e.key === 'Escape') cmdOpen.value = false
+    if (e.key === 'Escape') {
+        cmdOpen.value = false
+        userMenuOpen.value = false
+    }
 }
-onMounted(() => window.addEventListener('keydown', handleKey))
-onUnmounted(() => window.removeEventListener('keydown', handleKey))
+onMounted(() => {
+    window.addEventListener('keydown', handleKey)
+    document.addEventListener('click', handleClickOutside)
+})
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleKey)
+    document.removeEventListener('click', handleClickOutside)
+})
 
 // ── Nav structure ─────────────────────────────────────────────────
 const breadcrumbMap = {
@@ -253,10 +288,37 @@ function isActive(item) {
           <button class="gms-topbar-btn" title="Notifications">
             <GmsIcon name="bell" :size="16" />
           </button>
-          <Link href="/profile" class="gms-topbar-btn" title="Profile" style="text-decoration:none;">
-            <GmsAvatar v-if="auth?.user" :name="auth.user.name" size="sm" style="width:26px;height:26px;font-size:10px;" />
-            <GmsIcon v-else name="user" :size="16" />
-          </Link>
+          <div ref="userMenuRef" style="position: relative;">
+            <button class="gms-topbar-btn" title="Profile" @click="toggleUserMenu">
+              <GmsAvatar v-if="auth?.user" :name="auth.user.name" size="sm" style="width:26px;height:26px;font-size:10px;" />
+              <GmsIcon v-else name="user" :size="16" />
+            </button>
+            <div v-if="userMenuOpen" class="gms-dropdown-menu" style="right: 0; left: auto; min-width: 200px;">
+              <div style="padding: 10px 12px; border-bottom: 1px solid var(--gms-border); margin-bottom: 4px;">
+                <div style="font-weight: 600; font-size: 13px; color: var(--gms-text);">{{ auth?.user?.name || 'User' }}</div>
+                <div style="font-size: 11.5px; color: var(--gms-text-3); margin-top: 2px;">{{ auth?.user?.email || '' }}</div>
+              </div>
+              <Link href="/profile" class="gms-dropdown-item" style="text-decoration: none;">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  <GmsIcon name="user" :size="14" />
+                  Profile
+                </span>
+              </Link>
+              <Link href="/settings" class="gms-dropdown-item" style="text-decoration: none;">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  <GmsIcon name="settings" :size="14" />
+                  Settings
+                </span>
+              </Link>
+              <div style="border-top: 1px solid var(--gms-border); margin: 4px 0;"></div>
+              <button @click="logout" class="gms-dropdown-item">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  <GmsIcon name="log-out" :size="14" />
+                  Logout
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 

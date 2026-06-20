@@ -9,6 +9,7 @@ import GmsDrawer from '@/Components/Gms/GmsDrawer.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 import GmsBtn from '@/Components/Gms/GmsBtn.vue'
+import GmsGuestPicker from '@/Components/Gms/GmsGuestPicker.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -378,7 +379,6 @@ function saveLeg() {
 // ── New request modal ─────────────────────────────────────────────
 const newModal = ref(false)
 const selectedGuestId = ref(null)
-const guestSearchQuery = ref('')
 
 const form = useForm({
     guestId: '', flightNo: '', route: '', origin: 'DOH', destination: '',
@@ -387,24 +387,20 @@ const form = useForm({
     isChange: false,
 })
 
-// Filter and sort guests: international first
-const guestList = computed(() => {
-    const query = guestSearchQuery.value.trim().toLowerCase()
-    let filtered = props.guests
-    
-    if (query) {
-        filtered = filtered.filter(g => 
-            g.name.toLowerCase().includes(query) ||
-            (g.group && g.group.toLowerCase().includes(query)) ||
-            (g.nationality && g.nationality.toLowerCase().includes(query))
-        )
-    }
-    
-    return filtered.sort((a, b) => {
+// Sort guests: international first
+const sortedGuestList = computed(() => {
+    return props.guests.slice().sort((a, b) => {
         const aIntl = a.guestType === 'international' ? 0 : 1
         const bIntl = b.guestType === 'international' ? 0 : 1
         return aIntl - bIntl
     })
+})
+
+// Guest IDs that already have flights
+const existingFlightGuestIds = computed(() => {
+    return localReqs.value
+        .filter(f => f.status !== 'cancelled')
+        .map(f => f.guestId)
 })
 
 const selectedGuest = computed(() => {
@@ -415,10 +411,6 @@ const selectedGuestTier = computed(() => {
     if (!selectedGuest.value) return null
     return props.tiers.find(t => t.id === selectedGuest.value.tier)
 })
-
-const guestHasFlight = (guestId) => {
-    return localReqs.value.some(f => f.guestId === guestId && f.status !== 'cancelled')
-}
 
 const defaultClassForTier = (tierName) => {
     if (tierName === 'Platinum') return 'First'
@@ -449,17 +441,23 @@ function saveNew() {
     const guest = props.guests.find(g => g.id === form.guestId)
     form.post(route('gms.flights.store'), {
         onSuccess: () => {
-            // Will be refreshed by Inertia, no need for optimistic update
             newModal.value = false
             selectedGuestId.value = null
-            guestSearchQuery.value = ''
             toast('Flight request created.')
             form.reset()
             form.origin = 'DOH'
             form.isChange = false
+            
+            // Reload flights data and update local copy
+            router.reload({
+                only: ['requests'],
+                preserveScroll: true,
+                onSuccess: () => {
+                    localReqs.value = props.requests.map(r => ({ ...r }))
+                },
+            })
         },
         onError: () => toast('Failed to create.', 'error'),
-        preserveScroll: false, // Reload to get fresh data with legs
     })
 }
 </script>
@@ -856,50 +854,21 @@ function saveNew() {
   </GmsDrawer>
 
   <!-- ── New request modal ── -->
-  <GmsModal :open="newModal" title="New Flight Request" size="lg" @close="newModal = false; selectedGuestId = null; guestSearchQuery = ''">
+  <GmsModal :open="newModal" title="New Flight Request" size="lg" @close="newModal = false; selectedGuestId = null">
     <div style="padding:0;">
       
       <!-- Step 1: Guest selection -->
       <div class="nf-step">1 · Guest</div>
       <div style="margin:2px 0 10px;">
-        <div class="gms-search-wrap">
-          <GmsIcon name="search" :size="14" class="gms-search-icon" />
-          <input v-model="guestSearchQuery" class="gms-search-input" placeholder="Search the guest registry…" />
-        </div>
-      </div>
-
-      <div class="nf-glist">
-        <button
-          v-for="g in guestList"
-          :key="g.id"
-          type="button"
-          :class="['nf-guest', { 'on': selectedGuestId === g.id }]"
-          @click="pickGuest(g)"
-        >
-          <GmsAvatar :name="g.name" size="sm" />
-          <div style="flex:1;min-width:0;text-align:left;">
-            <div class="nf-gn">{{ g.name }}</div>
-            <div class="gms-muted" style="font-size:11px;">
-              {{ g.guestType === 'international' ? 'Int\'l' : 'Local' }} · {{ g.group || '—' }}
-            </div>
-          </div>
-          <span v-if="guestHasFlight(g.id)" class="gms-pill" style="font-size:10px;" title="Already has a booking">has flight</span>
-          <span
-            v-if="props.tiers.find(t => t.id === g.tier)"
-            class="gms-pill"
-            :style="{
-              background: props.tiers.find(t => t.id === g.tier).bg,
-              color: props.tiers.find(t => t.id === g.tier).color,
-              fontSize: '10.5px'
-            }"
-          >{{ g.tier }}</span>
-          <span class="nf-radio">
-            <GmsIcon v-if="selectedGuestId === g.id" name="check" :size="13" />
-          </span>
-        </button>
-        <div v-if="guestList.length === 0" class="gms-muted" style="font-size:12.5px;padding:14px;text-align:center;">
-          No guests match "{{ guestSearchQuery }}".
-        </div>
+        <GmsGuestPicker
+          :guests="sortedGuestList"
+          :selected-guest-id="selectedGuestId"
+          :tiers="props.tiers"
+          :show-existing-indicator="true"
+          :existing-guest-ids="existingFlightGuestIds"
+          existing-label="has flight"
+          @select="pickGuest"
+        />
       </div>
 
       <!-- Step 2: Flight details (only shown when guest selected) -->
@@ -1021,7 +990,7 @@ function saveNew() {
         {{ selectedGuest ? `${selectedGuest.name} · ${form.class} · ${form.pax} pax` : 'No guest selected' }}
       </span>
       <div style="margin-left:auto;display:flex;gap:10px;">
-        <GmsBtn variant="ghost" @click="newModal = false; selectedGuestId = null; guestSearchQuery = ''">Cancel</GmsBtn>
+        <GmsBtn variant="ghost" @click="newModal = false; selectedGuestId = null">Cancel</GmsBtn>
         <GmsBtn variant="primary" :disabled="!selectedGuest || form.processing" @click="saveNew">
           <GmsIcon name="plus" :size="13" />
           Create request

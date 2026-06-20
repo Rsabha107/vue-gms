@@ -41,7 +41,21 @@ class GmsAccommodationController extends Controller
 
         return Inertia::render('Gms/Accommodation/Index', [
             'requests' => $accommodationRequests,
-            'guests'   => GmsMockData::getGuests(),
+            'guests'   => Guest::where('guestType', 'international')
+                ->when($eventId, fn($q) => $q->where('event_id', $eventId))
+                ->with(['tierInfo', 'group'])
+                ->orderBy('name')
+                ->get()
+                ->map(function($g) {
+                    return [
+                        'id' => $g->id,
+                        'name' => $g->name,
+                        'tier' => $g->tier,
+                        'guestType' => $g->guestType,
+                        'group' => $g->group->name ?? null,
+                        'email' => $g->email,
+                    ];
+                }),
             'hotels'   => GmsMockData::getHotels(),
             'tiers'    => GmsMockData::getTiers(),
             'event'    => $event,

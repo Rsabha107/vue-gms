@@ -13,9 +13,14 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\RolesPermissionController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserExportController;
+use App\Http\Controllers\RsvpController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+// ---- PUBLIC guest-facing RSVP (token-guarded, no auth) ----
+Route::get('/rsvp/{token}', [RsvpController::class, 'show'])->name('rsvp.show');
+Route::post('/rsvp/{token}', [RsvpController::class, 'submit'])->name('rsvp.submit');
 
 Route::inertia('MyAuth/Login', 'MyAuth/Login')->name('mylogin');
 Route::inertia('MyAuth/Register', 'MyAuth/Register')->name('myregister');
@@ -55,12 +60,7 @@ Route::get('password/confirmed', function () {
 Route::middleware('auth')->group(function () {
 
     Route::get('/', function () {
-        return Inertia::render('Mypage', [
-            'canLogin' => Route::has('login'),
-            'canRegister' => Route::has('register'),
-            'laravelVersion' => Application::VERSION,
-            'phpVersion' => PHP_VERSION,
-        ]);
+        return redirect()->route('gms.dashboard');
     })->name('home');
 
     Route::get('/users/export', [UserExportController::class, 'export'])->name('users.export');

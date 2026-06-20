@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Guest;
 use App\Models\ServiceLevel;
 use App\Models\Group;
+use App\Models\Nationality;
 use App\Services\Gms\GmsMockData;
 use App\Imports\GuestsImport;
 use Illuminate\Http\Request;
@@ -21,10 +22,39 @@ class GmsGuestController extends Controller
         $eventId = $event['id'] ?? null;
 
         return Inertia::render('Gms/Guests/Index', [
-            'guests'  => Guest::with(['status', 'group'])
+            'guests'  => Guest::with(['status', 'group', 'invitations.matches'])
                 ->when($eventId, fn($q) => $q->where('event_id', $eventId))
                 ->orderBy('created_at', 'desc')
                 ->get()
+                ->map(function ($guest) {
+                    $guestArray = $guest->toArray();
+                    // Map invitations with match details
+                    $guestArray['invitations'] = $guest->invitations->map(function ($invitation) {
+                        return [
+                            'id' => $invitation->id,
+                            'status' => $invitation->status,
+                            'subject' => $invitation->subject,
+                            'body' => $invitation->body,
+                            'sent_at' => $invitation->sent_at?->format('Y-m-d H:i:s'),
+                            'responded_at' => $invitation->responded_at?->format('Y-m-d H:i:s'),
+                            'rsvp_token' => $invitation->rsvp_token,
+                            'matches' => $invitation->matches->map(function ($match) {
+                                return [
+                                    'id' => $match->id,
+                                    'name' => $match->name,
+                                    'stage' => $match->stage_code ?? $match->stage,
+                                    'homeTeam' => $match->team_a_name,
+                                    'awayTeam' => $match->team_b_name,
+                                    'date' => $match->date,
+                                    'time' => $match->time,
+                                    'venue' => $match->venue?->name ?? 'TBD',
+                                    'response' => $match->pivot->response,
+                                ];
+                            })->toArray(),
+                        ];
+                    })->toArray();
+                    return $guestArray;
+                })
                 ->toArray(),
             'tiers'   => ServiceLevel::orderBy('rank')->get()->toArray(),
             'groups'  => Group::orderBy('name')->get()->toArray(),
@@ -34,6 +64,7 @@ class GmsGuestController extends Controller
             'matches' => GmsMockData::getMatches(),
             'venues'  => GmsMockData::getVenues(),
             'emailTemplates' => GmsMockData::getEmailTemplates(),
+            'nationalities' => Nationality::getForDropdown(),
         ]);
     }
 

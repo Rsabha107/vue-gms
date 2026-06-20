@@ -13,7 +13,7 @@ const icons = {
     star: `<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>`,
     plane: `<path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>`,
     building: `<rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/>`,
-    car: `<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>`,
+    car: `<path d="M6 10V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4"/><path d="M5 10h14a1 1 0 0 1 1 1v4H4v-4a1 1 0 0 1 1-1Z"/><path d="M6 15v4M18 15v4"/>`,
     arrivals: `<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/><line x1="5" y1="5" x2="5" y2="19"/>`,
     search: `<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>`,
     bell: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>`,
@@ -54,7 +54,8 @@ const icons = {
     globe: `<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>`,
     'plane-depart': `<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>`,
     'plane-land': `<g transform="rotate(90,12,12)"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></g>`,
-    'refresh-cw': `<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>`,
+    'refresh-cw': `<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v4h4"></path>`,
+    'badge': `<circle cx="12" cy="15" r="6"></circle><path d="M12 12.5 13 15l2.6.2-2 1.7.6 2.5L12 18l-2.2 1.4.6-2.5-2-1.7 2.6-.2 1-2.5Z"></path><path d="M8.5 9 5.5 3.5M15.5 9l3-5.5M9.5 3h5"></path>`,
 }
 </script>
 

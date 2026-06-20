@@ -32,6 +32,7 @@
         "filepond": "^4.32.12",
         "filepond-plugin-file-validate-type": "^1.2.9",
         "filepond-plugin-image-preview": "^4.6.12",
+        "flatpickr": "^4.6.13",
         "jquery": "^4.0.0",
         "node-waves": "^0.7.6",
         "primeicons": "^7.0.0",

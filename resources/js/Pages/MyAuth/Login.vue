@@ -1,281 +1,457 @@
 <script setup>
-console.log("LOGIN FILE LOADED");
-import { onMounted, onUnmounted } from "vue";
-import { Head, Link, useForm } from "@inertiajs/vue3";
-import { ref } from "vue";
-import AuthFooter from "@/Components/AuthFooter.vue";
-import PasswordInput from "@/Components/PasswordInput.vue";
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
-// onMounted(() => {
-//   console.log("Login Page Mounted");
-//   document.body.classList.add("login-bg");
-// });
-
-// onUnmounted(() => {
-//   document.body.classList.remove("login-bg");
-// });
-
-const validated = ref(false);
-
-const props = defineProps({
-  canResetPassword: {
-    type: Boolean,
-  },
-  status: {
-    type: String,
-  },
-  remember: {
-    type: Boolean,
-  },
+defineProps({
+    canResetPassword: {
+        type: Boolean,
+    },
+    status: {
+        type: String,
+    },
 });
-
-// local copy
-const canReset = ref(props.canResetPassword);
-const remember = ref(props.remember);
-
-// now you can change it
-canReset.value = true;
-remember.value = false;
-
-const showPassword = ref(false);
 
 const form = useForm({
-  email: "",
-  password: "",
-  remember: props.remember || false,
+    email: '',
+    password: '',
+    remember: false,
 });
 
-function submit(e) {
-  const htmlForm = e.currentTarget;
+const submit = () => {
+    form.post(route('login'), {
+        onFinish: () => form.reset('password'),
+    });
+};
 
-  if (!htmlForm.checkValidity()) {
-    e.preventDefault();
-    e.stopPropagation();
-    validated.value = true;
-    return;
-  }
-
-  validated.value = true;
-
-  form.post(route("login"), {
-    onFinish: () => form.reset("password"),
-  });
-}
-
-// give me the current year
-const currentYear = new Date().getFullYear();
 </script>
 <template>
-  <div class="account-pages my-5 pt-sm-5">
-    <div class="container">
-      <div class="row justify-content-center">
-        <div class="col-md-8 col-lg-6 col-xl-5">
-          <div class="card overflow-hidden">
-            <div class="bg-primary-subtle">
-              <div class="row">
-                <div class="col-7">
-                  <div class="text-primary p-4">
-                    <h5 class="text-primary">Welcome Back !</h5>
-                    <p>Sign in to continue.</p>
-                  </div>
+    <Head title="Log in — GMS" />
+
+    <div class="gms-login-page">
+        <div class="gms-login-container">
+            <!-- Logo Section -->
+            <div class="gms-login-header">
+                <div class="gms-login-logo">
+                    <div class="gms-login-monogram">
+                        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="20" cy="20" r="18" fill="var(--gms-maroon)" opacity="0.08"/>
+                            <text x="20" y="27" font-family="var(--f-display)" font-size="20" font-weight="600" fill="var(--gms-maroon)" text-anchor="middle">G</text>
+                        </svg>
+                    </div>
+                    <h1 class="gms-login-title">Guest Management System</h1>
+                    <p class="gms-login-subtitle">VIP Protocol & Event Management</p>
                 </div>
-                <div class="col-5 align-self-end">
-                  <img
-                    alt=""
-                    class="img-fluid"
-                    src="/assets/images/profile-img.png"
-                  />
-                </div>
-              </div>
             </div>
-            <div class="card-body pt-0">
-              <div class="auth-logo">
-                <!-- <a class="auth-logo-light" href="index.html">
-                  <div class="avatar-md profile-user-wid mb-4">
-                    <span class="avatar-title rounded-circle bg-light">
-                      <img
-                        alt=""
-                        class="rounded-circle"
-                        height="34"
-                        src="/assets/images/logo-light.svg"
-                      />
-                    </span>
-                  </div>
-                </a> -->
-                <Link class="auth-logo-dark" :href="route('mypage')">
-                  <div class="avatar-md profile-user-wid mb-4">
-                    <span class="avatar-title rounded-circle bg-light">
-                      <img
-                        alt=""
-                        class="rounded-circle"
-                        height="34"
-                        src="/assets/images/logo.svg"
-                      />
-                    </span>
-                  </div>
-                </Link>
-              </div>
-              <div class="p-2">
-                <!-- <form
-                  @submit.prevent="submit"
-                  class="form-horizontal"
-                  :class="{ 'was-validated': validated }"
-                > -->
-                <form
-                  @submit.prevent="submit"
-                  class="form-horizontal needs-validation"
-                  :class="{ 'was-validated': validated }"
-                  novalidate
-                >
-                  <div
-                    v-if="status"
-                    class="alert alert-success"
-                    role="alert"
-                  >
-                    {{ status }}
-                  </div>
 
-                  <div
-                    v-if="$page.props.flash?.error"
-                    class="alert alert-danger"
-                    role="alert"
-                  >
-                    {{ $page.props.flash.error }}
-                  </div>
+            <!-- Status Message -->
+            <div v-if="status" class="gms-login-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                    <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                {{ status }}
+            </div>
 
-                  <div
-                    v-if="form.errors.email"
-                    class="alert alert-danger"
-                    role="alert"
-                  >
-                    {{ form.errors.email }}
-                  </div>
+            <!-- Flash Error Message -->
+            <div v-if="$page.props.flash?.error" class="gms-login-status gms-login-error-msg">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                {{ $page.props.flash.error }}
+            </div>
 
-                  <div class="mb-3">
-                    <label class="form-label" for="email"> Email </label>
+            <!-- Login Form -->
+            <form @submit.prevent="submit" class="gms-login-form">
+                <!-- Email Field -->
+                <div class="gms-login-field">
+                    <label for="email" class="gms-login-label">Email</label>
                     <input
-                      class="form-control"
-                      id="email"
-                      placeholder="Enter email"
-                      type="email"
-                      v-model="form.email"
-                      required
-                      :class="{ 'is-invalid': form.errors.email }"
+                        id="email"
+                        type="email"
+                        class="gms-login-input"
+                        :class="{ 'gms-login-input-error': form.errors.email }"
+                        v-model="form.email"
+                        required
+                        autofocus
+                        autocomplete="username"
+                        placeholder="you@example.com"
                     />
-                    <div class="invalid-feedback" v-if="form.errors.email">
-                    </div>
-                    <div class="invalid-feedback" v-else>
-                      Please enter a valid email.
-                    </div>
-                  </div>
+                    <span v-if="form.errors.email" class="gms-login-error">{{ form.errors.email }}</span>
+                </div>
 
-                  <PasswordInput
-                    v-model="form.password"
-                    :error="form.errors.password"
-                    label="Password"
-                    placeholder="Enter password"
-                    id="password"
-                  />
-
-                  <div class="form-check" v-if="remember">
+                <!-- Password Field -->
+                <div class="gms-login-field">
+                    <label for="password" class="gms-login-label">Password</label>
                     <input
-                      class="form-check-input"
-                      id="remember-check"
-                      type="checkbox"
-                      v-model="form.remember"
+                        id="password"
+                        type="password"
+                        class="gms-login-input"
+                        :class="{ 'gms-login-input-error': form.errors.password }"
+                        v-model="form.password"
+                        required
+                        autocomplete="current-password"
+                        placeholder="Enter your password"
                     />
-                    <label class="form-check-label" for="remember-check">
-                      Remember me
+                    <span v-if="form.errors.password" class="gms-login-error">{{ form.errors.password }}</span>
+                </div>
+
+                <!-- Remember Me & Forgot Password -->
+                <div class="gms-login-options">
+                    <label class="gms-login-checkbox">
+                        <input type="checkbox" v-model="form.remember" />
+                        <span class="gms-login-checkbox-label">Remember me</span>
                     </label>
-                  </div>
-                  <div class="mt-3 d-grid">
-                    <button
-                      type="submit"
-                      class="btn btn-primary"
-                      :disabled="form.processing"
-                    >
-                      {{ form.processing ? "Signing in..." : "Login" }}
-                    </button>
-                  </div>
-                  <div class="mt-4 text-center">
-                    <h5 class="font-size-14 mb-3">Sign in with</h5>
-                    <ul class="list-inline">
-                      <li class="list-inline-item">
-                        <a
-                          class="social-list-item bg-primary text-white border-primary"
-                          href="javascript::void()"
-                        >
-                          <i class="mdi mdi-facebook"> </i>
-                        </a>
-                      </li>
-                      <li class="list-inline-item">
-                        <a
-                          class="social-list-item bg-info text-white border-info"
-                          href="javascript::void()"
-                        >
-                          <i class="mdi mdi-twitter"> </i>
-                        </a>
-                      </li>
-                      <li class="list-inline-item">
-                        <a
-                          class="social-list-item bg-danger text-white border-danger"
-                          href="javascript::void()"
-                        >
-                          <i class="mdi mdi-google"> </i>
-                        </a>
-                      </li>
-                      <li class="list-inline-item">
-                        <a
-                          class="social-list-item bg-primary text-white border-primary"
-                          href="/auth/microsoft/redirect"
-                          title="Sign in with Microsoft"
-                         
-                        >
-                          <i class="mdi mdi-microsoft-windows"></i>
-                        </a>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div class="mt-4 text-center">
                     <Link
-                      v-if="canReset"
-                      class="text-muted"
-                      :href="route('myforgotpassword')"
+                        v-if="canResetPassword"
+                        :href="route('myforgotpassword')"
+                        class="gms-login-link"
                     >
-                      <i class="mdi mdi-lock me-1"> </i>
-                      Forgot your password?
+                        Forgot password?
                     </Link>
-                  </div>
-                  <div class="mt-4 text-center">
-                    Don't have an account ?
-                <Link
-                  class="fw-medium text-primary"
-                  :href="route('myregister')"
+                </div>
+
+                <!-- Submit Button -->
+                <button
+                    type="submit"
+                    class="gms-login-btn"
+                    :disabled="form.processing"
                 >
-                  Signup now
-                </Link>
-                  </div>
-                </form>
-              </div>
+                    <span v-if="!form.processing">Log in</span>
+                    <span v-else class="gms-login-spinner">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                        </svg>
+                        Logging in...
+                    </span>
+                </button>
+
+                <!-- Social Login -->
+                <div class="gms-login-divider">
+                    <span>Or continue with</span>
+                </div>
+
+                <a href="/auth/microsoft/redirect" class="gms-login-btn-sso">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <path d="M2 2h9v9H2V2z" fill="#F25022"/>
+                        <path d="M13 2h9v9h-9V2z" fill="#7FBA00"/>
+                        <path d="M2 13h9v9H2v-9z" fill="#00A4EF"/>
+                        <path d="M13 13h9v9h-9v-9z" fill="#FFB900"/>
+                    </svg>
+                    Sign in with Microsoft
+                </a>
+            </form>
+
+            <!-- Footer -->
+            <div class="gms-login-footer">
+                <p class="gms-login-footer-text">
+                    Qatar Protocol Services · Confidential
+                </p>
             </div>
-          </div>
-          <!-- <div class="mt-5 text-center">
-            <div>
-              <p>
-                Don't have an account ?
-                <Link
-                  class="fw-medium text-primary"
-                  :href="route('myregister')"
-                >
-                  Signup now
-                </Link>
-              </p>
-              <AuthFooter />
-            </div>
-          </div> -->
         </div>
-      </div>
     </div>
-  </div>
 </template>
+
+<style scoped>
+.gms-login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--gms-bg, #f5f0eb);
+    padding: 24px;
+    font-family: var(--f-ui, 'Hanken Grotesk', sans-serif);
+}
+
+.gms-login-container {
+    width: 100%;
+    max-width: 420px;
+    background: var(--gms-surface, #ffffff);
+    border-radius: var(--gms-radius-lg, 14px);
+    box-shadow: var(--gms-shadow-lg, 0 8px 32px rgba(26,18,16,0.14));
+    padding: 40px;
+}
+
+/* Header */
+.gms-login-header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.gms-login-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.gms-login-monogram {
+    margin-bottom: 4px;
+}
+
+.gms-login-title {
+    font-family: var(--f-display, 'Instrument Serif', serif);
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--gms-text, #1a1210);
+    margin: 0;
+    line-height: 1.2;
+}
+
+.gms-login-subtitle {
+    font-size: 13px;
+    color: var(--gms-text-3, #a09488);
+    margin: 0;
+    font-weight: 500;
+}
+
+/* Status Message */
+.gms-login-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--good-soft, #e6f0e7);
+    color: var(--good, #3f7d52);
+    border-radius: var(--gms-radius-sm, 6px);
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 24px;
+}
+
+.gms-login-error-msg {
+    background: var(--bad-soft, #f6e2dd);
+    color: var(--bad, #b14638);
+}
+
+/* Form */
+.gms-login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.gms-login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gms-login-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gms-text, #1a1210);
+    letter-spacing: -0.01em;
+}
+
+.gms-login-input {
+    width: 100%;
+    padding: 11px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--gms-text, #1a1210);
+    background: var(--gms-surface, #ffffff);
+    border: 1.5px solid var(--gms-border, rgba(26,18,16,0.10));
+    border-radius: var(--gms-radius-sm, 6px);
+    transition: all 150ms;
+    outline: none;
+}
+
+.gms-login-input:focus {
+    border-color: var(--gms-maroon, #8a1f3d);
+    box-shadow: 0 0 0 3px var(--gms-maroon-light, rgba(138, 31, 61, 0.10));
+}
+
+.gms-login-input::placeholder {
+    color: var(--gms-text-3, #a09488);
+}
+
+.gms-login-input-error {
+    border-color: var(--bad, #b14638);
+}
+
+.gms-login-input-error:focus {
+    border-color: var(--bad, #b14638);
+    box-shadow: 0 0 0 3px rgba(177, 70, 56, 0.10);
+}
+
+.gms-login-error {
+    font-size: 12px;
+    color: var(--bad, #b14638);
+    font-weight: 500;
+}
+
+/* Options */
+.gms-login-options {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+
+.gms-login-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.gms-login-checkbox input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid var(--gms-border, rgba(26,18,16,0.10));
+    cursor: pointer;
+    accent-color: var(--gms-maroon, #8a1f3d);
+}
+
+.gms-login-checkbox-label {
+    font-size: 13px;
+    color: var(--gms-text-2, #6b5c53);
+    font-weight: 500;
+}
+
+.gms-login-link {
+    font-size: 13px;
+    color: var(--gms-maroon, #8a1f3d);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 150ms;
+}
+
+.gms-login-link:hover {
+    color: var(--gms-maroon-hover, #a32448);
+}
+
+/* Submit Button */
+.gms-login-btn {
+    width: 100%;
+    padding: 12px 20px;
+    margin-top: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #ffffff;
+    background: var(--gms-maroon, #8a1f3d);
+    border: none;
+    border-radius: var(--gms-radius-sm, 6px);
+    cursor: pointer;
+    transition: all 150ms;
+    box-shadow: 0 1px 3px rgba(138, 31, 61, 0.20);
+}
+
+.gms-login-btn:hover:not(:disabled) {
+    background: var(--gms-maroon-hover, #a32448);
+    box-shadow: 0 2px 8px rgba(138, 31, 61, 0.30);
+}
+
+.gms-login-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.gms-login-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.gms-login-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.gms-login-spinner svg {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Social Login */
+.gms-login-divider {
+    position: relative;
+    text-align: center;
+    margin: 24px 0 16px;
+}
+
+.gms-login-divider::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 100%;
+    height: 1px;
+    background: var(--gms-border, rgba(26,18,16,0.10));
+}
+
+.gms-login-divider span {
+    position: relative;
+    background: var(--gms-surface, #ffffff);
+    padding: 0 12px;
+    font-size: 12px;
+    color: var(--gms-text-3, #a09488);
+    font-weight: 500;
+}
+
+.gms-login-btn-sso {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 11px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--gms-text, #1a1210);
+    background: var(--gms-surface, #ffffff);
+    border: 1.5px solid var(--gms-border, rgba(26,18,16,0.10));
+    border-radius: var(--gms-radius-sm, 6px);
+    cursor: pointer;
+    transition: all 150ms;
+    text-decoration: none;
+}
+
+.gms-login-btn-sso:hover {
+    background: var(--gms-surface-2, #faf7f4);
+    border-color: var(--gms-border-2, rgba(26,18,16,0.15));
+}
+
+/* Footer */
+.gms-login-footer {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--gms-border, rgba(26,18,16,0.10));
+    text-align: center;
+}
+
+.gms-login-footer-text {
+    font-size: 11.5px;
+    color: var(--gms-text-3, #a09488);
+    margin: 0;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .gms-login-container {
+        padding: 32px 24px;
+    }
+
+    .gms-login-title {
+        font-size: 21px;
+    }
+
+    .gms-login-subtitle {
+        font-size: 12px;
+    }
+}
+</style>
