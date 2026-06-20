@@ -1329,9 +1329,9 @@ function deleteTemplate(tplId) {
               <button class="gms-zlabel" @click="zoom=1" title="Reset zoom">{{ Math.round(zoom*100) }}%</button>
               <button @click="zoomBy(0.1)"  :disabled="zoom >= Z_MAX" title="Zoom in">+</button>
             </div>
-            <div class="gms-seg" style="flex:none;">
-              <button :class="{on: !showNames}" @click="showNames = false" title="Show dots">Dots</button>
-              <button :class="{on: showNames}" @click="showNames = true" title="Show names">Names</button>
+            <div style="display: flex; gap: 6px; flex: none;">
+              <button class="gms-btn gms-btn-sm" :class="{'gms-btn-primary': !showNames}" @click="showNames = false" title="Show dots">Dots</button>
+              <button class="gms-btn gms-btn-sm" :class="{'gms-btn-primary': showNames}" @click="showNames = true" title="Show names">Names</button>
             </div>
             <button class="gms-btn gms-btn-sm" :class="floatPanel ? 'gms-btn-primary' : ''"
               @click="floatPanel = !floatPanel" title="Toggle guest assignment panel">

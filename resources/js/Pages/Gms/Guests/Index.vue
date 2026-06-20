@@ -22,6 +22,7 @@ const props = defineProps({
     event:   { type: Object, default: () => ({}) },
     matches: { type: Array,  default: () => [] },
     venues:  { type: Array,  default: () => [] },
+    emailTemplates: { type: Array, default: () => [] },
     errors:  { type: Object, default: () => ({}) },
     auth:    { type: Object, default: () => ({}) },
     flash:   { type: Object, default: () => ({}) },
@@ -52,11 +53,23 @@ function normalizeFacilities(value) {
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
 }
 
+function normalizeFacilityOverrides(value) {
+  const parsed = parseJsonMaybe(value, { added: [], removed: [] })
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return {
+      added: Array.isArray(parsed.added) ? parsed.added : [],
+      removed: Array.isArray(parsed.removed) ? parsed.removed : []
+    }
+  }
+  return { added: [], removed: [] }
+}
+
 function normalizeGuest(g) {
   return {
     ...g,
     companionList: normalizeCompanionList(g?.companionList),
     facilities: normalizeFacilities(g?.facilities),
+    facilityOverrides: normalizeFacilityOverrides(g?.facilityOverrides),
   }
 }
 
@@ -158,15 +171,138 @@ const actionsMenuOpen = ref(null)
 const drawerTab       = ref('overview')
 const tierPickerOpen  = ref(false)
 const companionsExpanded = ref(true)
-const travelExpanded     = ref(true)
+const preferencesExpanded = ref(true)
+
+// Facility overrides
+const newFacilityName = ref('')
+const isSavingFacilities = ref(false)
 
 function openDrawer(g) {
     activeGuest.value  = g
     drawerTab.value    = 'overview'
     tierPickerOpen.value = false
     companionsExpanded.value = true
-    travelExpanded.value = true
+    preferencesExpanded.value = true
+    newFacilityName.value = ''
     drawerOpen.value   = true
+}
+
+// Get merged facilities: tier baseline + guest overrides
+function getGuestFacilities(guest) {
+    if (!guest) return []
+    const tier = tierFor(guest.tier)
+    const tierFacilities = tier?.facilities ?? []
+    const overrides = guest.facilityOverrides ?? { added: [], removed: [] }
+    
+    // Filter out removed facilities and add custom ones
+    const baseFacilities = tierFacilities.filter(f => !(overrides.removed ?? []).includes(f))
+    return [...baseFacilities, ...(overrides.added ?? [])]
+}
+
+// Check if a facility is from tier (baseline) or custom (added)
+function isTierFacility(guest, facility) {
+    if (!guest) return false
+    const tier = tierFor(guest.tier)
+    return (tier?.facilities ?? []).includes(facility)
+}
+
+// Check if a facility is removed from tier
+function isRemovedFacility(guest, facility) {
+    if (!guest) return false
+    const overrides = guest.facilityOverrides ?? { added: [], removed: [] }
+    return (overrides.removed ?? []).includes(facility)
+}
+
+// Toggle facility removal from tier
+function toggleRemoveFacility(facility) {
+    if (!activeGuest.value) return
+    const overrides = activeGuest.value.facilityOverrides ?? { added: [], removed: [] }
+    const removed = overrides.removed ?? []
+    
+    if (removed.includes(facility)) {
+        // Re-enable it
+        overrides.removed = removed.filter(f => f !== facility)
+    } else {
+        // Remove it
+        overrides.removed = [...removed, facility]
+    }
+    
+    activeGuest.value.facilityOverrides = overrides
+    saveFacilityOverrides()
+}
+
+// Add custom facility
+function addCustomFacility() {
+    if (!activeGuest.value || !newFacilityName.value.trim()) return
+    
+    const overrides = activeGuest.value.facilityOverrides ?? { added: [], removed: [] }
+    const added = overrides.added ?? []
+    
+    if (!added.includes(newFacilityName.value.trim())) {
+        overrides.added = [...added, newFacilityName.value.trim()]
+        activeGuest.value.facilityOverrides = overrides
+        newFacilityName.value = ''
+        saveFacilityOverrides()
+    }
+}
+
+// Remove custom facility
+function removeCustomFacility(facility) {
+    if (!activeGuest.value) return
+    const overrides = activeGuest.value.facilityOverrides ?? { added: [], removed: [] }
+    overrides.added = (overrides.added ?? []).filter(f => f !== facility)
+    activeGuest.value.facilityOverrides = overrides
+    saveFacilityOverrides()
+}
+
+// Save facility overrides to backend
+function saveFacilityOverrides() {
+    if (!activeGuest.value || isSavingFacilities.value) return
+    
+    isSavingFacilities.value = true
+    const idx = localGuests.value.findIndex(g => g.id === activeGuest.value.id)
+    if (idx !== -1) {
+        localGuests.value[idx].facilityOverrides = activeGuest.value.facilityOverrides
+    }
+    
+    // Send full guest data to satisfy validation
+    router.put(route('gms.guests.update', activeGuest.value.id), {
+        name: activeGuest.value.name,
+        firstName: activeGuest.value.firstName,
+        lastName: activeGuest.value.lastName,
+        title: activeGuest.value.title,
+        guestType: activeGuest.value.guestType,
+        qid: activeGuest.value.qid,
+        tier: activeGuest.value.tier,
+        group_id: activeGuest.value.group_id,
+        nationality: activeGuest.value.nationality,
+        status_id: activeGuest.value.status_id,
+        email: activeGuest.value.email,
+        phone: activeGuest.value.phone,
+        host: activeGuest.value.host,
+        hotel: activeGuest.value.hotel,
+        dietaryNotes: activeGuest.value.dietaryNotes,
+        notes: activeGuest.value.notes,
+        flightPreferences: activeGuest.value.flightPreferences,
+        accommodationPreferences: activeGuest.value.accommodationPreferences,
+        transportationPreferences: activeGuest.value.transportationPreferences,
+        companionList: activeGuest.value.companionList,
+        companions: activeGuest.value.companions,
+        facilities: activeGuest.value.facilities,
+        facilityOverrides: activeGuest.value.facilityOverrides,
+    }, {
+        onSuccess: () => {
+            isSavingFacilities.value = false
+            toast('Facilities updated')
+        },
+        onError: (errors) => {
+            isSavingFacilities.value = false
+            console.error('Save error:', errors)
+            const firstError = Object.values(errors)[0]
+            toast(firstError || 'Failed to update facilities', 'error')
+        },
+        preserveScroll: true,
+    })
 }
 
 function pickTier(tierId) {
@@ -217,17 +353,6 @@ const editingGuest = ref(null)
 const companions = ref([])
 const GUEST_RELATIONS = ['Spouse', 'Family', 'Aide', 'Security', 'Delegate', 'Interpreter', 'Companion']
 
-// Travel preferences
-const FLIGHT_CLASSES = ['First', 'Business', 'Economy', 'Private']
-const ROOM_TYPES = ['Suite', 'Deluxe', 'Executive', 'Standard']
-const VEHICLES = ['Mercedes S-Class', 'BMW 7 Series', 'Range Rover', 'Mercedes V-Class']
-
-const travelPrefs = ref({
-    flight: { on: false, cls: 'Business', from: '', date: '10 Aug' },
-    hotel: { on: false, hotel: props.hotels[0]?.name ?? '', room: 'Suite', in: '10 Aug', out: '20 Aug' },
-    transport: { on: false, car: 'Mercedes S-Class' }
-})
-
 const form = useForm({
     name:         '',
     firstName:    '',
@@ -245,6 +370,9 @@ const form = useForm({
     phone:        '',
     dietaryNotes: '',
     notes:        '',
+    flightPreferences: '',
+    accommodationPreferences: '',
+    transportationPreferences: '',
 })
 
 function openNew() {
@@ -253,11 +381,6 @@ function openNew() {
     form.tier      = props.tiers[0]?.id ?? ''
     form.status_id = 'invited'
     companions.value = []
-    travelPrefs.value = {
-        flight: { on: false, cls: 'Business', from: '', date: '10 Aug' },
-        hotel: { on: false, hotel: props.hotels[0]?.name ?? '', room: 'Suite', in: '10 Aug', out: '20 Aug' },
-        transport: { on: false, car: 'Mercedes S-Class' }
-    }
     guestModal.value = true
 }
 
@@ -280,15 +403,12 @@ function openEdit(g, fromDrawer = false) {
   form.phone        = guest.phone       ?? ''
   form.dietaryNotes = guest.dietaryNotes ?? ''
   form.notes        = guest.notes       ?? ''
+  form.flightPreferences = guest.flightPreferences ?? ''
+  form.accommodationPreferences = guest.accommodationPreferences ?? ''
+  form.transportationPreferences = guest.transportationPreferences ?? ''
     
-    // Hydrate companions and travel prefs from facilities
+    // Hydrate companions
     companions.value = guest.companionList.map(c => ({ name: c?.name ?? '', relation: c?.relation ?? 'Companion' }))
-    const fac = guest.facilities
-    travelPrefs.value = {
-        flight: fac.flight ? { on: true, cls: fac.flight.cls || 'Business', from: fac.flight.inb || '', date: fac.flight.date || '10 Aug' } : { on: false, cls: 'Business', from: '', date: '10 Aug' },
-        hotel: fac.hotel ? { on: true, hotel: fac.hotel.hotel || props.hotels[0]?.name || '', room: fac.hotel.room || 'Suite', in: fac.hotel.in || '10 Aug', out: fac.hotel.out || '20 Aug' } : { on: false, hotel: props.hotels[0]?.name ?? '', room: 'Suite', in: '10 Aug', out: '20 Aug' },
-        transport: fac.transport ? { on: true, car: fac.transport.car || 'Mercedes S-Class' } : { on: false, car: 'Mercedes S-Class' }
-    }
     
     if (fromDrawer) drawerOpen.value = false
     guestModal.value = true
@@ -309,33 +429,6 @@ function saveGuest() {
     }))
     payload.companionList = companionList
     payload.companions = companionList.length
-
-    // Build facilities from travel prefs
-    const facilities = {}
-    if (travelPrefs.value.flight.on) {
-        facilities.flight = {
-            status: 'new',
-            cls: travelPrefs.value.flight.cls,
-            inb: travelPrefs.value.flight.from.trim() || 'INT',
-            date: travelPrefs.value.flight.date
-        }
-    }
-    if (travelPrefs.value.hotel.on) {
-        facilities.hotel = {
-            status: 'draft',
-            hotel: travelPrefs.value.hotel.hotel,
-            room: travelPrefs.value.hotel.room,
-            in: travelPrefs.value.hotel.in,
-            out: travelPrefs.value.hotel.out
-        }
-    }
-    if (travelPrefs.value.transport.on) {
-        facilities.transport = {
-            status: 'new',
-            car: travelPrefs.value.transport.car
-        }
-    }
-    payload.facilities = facilities
 
     if (editingGuest.value) {
         const idx = localGuests.value.findIndex(g => g.id === editingGuest.value.id)
@@ -394,6 +487,126 @@ function confirmDelete() {
     })
 }
 
+// ── Import ────────────────────────────────────────────────────────
+const importModal     = ref(false)
+const importFile      = ref(null)
+const importFileInput = ref(null)
+const isImporting     = ref(false)
+
+function openImport() {
+    importModal.value = true
+    importFile.value  = null
+}
+
+function handleFileChange(event) {
+    const file = event.target.files[0]
+    if (file) {
+        // Validate file type
+        const validTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'text/csv']
+        if (!validTypes.includes(file.type)) {
+            toast('Please select a valid Excel (.xlsx, .xls) or CSV file', 'error')
+            return
+        }
+        // Validate file size (10MB max)
+        if (file.size > 10 * 1024 * 1024) {
+            toast('File size must be less than 10MB', 'error')
+            return
+        }
+        importFile.value = file
+    }
+}
+
+function confirmImport() {
+    if (!importFile.value) {
+        toast('Please select a file to import', 'error')
+        return
+    }
+
+    isImporting.value = true
+    const formData = new FormData()
+    formData.append('file', importFile.value)
+
+    router.post(route('gms.guests.import'), formData, {
+        onSuccess: () => {
+            importModal.value = false
+            importFile.value = null
+            isImporting.value = false
+            // Refresh the guests list
+            refreshGuests()
+        },
+        onError: (errors) => {
+            isImporting.value = false
+            const firstError = Object.values(errors)[0]
+            toast(firstError || 'Import failed', 'error')
+        },
+        preserveScroll: true,
+    })
+}
+
+function downloadTemplate() {
+    // Create CSV template with proper escaping
+    const headers = [
+        'name', 'first_name', 'last_name', 'title', 'guest_type', 'qid', 'tier',
+        'group_id', 'nationality', 'email', 'phone', 'host', 'hotel',
+        'dietary_notes', 'notes', 'status_id', 'companions', 'companion_list', 'facilities'
+    ]
+    
+    // Helper function to escape CSV values
+    const escapeCSV = (value) => {
+        if (value == null || value === '') return ''
+        const stringValue = String(value)
+        // If value contains comma, quote, or newline, wrap in quotes and escape quotes
+        if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+            return `"${stringValue.replace(/"/g, '""')}"`
+        }
+        return stringValue
+    }
+    
+    // Example row with proper values aligned to headers
+    const example = [
+        'Sheikh Ahmed Al-Thani',              // name
+        'Ahmed',                               // first_name
+        'Al-Thani',                           // last_name
+        'Minister of Sports',                 // title
+        'local',                              // guest_type
+        'QID123456',                          // qid
+        'T1',                                 // tier
+        '',                                   // group_id
+        'QA',                                 // nationality
+        'ahmed@example.qa',                   // email
+        '+974 12345678',                      // phone
+        '',                                   // host
+        '',                                   // hotel
+        'No shellfish',                       // dietary_notes
+        'VIP protocol required',              // notes
+        'invited',                            // status_id
+        '2',                                  // companions
+        'Fatima Al-Thani (Spouse), Ali Al-Thani (Aide)',  // companion_list (will be quoted)
+        'Lounge access, Executive seating'    // facilities (will be quoted)
+    ]
+    
+    const csvRows = [
+        headers.map(escapeCSV).join(','),
+        example.map(escapeCSV).join(','),
+        // Add empty row for user to fill
+        headers.map(() => '').join(',')
+    ]
+    
+    const csvContent = csvRows.join('\n')
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', 'guests_import_template.csv')
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    toast('Template downloaded')
+}
+
 // ── Invite Wizard ─────────────────────────────────────────────────
 const inviteModal       = ref(false)
 const inviteStep        = ref(1)
@@ -416,6 +629,7 @@ function pickRecipient(guest) {
     recipientPickerOpen.value = false
     recipientSearch.value  = ''
 }
+const selectedTemplate = ref('VIP Invitation')
 const emailSubject    = ref('Your invitation to Doha Cup 2026')
 const emailBody       = ref(`Dear {{guest_name}},
 
@@ -431,11 +645,14 @@ Please confirm your attendance at your earliest convenience.
 
 Best regards,
 The Doha Cup Committee`)
+const rsvpDeadline = ref('5 Aug 2026')
 
 function openInvite(guest) {
     inviteRecipient.value = guest
     inviteStep.value = 1
-    selectedMatches.value = []
+    selectedMatches.value = props.matches.filter(m => m.featured).map(m => m.id)
+    selectedTemplate.value = 'VIP Invitation'
+    rsvpDeadline.value = '5 Aug 2026'
     inviteModal.value = true
     actionsMenuOpen.value = null
 }
@@ -473,6 +690,21 @@ function stageClass(code) {
     if (c.includes('SEMI')) return 'mc-stage-sf'
     return 'mc-stage-final'
 }
+
+const previewEmailText = computed(() => {
+    if (!inviteRecipient.value) return ''
+    
+    let body = emailBody.value
+    body = body.replace(/{{guest_name}}/g, inviteRecipient.value.name)
+    body = body.replace(/{{tier_name}}/g, tierFor(inviteRecipient.value.tier)?.name ?? '')
+    body = body.replace(/{{event_name}}/g, props.event?.name ?? 'Doha Cup \'26')
+    body = body.replace(/{{venue}}/g, props.event?.venue ?? 'Lusail Stadium')
+    
+    // Remove match_list tag - matches will be rendered separately
+    body = body.replace(/{{match_list}}/g, '')
+    
+    return body
+})
 
 const previewEmail = computed(() => {
     if (!inviteRecipient.value) return ''
@@ -556,6 +788,7 @@ onUnmounted(() => {
         <p class="gms-view-subtitle">{{ localGuests.length }} registered guests</p>
       </div>
       <div class="gms-view-actions">
+        <GmsBtn icon="upload" @click="openImport">Import</GmsBtn>
         <GmsBtn icon="download">Export</GmsBtn>
         <GmsBtn variant="primary" icon="plus" :icon-size="14" @click="openNew">Add Guest</GmsBtn>
       </div>
@@ -818,46 +1051,41 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Travel & Ground Services Section -->
-        <div v-if="activeGuest.facilities && (activeGuest.facilities.flight || activeGuest.facilities.hotel || activeGuest.facilities.transport)" style="margin-top:20px;">
-          <div class="gd-section-head gd-collapsible" @click="travelExpanded = !travelExpanded">
-            <span>Travel & Ground Services</span>
-            <GmsIcon :name="travelExpanded ? 'chevron-up' : 'chevron-down'" :size="16" style="color:var(--gms-text-3);" />
+        <!-- Preferences Section -->
+        <div v-if="activeGuest.flightPreferences || activeGuest.accommodationPreferences || activeGuest.transportationPreferences" style="margin-top:20px;">
+          <div class="gd-section-head gd-collapsible" @click="preferencesExpanded = !preferencesExpanded">
+            <span>Preferences</span>
+            <GmsIcon :name="preferencesExpanded ? 'chevron-up' : 'chevron-down'" :size="16" style="color:var(--gms-text-3);" />
           </div>
-          <div v-show="travelExpanded" style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
-            <!-- Flight -->
-            <div v-if="activeGuest.facilities.flight" class="gd-pref-item">
+          <div v-show="preferencesExpanded" style="display:flex;flex-direction:column;gap:12px;margin-top:10px;">
+            <!-- Flight Preferences -->
+            <div v-if="activeGuest.flightPreferences" class="gd-pref-item">
               <div class="gd-pref-head">
                 <GmsIcon name="plane" :size="16" />
-                <span class="gd-pref-label">Flight</span>
+                <span class="gd-pref-label">Flight Preferences</span>
               </div>
               <div class="gd-pref-details">
-                <div class="gms-detail-row"><span class="gms-detail-label">Class</span><span class="gms-detail-value">{{ activeGuest.facilities.flight.cls }}</span></div>
-                <div class="gms-detail-row"><span class="gms-detail-label">From</span><span class="gms-detail-value">{{ activeGuest.facilities.flight.inb || '—' }}</span></div>
-                <div class="gms-detail-row"><span class="gms-detail-label">Date</span><span class="gms-detail-value">{{ activeGuest.facilities.flight.date }}</span></div>
+                <p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ activeGuest.flightPreferences }}</p>
               </div>
             </div>
-            <!-- Hotel -->
-            <div v-if="activeGuest.facilities.hotel" class="gd-pref-item">
+            <!-- Accommodation Preferences -->
+            <div v-if="activeGuest.accommodationPreferences" class="gd-pref-item">
               <div class="gd-pref-head">
                 <GmsIcon name="building" :size="16" />
-                <span class="gd-pref-label">Accommodation</span>
+                <span class="gd-pref-label">Accommodation Preferences</span>
               </div>
               <div class="gd-pref-details">
-                <div class="gms-detail-row"><span class="gms-detail-label">Hotel</span><span class="gms-detail-value">{{ activeGuest.facilities.hotel.hotel }}</span></div>
-                <div class="gms-detail-row"><span class="gms-detail-label">Room</span><span class="gms-detail-value">{{ activeGuest.facilities.hotel.room }}</span></div>
-                <div class="gms-detail-row"><span class="gms-detail-label">Check-in</span><span class="gms-detail-value">{{ activeGuest.facilities.hotel.in }}</span></div>
-                <div class="gms-detail-row"><span class="gms-detail-label">Check-out</span><span class="gms-detail-value">{{ activeGuest.facilities.hotel.out }}</span></div>
+                <p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ activeGuest.accommodationPreferences }}</p>
               </div>
             </div>
-            <!-- Transport -->
-            <div v-if="activeGuest.facilities.transport" class="gd-pref-item">
+            <!-- Transportation Preferences -->
+            <div v-if="activeGuest.transportationPreferences" class="gd-pref-item">
               <div class="gd-pref-head">
                 <GmsIcon name="car" :size="16" />
-                <span class="gd-pref-label">Transport</span>
+                <span class="gd-pref-label">Transportation Preferences</span>
               </div>
               <div class="gd-pref-details">
-                <div class="gms-detail-row"><span class="gms-detail-label">Vehicle</span><span class="gms-detail-value">{{ activeGuest.facilities.transport.car }}</span></div>
+                <p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ activeGuest.transportationPreferences }}</p>
               </div>
             </div>
           </div>
@@ -919,20 +1147,109 @@ onUnmounted(() => {
 
       <!-- ── Facilities tab ── -->
       <template v-else-if="drawerTab === 'facilities'">
-        <div class="gd-section-head">Tier Facilities</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;">
-          <span
-            v-for="f in tierFor(activeGuest.tier)?.facilities ?? []" :key="f"
-            class="gms-pill"
-            :style="{ background: tierFor(activeGuest.tier)?.bg, color: tierFor(activeGuest.tier)?.color }"
-          >{{ f }}</span>
+        
+        <!-- Tier Facilities Section -->
+        <div class="gd-section-head">Service Level Facilities</div>
+        <p style="font-size:12px;color:var(--gms-text-3);margin-bottom:12px;">
+          Based on tier: <strong>{{ tierFor(activeGuest.tier)?.name ?? activeGuest.tier }}</strong>
+        </p>
+        
+        <div v-if="(tierFor(activeGuest.tier)?.facilities ?? []).length > 0" style="margin-bottom:24px;">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <span
+              v-for="f in tierFor(activeGuest.tier)?.facilities ?? []" :key="f"
+              class="gms-pill"
+              :style="{ 
+                background: isRemovedFacility(activeGuest, f) ? '#f3f4f6' : tierFor(activeGuest.tier)?.bg, 
+                color: isRemovedFacility(activeGuest, f) ? '#9ca3af' : tierFor(activeGuest.tier)?.color,
+                textDecoration: isRemovedFacility(activeGuest, f) ? 'line-through' : 'none',
+                paddingRight: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                opacity: isRemovedFacility(activeGuest, f) ? 0.6 : 1
+              }"
+              @click="toggleRemoveFacility(f)"
+              :title="isRemovedFacility(activeGuest, f) ? 'Click to re-enable' : 'Click to exclude for this guest'"
+            >
+              {{ f }}
+              <GmsIcon :name="isRemovedFacility(activeGuest, f) ? 'plus' : 'x'" :size="12" />
+            </span>
+          </div>
+          <p style="font-size:11px;color:var(--gms-text-3);margin-top:8px;">
+            💡 Click any facility to exclude it for this guest
+          </p>
         </div>
+        <div v-else style="margin-bottom:24px;">
+          <p style="font-size:13px;color:var(--gms-text-3);">No default facilities for this tier.</p>
+        </div>
+
+        <!-- Custom Added Facilities -->
+        <div v-if="(activeGuest.facilityOverrides?.added ?? []).length > 0" style="margin-bottom:24px;">
+          <div class="gd-section-head">Custom Facilities</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <span
+              v-for="f in activeGuest.facilityOverrides.added" :key="f"
+              class="gms-pill"
+              :style="{ 
+                background: '#dbeafe',
+                color: '#1e40af',
+                paddingRight: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }"
+            >
+              {{ f }}
+              <button
+                type="button"
+                @click="removeCustomFacility(f)"
+                style="background:none;border:none;padding:2px;cursor:pointer;display:flex;align-items:center;color:#1e40af;opacity:0.7;"
+              >
+                <GmsIcon name="x" :size="12" />
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <!-- Add Custom Facility -->
+        <div style="margin-bottom:24px;">
+          <div class="gd-section-head">Add Custom Facility</div>
+          <p style="font-size:12px;color:var(--gms-text-3);margin-bottom:10px;">
+            Add extra facilities not included in their service level
+          </p>
+          <div style="display:flex;gap:8px;">
+            <input
+              v-model="newFacilityName"
+              class="gms-input"
+              placeholder="e.g., Private Jet Access"
+              @keyup.enter="addCustomFacility"
+              style="flex:1;"
+            />
+            <button
+              class="gms-btn gms-btn-primary gms-btn-sm"
+              @click="addCustomFacility"
+              :disabled="!newFacilityName.trim() || isSavingFacilities"
+            >
+              <GmsIcon name="plus" :size="14" />
+              Add
+            </button>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div style="height:1px;background:var(--gms-border);margin:24px 0;"></div>
+
+        <!-- Dietary Notes -->
         <div v-if="activeGuest.dietaryNotes">
-          <div class="gd-section-head">Dietary</div>
+          <div class="gd-section-head">Dietary Requirements</div>
           <p style="font-size:13px;color:var(--gms-text-2);line-height:1.6;">{{ activeGuest.dietaryNotes }}</p>
         </div>
+        
+        <!-- General Notes -->
         <div v-if="activeGuest.notes" style="margin-top:14px;">
-          <div class="gd-section-head">Notes</div>
+          <div class="gd-section-head">Special Notes</div>
           <p style="font-size:13px;color:var(--gms-text-2);line-height:1.6;">{{ activeGuest.notes }}</p>
         </div>
       </template>
@@ -1105,122 +1422,45 @@ onUnmounted(() => {
 
       <hr class="gms-divider" style="margin:18px 0 14px;" />
 
-      <!-- Travel & ground services section -->
+      <!-- Preferences Section -->
       <div class="ng-sec-h">
         <span class="ng-sec-ic">
-          <GmsIcon name="plane" :size="16" />
+          <GmsIcon name="star" :size="16" />
         </span>
         <div style="flex:1;">
-          <div class="ng-sec-t">Travel & ground services</div>
-          <div class="ng-sec-s">Flight, accommodation or transport — layered on top of the {{ form.tier }} package.</div>
+          <div class="ng-sec-t">Preferences</div>
+          <div class="ng-sec-s">Optional notes about travel, accommodation, and transportation preferences.</div>
         </div>
       </div>
 
-      <div class="pref-stack">
-        <!-- Flight preference -->
-        <div class="pref-card" :class="{ on: travelPrefs.flight.on }">
-          <div class="pref-head" @click="travelPrefs.flight.on = !travelPrefs.flight.on">
-            <span class="pref-ic">
-              <GmsIcon name="plane" :size="16" />
-            </span>
-            <div style="flex:1;min-width:0;">
-              <div class="pref-t">Flight</div>
-              <div class="pref-s">{{ travelPrefs.flight.on ? `${travelPrefs.flight.cls} class` : 'Not requested' }}</div>
-            </div>
-            <span class="sw" :class="{ on: travelPrefs.flight.on }">
-              <span class="kn"></span>
-            </span>
-          </div>
-          <div v-if="travelPrefs.flight.on" class="pref-body">
-            <div class="gms-form-grid">
-              <div class="gms-field">
-                <label class="gms-label">Class</label>
-                <select v-model="travelPrefs.flight.cls" class="gms-input gms-select">
-                  <option v-for="cls in FLIGHT_CLASSES" :key="cls" :value="cls">{{ cls }}</option>
-                </select>
-              </div>
-              <div class="gms-field">
-                <label class="gms-label">Departure airport</label>
-                <input v-model="travelPrefs.flight.from" class="gms-input" placeholder="e.g. LHR" />
-              </div>
-              <div class="gms-field">
-                <label class="gms-label">Inbound date</label>
-                <input v-model="travelPrefs.flight.date" class="gms-input" placeholder="10 Aug" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Accommodation preference -->
-        <div class="pref-card" :class="{ on: travelPrefs.hotel.on }">
-          <div class="pref-head" @click="travelPrefs.hotel.on = !travelPrefs.hotel.on">
-            <span class="pref-ic">
-              <GmsIcon name="building" :size="16" />
-            </span>
-            <div style="flex:1;min-width:0;">
-              <div class="pref-t">Accommodation</div>
-              <div class="pref-s">{{ travelPrefs.hotel.on ? travelPrefs.hotel.hotel : 'Not requested' }}</div>
-            </div>
-            <span class="sw" :class="{ on: travelPrefs.hotel.on }">
-              <span class="kn"></span>
-            </span>
-          </div>
-          <div v-if="travelPrefs.hotel.on" class="pref-body">
-            <div class="gms-form-grid">
-              <div class="gms-field">
-                <label class="gms-label">Hotel</label>
-                <select v-model="travelPrefs.hotel.hotel" class="gms-input gms-select">
-                  <option v-for="h in hotels" :key="h.id" :value="h.name">{{ h.name }}</option>
-                </select>
-              </div>
-              <div class="gms-field">
-                <label class="gms-label">Room type</label>
-                <select v-model="travelPrefs.hotel.room" class="gms-input gms-select">
-                  <option v-for="room in ROOM_TYPES" :key="room" :value="room">{{ room }}</option>
-                </select>
-              </div>
-              <div class="gms-field">
-                <label class="gms-label">Check-in</label>
-                <input v-model="travelPrefs.hotel.in" class="gms-input" placeholder="10 Aug" />
-              </div>
-              <div class="gms-field">
-                <label class="gms-label">Check-out</label>
-                <input v-model="travelPrefs.hotel.out" class="gms-input" placeholder="20 Aug" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Transport preference -->
-        <div class="pref-card" :class="{ on: travelPrefs.transport.on }">
-          <div class="pref-head" @click="travelPrefs.transport.on = !travelPrefs.transport.on">
-            <span class="pref-ic">
-              <GmsIcon name="car" :size="16" />
-            </span>
-            <div style="flex:1;min-width:0;">
-              <div class="pref-t">Transport</div>
-              <div class="pref-s">{{ travelPrefs.transport.on ? travelPrefs.transport.car : 'Not requested' }}</div>
-            </div>
-            <span class="sw" :class="{ on: travelPrefs.transport.on }">
-              <span class="kn"></span>
-            </span>
-          </div>
-          <div v-if="travelPrefs.transport.on" class="pref-body">
-            <div class="gms-form-grid">
-              <div class="gms-field" style="grid-column:1/-1;">
-                <label class="gms-label">Vehicle</label>
-                <select v-model="travelPrefs.transport.car" class="gms-input gms-select">
-                  <option v-for="car in VEHICLES" :key="car" :value="car">{{ car }}</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div class="gms-field">
+        <label class="gms-label">Flight Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Optional)</span></label>
+        <textarea 
+          v-model="form.flightPreferences" 
+          class="gms-input" 
+          rows="2"
+          placeholder="e.g., Business class preferred, vegetarian meals, window seat"
+        />
       </div>
 
-      <div class="gf-note" style="margin-top:14px;">
-        <span class="gf-note-badge">FR 4.2.11.1</span>
-        Services here are added on top of the {{ form.tier }} level and routed to the right module as drafts.
+      <div class="gms-field">
+        <label class="gms-label">Accommodation Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Optional)</span></label>
+        <textarea 
+          v-model="form.accommodationPreferences" 
+          class="gms-input" 
+          rows="2"
+          placeholder="e.g., High floor, quiet room, accessible room"
+        />
+      </div>
+
+      <div class="gms-field">
+        <label class="gms-label">Transportation Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Optional)</span></label>
+        <textarea 
+          v-model="form.transportationPreferences" 
+          class="gms-input" 
+          rows="2"
+          placeholder="e.g., Mercedes preferred, child seat needed"
+        />
       </div>
 
     </div>
@@ -1242,17 +1482,76 @@ onUnmounted(() => {
     </template>
   </GmsModal>
 
+  <!-- ── Import Modal ─────────────────────────────────────────────── -->
+  <GmsModal :open="importModal" title="Import Guests" size="sm" @close="importModal = false">
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div>
+        <p style="font-size: 13.5px; color: var(--gms-text-2); margin-bottom: 12px;">
+          Upload an Excel (.xlsx, .xls) or CSV file to import guests. Make sure your file includes the required columns.
+        </p>
+        <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="downloadTemplate" style="margin-bottom: 16px;">
+          <GmsIcon name="download" :size="14" />
+          Download Template
+        </button>
+      </div>
+
+      <div class="gms-field">
+        <label class="gms-label">Select File</label>
+        <input 
+          ref="importFileInput"
+          type="file" 
+          accept=".xlsx,.xls,.csv"
+          @change="handleFileChange"
+          class="gms-input"
+          style="padding: 8px;"
+        />
+        <div v-if="importFile" style="margin-top: 8px; font-size: 12px; color: var(--gms-text-3);">
+          Selected: {{ importFile.name }} ({{ (importFile.size / 1024).toFixed(1) }} KB)
+        </div>
+      </div>
+
+      <div style="background: var(--gms-bg); padding: 12px; border-radius: 6px; font-size: 12px; color: var(--gms-text-2);">
+        <div style="font-weight: 600; margin-bottom: 8px;">Required columns:</div>
+        <ul style="margin: 0; padding-left: 20px; line-height: 1.6;">
+          <li><code>first_name</code>, <code>last_name</code> (or <code>name</code>)</li>
+          <li><code>email</code>, <code>nationality</code></li>
+          <li><code>tier</code> (T1, T2, T3, T4, T5)</li>
+        </ul>
+        <div style="font-weight: 600; margin-top: 12px; margin-bottom: 8px;">Optional columns:</div>
+        <ul style="margin: 0; padding-left: 20px; line-height: 1.6;">
+          <li><code>title</code>, <code>guest_type</code> (local/international)</li>
+          <li><code>qid</code>, <code>phone</code>, <code>group_id</code></li>
+          <li><code>host</code>, <code>hotel</code>, <code>dietary_notes</code></li>
+          <li><code>notes</code>, <code>status_id</code> (invited/confirmed/pending/declined)</li>
+        </ul>
+      </div>
+    </div>
+    <template #footer>
+      <button class="gms-btn gms-btn-ghost" @click="importModal = false" :disabled="isImporting">Cancel</button>
+      <button class="gms-btn gms-btn-primary" @click="confirmImport" :disabled="!importFile || isImporting">
+        <GmsIcon v-if="isImporting" name="refresh-cw" :size="14" class="gms-spin" />
+        {{ isImporting ? 'Importing...' : 'Import' }}
+      </button>
+    </template>
+  </GmsModal>
+
   <!-- ── Invite Wizard Modal ───────────────────────────────────────── -->
-  <GmsModal :open="inviteModal" :title="`Invite to ${event?.name ?? 'Doha Cup \'26'}`" size="lg" @close="inviteModal = false">
+  <GmsModal :open="inviteModal" :title="`Invite to ${event?.name ?? 'Doha Cup \'26'}`" size="xl" @close="inviteModal = false">
     <!-- Stepper -->
     <div class="gms-wizard-steps">
       <div class="gms-wizard-step" :class="{ active: inviteStep === 1, done: inviteStep > 1 }">
-        <span class="gms-wizard-num">1</span>
+        <span class="gms-wizard-num">
+          <GmsIcon v-if="inviteStep > 1" name="check" :size="11" />
+          <span v-else>1</span>
+        </span>
         <span class="gms-wizard-label">Matches</span>
       </div>
       <div class="gms-wizard-line" :class="{ done: inviteStep > 1 }"></div>
       <div class="gms-wizard-step" :class="{ active: inviteStep === 2, done: inviteStep > 2 }">
-        <span class="gms-wizard-num">2</span>
+        <span class="gms-wizard-num">
+          <GmsIcon v-if="inviteStep > 2" name="check" :size="11" />
+          <span v-else>2</span>
+        </span>
         <span class="gms-wizard-label">Email</span>
       </div>
       <div class="gms-wizard-line" :class="{ done: inviteStep > 2 }"></div>
@@ -1364,24 +1663,66 @@ onUnmounted(() => {
       <div class="email-grid" style="margin-top:16px;">
         <div>
           <div class="gms-field">
-            <label class="gms-label">Subject</label>
-            <input v-model="emailSubject" class="gms-input" />
+            <label class="gms-label">Template</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button
+                v-for="tpl in emailTemplates.slice(0, 5)"
+                :key="tpl.id"
+                class="gms-chip"
+                :class="{ on: selectedTemplate === tpl.name }"
+                @click="selectedTemplate = tpl.name; emailSubject = tpl.subject; emailBody = tpl.body"
+              >
+                {{ tpl.name }}
+              </button>
+            </div>
           </div>
           <div class="gms-field">
-            <label class="gms-label">Message Body</label>
-            <textarea v-model="emailBody" class="email-body" rows="10"></textarea>
+            <label class="gms-label">Subject <span style="color:var(--gms-maroon);">*</span></label>
+            <input v-model="emailSubject" class="gms-input" placeholder="Email subject" />
           </div>
-          <div class="tags-row">
-            <button class="tag-chip" @click="insertTag('guest_name')">{&#8203;{guest_name}}</button>
-            <button class="tag-chip" @click="insertTag('tier_name')">{&#8203;{tier_name}}</button>
-            <button class="tag-chip" @click="insertTag('match_list')">{&#8203;{match_list}}</button>
+          <div class="gms-field">
+            <label class="gms-label">Message Body <span style="color:var(--gms-maroon);">*</span></label>
+            <textarea v-model="emailBody" class="email-body" rows="10" placeholder="Email body"></textarea>
+          </div>
+          <div>
+            <div class="gms-label" style="margin-bottom:8px;">Insert a merge tag:</div>
+            <div class="tags-row">
+              <button class="tag-chip" @click="insertTag('guest_name')">{&#8203;{guest_name}}</button>
+              <button class="tag-chip" @click="insertTag('tier_name')">{&#8203;{tier_name}}</button>
+              <button class="tag-chip" @click="insertTag('match_list')">{&#8203;{match_list}}</button>
+              <button class="tag-chip" @click="insertTag('event_name')">{&#8203;{event_name}}</button>
+              <button class="tag-chip" @click="insertTag('venue')">{&#8203;{venue}}</button>
+            </div>
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">RSVP Deadline <span style="color:var(--gms-maroon);">*</span></label>
+            <input v-model="rsvpDeadline" class="gms-input" placeholder="e.g., 5 Aug 2026" />
           </div>
         </div>
         <div>
-          <div class="preview-label"><GmsIcon name="eye" :size="13" /> Preview</div>
-          <div style="padding:16px;background:var(--gms-surface-2);border:1px solid var(--gms-border);border-radius:10px;">
-            <div style="font-weight:700;font-size:13px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--gms-border);">{{ emailSubject }}</div>
-            <div style="font-size:12.5px;line-height:1.65;color:var(--gms-text);white-space:pre-wrap;">{{ previewEmail }}</div>
+          <div class="preview-label"><GmsIcon name="eye" :size="13" /> Live preview</div>
+          <div class="mail">
+            <div class="mail-head">
+              <div class="crest">🏆</div>
+              <h3>{{ emailSubject || 'Invitation to ' + (event?.name ?? 'Doha Cup \'26') }}</h3>
+            </div>
+            <div class="mail-body">
+              <div class="mail-text">{{ previewEmailText || 'Start typing to see your message preview...' }}</div>
+              <div v-if="selectedMatches.length > 0" class="mail-matches">
+                <div v-for="mid in selectedMatches" :key="mid" class="mini-match">
+                  <div class="mm-stage">{{ matches.find(m => m.id === mid)?.stageCode }}</div>
+                  <div class="mm-content">
+                    <div class="mm-teams">
+                      {{ matches.find(m => m.id === mid)?.homeTeam || 'TBD' }} vs {{ matches.find(m => m.id === mid)?.awayTeam || 'TBD' }}
+                    </div>
+                    <div class="mm-venue">🏟️ {{ matches.find(m => m.id === mid)?.venueName }}</div>
+                  </div>
+                  <div class="mm-when">
+                    {{ matches.find(m => m.id === mid)?.date }}<br>{{ matches.find(m => m.id === mid)?.kickoff }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1389,20 +1730,37 @@ onUnmounted(() => {
 
     <!-- ── Step 3: Review ── -->
     <div v-if="inviteStep === 3" style="margin-top:16px;">
-      <div class="gms-section-title">Selected matches</div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
-        <div v-for="mid in selectedMatches" :key="mid" class="inv-review-match">
-          <span class="mc-stage" :class="stageClass(matches.find(m => m.id === mid)?.stageCode)">
-            {{ matches.find(m => m.id === mid)?.stageCode }}
-          </span>
-          <span style="font-size:13px;font-weight:600;">{{ matches.find(m => m.id === mid)?.stageLabel }}</span>
-          <span style="font-size:12px;color:var(--gms-text-3);margin-left:auto;">{{ matches.find(m => m.id === mid)?.date }}</span>
+      <div class="inv-review-sec">
+        <div class="gms-section-title">Summary</div>
+        <div class="inv-kv-list">
+          <div class="inv-kv"><span class="inv-k">Recipient</span><span class="inv-v">{{ inviteRecipient?.name }}</span></div>
+          <div class="inv-kv"><span class="inv-k">Email</span><span class="inv-v">{{ inviteRecipient?.email ?? '—' }}</span></div>
+          <div class="inv-kv"><span class="inv-k">Template</span><span class="inv-v">{{ selectedTemplate }}</span></div>
+          <div class="inv-kv"><span class="inv-k">Subject</span><span class="inv-v">{{ emailSubject }}</span></div>
+          <div class="inv-kv"><span class="inv-k">Matches offered</span><span class="inv-v">{{ selectedMatches.length }}</span></div>
+          <div class="inv-kv"><span class="inv-k">RSVP by</span><span class="inv-v">{{ rsvpDeadline }}</span></div>
         </div>
       </div>
-      <div class="gms-section-title" style="margin-top:20px;">Email preview</div>
-      <div style="margin-top:10px;padding:16px;background:var(--gms-surface-2);border:1px solid var(--gms-border);border-radius:10px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--gms-border);">{{ emailSubject }}</div>
-        <div style="font-size:12.5px;line-height:1.65;color:var(--gms-text);white-space:pre-wrap;max-height:180px;overflow-y:auto;">{{ previewEmail }}</div>
+
+      <div class="inv-review-sec">
+        <div class="gms-section-title">Matches the guest can choose from</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+          <div v-for="mid in selectedMatches" :key="mid" class="inv-review-match">
+            <span class="mc-stage" :class="stageClass(matches.find(m => m.id === mid)?.stageCode)">
+              {{ matches.find(m => m.id === mid)?.stageCode }}
+            </span>
+            <span style="font-size:13px;font-weight:600;">{{ matches.find(m => m.id === mid)?.stageLabel }}</span>
+            <span style="font-size:12px;color:var(--gms-text-3);margin-left:auto;">{{ matches.find(m => m.id === mid)?.date }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--gms-maroon-tint);border-radius:10px;margin-top:16px;">
+        <GmsIcon name="mail" :size="20" style="color:var(--gms-maroon);flex-shrink:0;" />
+        <div style="flex:1;font-size:13px;color:var(--gms-text);">See exactly what the guest receives and how they choose matches.</div>
+        <button class="gms-btn gms-btn-ghost" style="flex-shrink:0;" @click="toast('Guest preview coming soon')">
+          Preview as guest →
+        </button>
       </div>
     </div>
 

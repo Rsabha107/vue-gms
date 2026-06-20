@@ -150,16 +150,31 @@ class GmsMockData
 
     public static function getMatches(): array
     {
-        return [
-            ['id' => 'M01', 'venueId' => 'V1', 'venueName' => 'Lusail Stadium',         'featured' => true,  'name' => 'Opening Ceremony & Group A', 'stageCode' => 'OPENING',       'stageLabel' => 'Opening Ceremony & Group A', 'homeTeam' => 'Qatar',        'homeCode' => 'QA', 'awayTeam' => 'Japan',         'awayCode' => 'JP', 'date' => 'Mon 10 Aug 2026', 'kickoff' => '19:00', 'stage' => 'Opening',       'seatsLeft' => 72,  'seatsTotal' => 320],
-            ['id' => 'M02', 'venueId' => 'V2', 'venueName' => 'Al Bayt Stadium',        'featured' => false, 'name' => 'Group B: Brazil vs Italy',   'stageCode' => 'GROUP B',       'stageLabel' => 'Group Stage',                'homeTeam' => 'Brazil',       'homeCode' => 'BR', 'awayTeam' => 'Italy',         'awayCode' => 'IT', 'date' => 'Wed 12 Aug 2026', 'kickoff' => '18:00', 'stage' => 'Group B',       'seatsLeft' => 160, 'seatsTotal' => 300],
-            ['id' => 'M03', 'venueId' => 'V3', 'venueName' => 'Education City Stadium', 'featured' => false, 'name' => 'Group C: Sweden vs Nigeria', 'stageCode' => 'GROUP C',       'stageLabel' => 'Group Stage',                'homeTeam' => 'Sweden',       'homeCode' => 'SE', 'awayTeam' => 'Nigeria',       'awayCode' => 'NG', 'date' => 'Thu 13 Aug 2026', 'kickoff' => '21:00', 'stage' => 'Group C',       'seatsLeft' => 204, 'seatsTotal' => 300],
-            ['id' => 'M04', 'venueId' => 'V1', 'venueName' => 'Lusail Stadium',         'featured' => false, 'name' => 'Quarter Final 1',            'stageCode' => 'QUARTER FINAL', 'stageLabel' => 'Quarter Final 1 · bracket TBD', 'homeTeam' => 'Winner Gp A',  'homeCode' => null, 'awayTeam' => 'Runner-up Gp B', 'awayCode' => null, 'date' => 'Sat 15 Aug 2026', 'kickoff' => '18:00', 'stage' => 'Quarter Final', 'seatsLeft' => 108, 'seatsTotal' => 320],
-            ['id' => 'M05', 'venueId' => 'V2', 'venueName' => 'Al Bayt Stadium',        'featured' => false, 'name' => 'Quarter Final 2',            'stageCode' => 'QUARTER FINAL', 'stageLabel' => 'Quarter Final 2 · bracket TBD', 'homeTeam' => 'Winner Gp C',  'homeCode' => null, 'awayTeam' => 'Runner-up Gp D', 'awayCode' => null, 'date' => 'Sun 16 Aug 2026', 'kickoff' => '21:00', 'stage' => 'Quarter Final', 'seatsLeft' => 120, 'seatsTotal' => 300],
-            ['id' => 'M06', 'venueId' => 'V1', 'venueName' => 'Lusail Stadium',         'featured' => false, 'name' => 'Semi Final I',               'stageCode' => 'SEMI FINAL',    'stageLabel' => 'Semi Final I · bracket TBD',    'homeTeam' => 'TBD',          'homeCode' => null, 'awayTeam' => 'TBD',           'awayCode' => null, 'date' => 'Tue 18 Aug 2026', 'kickoff' => '18:00', 'stage' => 'Semi Final',    'seatsLeft' => 54,  'seatsTotal' => 320],
-            ['id' => 'M07', 'venueId' => 'V1', 'venueName' => 'Lusail Stadium',         'featured' => false, 'name' => 'Semi Final II',              'stageCode' => 'SEMI FINAL',    'stageLabel' => 'Semi Final II · bracket TBD',   'homeTeam' => 'TBD',          'homeCode' => null, 'awayTeam' => 'TBD',           'awayCode' => null, 'date' => 'Wed 19 Aug 2026', 'kickoff' => '21:00', 'stage' => 'Semi Final',    'seatsLeft' => 80,  'seatsTotal' => 320],
-            ['id' => 'M08', 'venueId' => 'V1', 'venueName' => 'Lusail Stadium',         'featured' => true,  'name' => 'The Final',                  'stageCode' => 'FINAL',         'stageLabel' => 'The Final',                     'homeTeam' => 'TBD',          'homeCode' => null, 'awayTeam' => 'TBD',           'awayCode' => null, 'date' => 'Sat 22 Aug 2026', 'kickoff' => '20:00', 'stage' => 'Final',         'seatsLeft' => 20,  'seatsTotal' => 320],
-        ];
+        return \App\Models\GameMatch::with('venue')
+            ->orderBy('date')
+            ->orderBy('time')
+            ->get()
+            ->map(function ($match) {
+                return [
+                    'id' => 'M' . str_pad($match->id, 2, '0', STR_PAD_LEFT), // M01, M02, etc.
+                    'venueId' => 'V' . $match->venue_id,
+                    'venueName' => $match->venue->name ?? '',
+                    'featured' => $match->featured,
+                    'name' => $match->label,
+                    'stageCode' => strtoupper(str_replace(' ', ' ', $match->stage ?? '')),
+                    'stageLabel' => $match->label,
+                    'homeTeam' => $match->team_a_name,
+                    'homeCode' => $match->team_a_flag,
+                    'awayTeam' => $match->team_b_name,
+                    'awayCode' => $match->team_b_flag,
+                    'date' => $match->date ? $match->date->format('D d M Y') : '',
+                    'kickoff' => $match->time,
+                    'stage' => $match->stage,
+                    'seatsLeft' => $match->capacity - $match->sold,
+                    'seatsTotal' => $match->capacity,
+                ];
+            })
+            ->toArray();
     }
 
     public static function getGuests(): array
@@ -517,13 +532,7 @@ class GmsMockData
 
     public static function getEmailTemplates(): array
     {
-        return [
-            ['id' => 'ET1', 'name' => 'VIP Invitation',         'subject' => "You're Invited – Doha Cup '26",           'body' => "Dear [Title] [LastName],\n\nOn behalf of the Organising Committee, we extend a cordial invitation to the Doha Cup '26...", 'tier' => null, 'lastUsed' => '2025-12-01'],
-            ['id' => 'ET2', 'name' => 'Confirmation',           'subject' => "Your Attendance is Confirmed – Doha Cup '26", 'body' => "Dear [Title] [LastName],\n\nWe are delighted to confirm your attendance at the Doha Cup '26...", 'tier' => null, 'lastUsed' => '2025-12-10'],
-            ['id' => 'ET3', 'name' => 'Diamond Welcome',        'subject' => "Welcome to the Diamond Circle",            'body' => "Dear [Title] [LastName],\n\nAs a Diamond guest, you will enjoy exclusive access to the Royal Lounge...", 'tier' => 'T1', 'lastUsed' => '2025-12-15'],
-            ['id' => 'ET4', 'name' => 'Travel & Logistics',     'subject' => "Your Travel Arrangements – Doha Cup '26",  'body' => "Dear [Title] [LastName],\n\nPlease find attached your personalised travel briefing...", 'tier' => null, 'lastUsed' => '2025-11-20'],
-            ['id' => 'ET5', 'name' => 'Reminder – RSVP',        'subject' => "RSVP Reminder – Doha Cup '26",             'body' => "Dear [Title] [LastName],\n\nWe kindly remind you that the RSVP deadline is approaching...", 'tier' => null, 'lastUsed' => null],
-        ];
+        return \App\Models\EmailTemplate::orderBy('name')->get()->toArray();
     }
 
     public static function getDashboardStats(): array

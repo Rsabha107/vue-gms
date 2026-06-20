@@ -21,9 +21,11 @@ class GmsServiceLevelController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name'       => 'required|string|max:60',
-            'color'      => 'required|string|max:9',
-            'facilities' => 'nullable|array',
+            'name'        => 'required|string|max:60',
+            'color'       => 'required|string|max:9',
+            'description' => 'nullable|string|max:255',
+            'modules'     => 'nullable|array',
+            'facilities'  => 'nullable|array',
         ]);
 
         // TODO: persist
@@ -33,8 +35,11 @@ class GmsServiceLevelController extends Controller
     public function update(Request $request, string $id)
     {
         $request->validate([
-            'name'  => 'required|string|max:60',
-            'color' => 'required|string|max:9',
+            'name'        => 'required|string|max:60',
+            'color'       => 'required|string|max:9',
+            'description' => 'nullable|string|max:255',
+            'modules'     => 'nullable|array',
+            'facilities'  => 'nullable|array',
         ]);
 
         // TODO: persist

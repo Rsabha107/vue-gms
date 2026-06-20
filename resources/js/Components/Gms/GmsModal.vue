@@ -6,7 +6,7 @@ defineProps({
     open:     { type: Boolean, default: false },
     title:    { type: String,  default: '' },
     subtitle: { type: String,  default: '' },
-    size:     { type: String,  default: '' }, // '' | 'sm' | 'lg'
+    size:     { type: String,  default: '' }, // '' | 'sm' | 'lg' | 'xl'
 })
 const emit = defineEmits(['close'])
 

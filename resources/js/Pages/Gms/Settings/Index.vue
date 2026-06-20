@@ -10,6 +10,7 @@ const props = defineProps({
     user: { type: Object, default: () => ({}) },
     event: { type: Object, default: () => ({}) },
     teamUsers: { type: Array, default: () => ([]) },
+    emailTemplates: { type: Array, default: () => ([]) },
 })
 
 const toast = inject('toast')
@@ -28,24 +29,14 @@ const avatarColors = [
 ]
 
 // Email templates
-const emailTemplates = ref([
-    { id: 1, name: 'Guest Invite',  subject: 'Your invitation to {{event_name}}',       active: true  },
-    { id: 2, name: 'Reminder',      subject: 'Reminder: {{event_name}} is tomorrow',    active: false },
-    { id: 3, name: 'Confirmation',  subject: 'Thank you for confirming',                active: false },
-])
-const activeTemplate = ref(emailTemplates.value[0])
-const templateSubject = ref(activeTemplate.value.subject)
-const templateBody = ref(`Dear {{guest_name}},
-
-You are cordially invited to {{event_name}} on {{event_date}} at {{venue}}.
-
-As a {{tier_name}} guest, you will enjoy exclusive access and premium hospitality.
-
-Please confirm your attendance at your earliest convenience.
-
-Best regards,
-The Doha Cup Committee`)
-const templateTags = ['guest_name', 'event_name', 'event_date', 'venue', 'tier_name']
+const localEmailTemplates = ref(props.emailTemplates.map((t, idx) => ({ 
+    ...t, 
+    active: idx === 0 
+})))
+const activeTemplate = ref(localEmailTemplates.value.find(t => t.active) || localEmailTemplates.value[0])
+const templateSubject = ref(activeTemplate.value?.subject || '')
+const templateBody = ref(activeTemplate.value?.body || '')
+const templateTags = ['guest_name', 'guest_title', 'event_name', 'event_date', 'venue', 'tier_name', 'rsvp_deadline', 'flight_details', 'accommodation_details', 'transport_details']
 const bodyTextarea = ref(null)
 
 // Team members (from database)
@@ -89,9 +80,10 @@ const autoAssignSeats = ref(false)
 
 function selectTemplate(template) {
     activeTemplate.value = template
-    emailTemplates.value.forEach(t => t.active = false)
+    localEmailTemplates.value.forEach(t => t.active = false)
     template.active = true
     templateSubject.value = template.subject
+    templateBody.value = template.body
 }
 
 function insertTag(tag) {
@@ -403,7 +395,7 @@ function insertTag(tag) {
             <div class="email-sidebar-h">Templates</div>
             <div class="email-sidebar-list">
               <button
-                v-for="template in emailTemplates"
+                v-for="template in localEmailTemplates"
                 :key="template.id"
                 class="etpl-item"
                 :class="{ on: template.active }"

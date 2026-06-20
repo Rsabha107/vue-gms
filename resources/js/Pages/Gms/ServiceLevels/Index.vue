@@ -104,7 +104,8 @@ const editingTier = ref(null)
 const deleteModal = ref(false)
 const deletingId  = ref(null)
 
-const form = useForm({ name: '', color: '#dc2626', description: '', modules: [] })
+const form = useForm({ name: '', color: '#dc2626', description: '', modules: [], facilities: [] })
+const newFacility = ref('')
 
 function toggleModule(id) {
     const i = form.modules.indexOf(id)
@@ -112,9 +113,21 @@ function toggleModule(id) {
     else form.modules.splice(i, 1)
 }
 
+function addFacility() {
+    if (newFacility.value.trim()) {
+        form.facilities.push(newFacility.value.trim())
+        newFacility.value = ''
+    }
+}
+
+function removeFacility(index) {
+    form.facilities.splice(index, 1)
+}
+
 function openNew() {
     editingTier.value = null
-    form.name = ''; form.color = '#dc2626'; form.description = ''; form.modules = []
+    form.name = ''; form.color = '#dc2626'; form.description = ''; form.modules = []; form.facilities = []
+    newFacility.value = ''
     tierModal.value = true
 }
 
@@ -124,6 +137,8 @@ function openEdit(tier) {
     form.color = tier.color
     form.description = tier.description ?? ''
     form.modules = [...(tier.modules ?? [])]
+    form.facilities = [...(tier.facilities ?? [])]
+    newFacility.value = ''
     tierModal.value = true
     actionsMenuOpen.value = null
 }
@@ -141,6 +156,7 @@ function saveTier() {
         if (idx !== -1) Object.assign(localTiers.value[idx], {
             name: form.name, color: form.color, bg,
             description: form.description, modules: [...form.modules],
+            facilities: [...form.facilities],
         })
         form.put(route('gms.service-levels.update', editingTier.value.id), {
             onSuccess: () => { tierModal.value = false; toast('Service level updated.') },
@@ -148,7 +164,7 @@ function saveTier() {
         })
     } else {
         const id = 'T' + Date.now()
-        localTiers.value.push({ id, name: form.name, color: form.color, bg, description: form.description, modules: [...form.modules], rank: localTiers.value.length + 1 })
+        localTiers.value.push({ id, name: form.name, color: form.color, bg, description: form.description, modules: [...form.modules], facilities: [...form.facilities], rank: localTiers.value.length + 1 })
         form.post(route('gms.service-levels.store'), {
             onSuccess: () => { tierModal.value = false; toast('Service level created.') },
             onError:   () => toast('Failed to save.', 'error'), preserveScroll: true,
@@ -167,7 +183,9 @@ function confirmDelete() {
 function duplicateTier(tier) {
     localTiers.value.push({
         ...tier, id: 'T' + Date.now(), name: tier.name + ' (copy)',
-        modules: [...(tier.modules ?? [])], rank: localTiers.value.length + 1,
+        modules: [...(tier.modules ?? [])], 
+        facilities: [...(tier.facilities ?? [])],
+        rank: localTiers.value.length + 1,
     })
     actionsMenuOpen.value = null
     toast('Service level duplicated.')
@@ -279,7 +297,19 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <!-- Description -->
         <p class="sl-desc">{{ tier.description || '—' }}</p>
 
-        <!-- Facility chips: all 5, colored if included, grey if not -->
+        <!-- Amenities preview -->
+        <div v-if="(tier.facilities ?? []).length > 0" style="margin-top:12px;margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:600;color:var(--gms-text-3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Amenities</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            <span
+              v-for="(fac, idx) in (tier.facilities ?? [])" :key="idx"
+              class="gms-pill"
+              :style="{ background: tier.bg ?? bgFor(tier.color), color: tier.color, fontSize: '11px' }"
+            >{{ fac }}</span>
+          </div>
+        </div>
+
+        <!-- Service module chips: all 5, colored if included, grey if not -->
         <div class="sl-chips">
           <span
             v-for="m in CORE_MODULES" :key="m.id"
@@ -295,7 +325,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <div class="sl-bar-section">
           <div class="sl-bar-labels">
             <span>{{ registryPct(tier.id) }}% of registry</span>
-            <span>{{ (tier.modules ?? []).length }} of {{ CORE_MODULES.length }} facilities</span>
+            <span>{{ (tier.modules ?? []).length }} services · {{ (tier.facilities ?? []).length }} amenities</span>
           </div>
           <div class="sl-bar">
             <div class="sl-bar-fill" :style="{ width: registryPct(tier.id) + '%', background: tier.color }" />
@@ -359,7 +389,10 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       <span class="sl-preview-pill" :style="{ background: bgFor(form.color), color: form.color }">
         {{ form.name || 'UNTITLED' }}
       </span>
-      <span class="sl-preview-count">{{ form.modules.length }} {{ form.modules.length === 1 ? 'facility' : 'facilities' }} bundled</span>
+      <div style="display:flex;gap:12px;font-size:12px;color:var(--gms-text-3);">
+        <span class="sl-preview-count">{{ form.modules.length }} {{ form.modules.length === 1 ? 'service' : 'services' }}</span>
+        <span class="sl-preview-count">{{ form.facilities.length }} {{ form.facilities.length === 1 ? 'amenity' : 'amenities' }}</span>
+      </div>
     </div>
 
     <!-- Name + Badge colour (side by side) -->
@@ -387,9 +420,9 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       <input v-model="form.description" class="gms-input" placeholder="Short summary shown on the card" />
     </div>
 
-    <!-- Included facilities -->
+    <!-- Included modules -->
     <div style="margin-top:20px;">
-      <div class="sl-section-head">Included facilities <span class="sl-section-hint">· tap to toggle</span></div>
+      <div class="sl-section-head">Service modules <span class="sl-section-hint">· tap to toggle</span></div>
       <div class="sl-fac-toggles">
         <button
           v-for="m in CORE_MODULES" :key="m.id"
@@ -408,6 +441,51 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
           <div class="sl-toggle-check">
             <GmsIcon v-if="form.modules.includes(m.id)" name="check" :size="11" />
           </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tier facilities/amenities -->
+    <div style="margin-top:20px;">
+      <div class="sl-section-head">Amenities / Perks <span class="sl-section-hint">· shown on guest profile</span></div>
+      <p style="font-size:12px;color:var(--gms-text-3);margin-bottom:10px;">Add facility names that describe what's included (e.g., "VIP Lounge", "Private Driver")</p>
+      
+      <!-- Facility chips -->
+      <div v-if="form.facilities.length > 0" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+        <span
+          v-for="(fac, idx) in form.facilities" :key="idx"
+          class="gms-pill"
+          :style="{ background: bgFor(form.color), color: form.color, paddingRight: '6px', display: 'flex', alignItems: 'center', gap: '6px' }"
+        >
+          {{ fac }}
+          <button
+            type="button"
+            @click="removeFacility(idx)"
+            style="background:none;border:none;padding:2px;cursor:pointer;display:flex;align-items:center;opacity:0.7;"
+            :style="{ color: form.color }"
+          >
+            <GmsIcon name="x" :size="12" />
+          </button>
+        </span>
+      </div>
+      
+      <!-- Add facility input -->
+      <div style="display:flex;gap:8px;">
+        <input
+          v-model="newFacility"
+          class="gms-input"
+          placeholder="Type facility name and press Enter"
+          @keyup.enter="addFacility"
+          style="flex:1;"
+        />
+        <button
+          type="button"
+          class="gms-btn gms-btn-ghost gms-btn-sm"
+          @click="addFacility"
+          :disabled="!newFacility.trim()"
+        >
+          <GmsIcon name="plus" :size="14" />
+          Add
         </button>
       </div>
     </div>

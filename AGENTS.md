@@ -178,20 +178,6 @@ Full guest registry. Features: search, status filter (all/confirmed/invited/pend
 
 **Import functionality:** Bulk import guests from Excel (.xlsx, .xls) or CSV files. Click **Import** button → opens upload modal with template download option. Backend validates file (max 10MB), processes rows with `GuestsImport` class (Laravel Excel), auto-generates reference numbers, skips invalid rows. Success message shows imported/skipped counts. See `GUEST_IMPORT_DOCUMENTATION.md` for detailed usage guide.
 
-**Preference fields:** Three simple text fields for capturing guest preferences:
-- `flightPreferences` (text, optional) — freeform notes about flight preferences (class, meals, seating, etc.)
-- `accommodationPreferences` (text, optional) — freeform notes about accommodation preferences (floor, room type, accessibility)
-- `transportationPreferences` (text, optional) — freeform notes about transportation preferences (vehicle type, special requirements)
-
-**Facility Management:** Two-layer system for service customization:
-- **Tier baseline:** Facilities inherited from service level (e.g., "VIP Lounge", "Premium Dining")
-- **Guest overrides:** `facilityOverrides` JSON column with `{added: [], removed: []}` structure
-  - `added`: Custom facilities beyond tier package
-  - `removed`: Tier facilities excluded for this guest
-- Final facilities computed via `getFinalFacilitiesAttribute()` in Guest model
-- Interactive UI in Facilities tab: toggle to remove tier facilities, input to add custom facilities
-- Reporting service: `GuestFacilityReport` with 6 analytics methods (see `FACILITY_REPORTING_GUIDE.md`)
-
 Props: `guests`, `tiers`, `groups`, `hosts`, `hotels`, `event`.
 Local state: `localGuests` (reactive copy), `drawerOpen`, `activeGuest`, `guestModal`, `editingGuest`, `deleteModal`, `importModal`, `importFile`, `isImporting`.
 Routes: `gms.guests.index` (GET), `gms.guests.store` (POST), `gms.guests.import` (POST), `gms.guests.update` (PUT), `gms.guests.destroy` (DELETE).

@@ -7,8 +7,10 @@ use App\Models\Guest;
 use App\Models\ServiceLevel;
 use App\Models\Group;
 use App\Services\Gms\GmsMockData;
+use App\Imports\GuestsImport;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class GmsGuestController extends Controller
 {
@@ -31,6 +33,7 @@ class GmsGuestController extends Controller
             'event'   => $event,
             'matches' => GmsMockData::getMatches(),
             'venues'  => GmsMockData::getVenues(),
+            'emailTemplates' => GmsMockData::getEmailTemplates(),
         ]);
     }
 
@@ -57,9 +60,13 @@ class GmsGuestController extends Controller
             'dietaryNotes' => 'nullable|string',
             'notes'        => 'nullable|string',
             'status_id'    => 'required|in:invited,confirmed,pending,declined',
+            'flightPreferences' => 'nullable|string',
+            'accommodationPreferences' => 'nullable|string',
+            'transportationPreferences' => 'nullable|string',
             'companionList' => 'nullable|array',
             'companions'   => 'nullable|integer',
             'facilities'   => 'nullable|array',
+            'facilityOverrides' => 'nullable|array',
         ]);
 
         // Generate reference number
@@ -99,9 +106,13 @@ class GmsGuestController extends Controller
             'dietaryNotes' => 'nullable|string',
             'notes'        => 'nullable|string',
             'status_id'    => 'required|in:invited,confirmed,pending,declined',
+            'flightPreferences' => 'nullable|string',
+            'accommodationPreferences' => 'nullable|string',
+            'transportationPreferences' => 'nullable|string',
             'companionList' => 'nullable|array',
             'companions'   => 'nullable|integer',
             'facilities'   => 'nullable|array',
+            'facilityOverrides' => 'nullable|array',
         ]);
 
         $guest = Guest::findOrFail($id);
@@ -116,5 +127,41 @@ class GmsGuestController extends Controller
         $guest->delete();
 
         return back()->with('success', 'Guest deleted.');
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // 10MB max
+        ]);
+
+        try {
+            // Get current event
+            $event = GmsMockData::getEvent();
+            $eventId = $event['id'] ?? null;
+
+            if (!$eventId) {
+                return back()->with('error', 'No active event selected.');
+            }
+
+            // Create import instance
+            $import = new GuestsImport($eventId);
+            
+            // Import the file
+            Excel::import($import, $request->file('file'));
+
+            $imported = $import->getImported();
+            $skipped = $import->getSkipped();
+
+            $message = "{$imported} guest(s) imported successfully.";
+            if ($skipped > 0) {
+                $message .= " {$skipped} row(s) skipped due to validation errors.";
+            }
+
+            return back()->with('success', $message);
+
+        } catch (\Exception $e) {
+            return back()->with('error', 'Import failed: ' . $e->getMessage());
+        }
     }
 }

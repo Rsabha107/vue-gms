@@ -27,6 +27,7 @@ Route::prefix('gms')->name('gms.')->group(function () {
     // Guests
     Route::get('/guests',          [GmsGuestController::class, 'index'])->name('guests.index');
     Route::post('/guests',         [GmsGuestController::class, 'store'])->name('guests.store');
+    Route::post('/guests/import',  [GmsGuestController::class, 'import'])->name('guests.import');
     Route::put('/guests/{id}',     [GmsGuestController::class, 'update'])->name('guests.update');
     Route::delete('/guests/{id}',  [GmsGuestController::class, 'destroy'])->name('guests.destroy');
 
@@ -103,9 +104,10 @@ Route::prefix('gms')->name('gms.')->group(function () {
     // Settings
     Route::get('/settings', function () {
         return inertia('Gms/Settings/Index', [
-            'user'      => auth()->user(),
-            'event'     => \App\Services\Gms\GmsMockData::getEvent(),
-            'teamUsers' => \App\Models\User::orderBy('name')->get(),
+            'user'           => auth()->user(),
+            'event'          => \App\Services\Gms\GmsMockData::getEvent(),
+            'teamUsers'      => \App\Models\User::orderBy('name')->get(),
+            'emailTemplates' => \App\Services\Gms\GmsMockData::getEmailTemplates(),
         ]);
     })->name('settings');
 });
