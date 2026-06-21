@@ -7,6 +7,7 @@ use App\Http\Controllers\Gms\GmsEmailTemplateController;
 use App\Http\Controllers\Gms\GmsEventController;
 use App\Http\Controllers\Gms\GmsEventsController;
 use App\Http\Controllers\Gms\GmsFlightController;
+use App\Http\Controllers\Gms\GmsGroupsController;
 use App\Http\Controllers\Gms\GmsGuestController;
 use App\Http\Controllers\Gms\GmsInvitationController;
 use App\Http\Controllers\Gms\GmsMatchesController;
@@ -104,6 +105,12 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/email-templates',        [GmsEmailTemplateController::class, 'store'])->name('email-templates.store');
     Route::put('/email-templates/{id}',    [GmsEmailTemplateController::class, 'update'])->name('email-templates.update');
     Route::delete('/email-templates/{id}', [GmsEmailTemplateController::class, 'destroy'])->name('email-templates.destroy');
+
+    // Groups (Setup)
+    Route::get('/groups',          [GmsGroupsController::class, 'index'])->name('groups.index');
+    Route::post('/groups',         [GmsGroupsController::class, 'store'])->name('groups.store');
+    Route::put('/groups/{id}',     [GmsGroupsController::class, 'update'])->name('groups.update');
+    Route::delete('/groups/{id}',  [GmsGroupsController::class, 'destroy'])->name('groups.destroy');
 
     // Settings
     Route::get('/settings', function () {

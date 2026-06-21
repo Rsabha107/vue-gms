@@ -317,8 +317,9 @@ onBeforeUnmount(() => {
     </div>
 
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="eventModal = false">Cancel</button>
-      <button class="gms-btn gms-btn-primary" @click="saveEvent">
+      <button class="gms-btn gms-btn-ghost" @click="eventModal = false" :disabled="form.processing">Cancel</button>
+      <button class="gms-btn gms-btn-primary" @click="saveEvent" :disabled="form.processing">
+        <GmsIcon v-if="form.processing" name="loader" :size="14" style="margin-right: 6px;" />
         {{ editingEvent ? 'Save Changes' : 'Create Event' }}
       </button>
     </template>
@@ -334,8 +335,11 @@ onBeforeUnmount(() => {
     <p style="margin-bottom: 16px;">Are you sure you want to delete this event? This action cannot be undone.</p>
 
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="deleteModal = false">Cancel</button>
-      <button class="gms-btn gms-btn-danger" @click="confirmDelete">Delete</button>
+      <button class="gms-btn gms-btn-ghost" @click="deleteModal = false" :disabled="form.processing">Cancel</button>
+      <button class="gms-btn gms-btn-danger" @click="confirmDelete" :disabled="form.processing">
+        <GmsIcon v-if="form.processing" name="loader" :size="14" style="margin-right: 6px;" />
+        Delete
+      </button>
     </template>
   </GmsModal>
 </template>

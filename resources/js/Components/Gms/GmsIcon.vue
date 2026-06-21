@@ -56,6 +56,7 @@ const icons = {
     'plane-land': `<g transform="rotate(90,12,12)"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></g>`,
     'refresh-cw': `<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v4h4"></path>`,
     'badge': `<circle cx="12" cy="15" r="6"></circle><path d="M12 12.5 13 15l2.6.2-2 1.7.6 2.5L12 18l-2.2 1.4.6-2.5-2-1.7 2.6-.2 1-2.5Z"></path><path d="M8.5 9 5.5 3.5M15.5 9l3-5.5M9.5 3h5"></path>`,
+    loader: `<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/>`,
 }
 </script>
 
@@ -70,6 +71,7 @@ const icons = {
     stroke-linecap="round"
     stroke-linejoin="round"
     v-html="icons[name] ?? icons['info']"
+    :class="{ 'gms-icon-spin': name === 'loader' }"
     style="display:inline-block;vertical-align:middle;flex-shrink:0;"
   />
 </template>

@@ -105,6 +105,7 @@ Seat mutations currently use `axios.post` to stub endpoints (`/gms/seating/{matc
 | GmsDashboardController | `GET /gms` | `Gms/Dashboard` |
 | GmsEventController | `POST /gms/events/switch` | (switches current event) |
 | GmsEventsController | `GET /gms/events` + CRUD | `Gms/Events/Index` |
+| GmsGroupsController | `GET /gms/groups` + CRUD | `Gms/Groups/Index` |
 | GmsGuestController | `GET /gms/guests` + CRUD + `POST /gms/guests/import` | `Gms/Guests/Index` |
 | GmsInvitationController | `GET /gms/invitations` | `Gms/Invitations/Index` |
 | GmsSeatingController | `GET /gms/seating` | `Gms/Seating/Index` |
@@ -127,7 +128,7 @@ Features:**event selector dropdown**, Core nav + Modules nav + Setup nav, user f
 - **Topbar** — breadcrumb (auto-derived from URL), ⌘K search trigger, notification button, user avatar.
 - **Toast system** — `provide('toast', addToast)`. Inject with `const toast = inject('toast')` in any page/component, call `toast('message')` or `toast('message', 'error'|'info')`.
 - **Command palette** — opens on ⌘K / Ctrl+K, navigates to any GMS view.
-- **Navigation sections** — Core (Dashboard, Guests, Invitations, Seating, Service Levels), Modules (Flights, Accommodation, Transport, Arrival & Dep.), Setup (Events).
+- **Navigation sections** — Core (Dashboard, Guests, Invitations, Seating, Service Levels), Modules (Flights, Accommodation, Transport, Arrival & Dep.), Setup (Events, Venues, Matches, Groups, Email Templates, Settings).
 - Active nav item detected by matching `page.props.ziggy?.location` against each nav item's `href`.
 - Breadcrumb text auto-resolved from URL path — no slot needed from pages.
 
@@ -144,14 +145,27 @@ Props accessed:
 
 | Component | Props | Notes |
 |---|---|---|
-| `GmsIcon` | `name`, `size=16` | ~30 inline SVGs. See `icons` map in file for names. Includes: home, users, mail, eye, edit, trash, more-vertical, calendar, etc. |
+| `GmsIcon` | `name`, `size=16` | ~40 inline SVGs including `loader` for spinners. See `icons` map in file for names. Includes: home, users, mail, eye, edit, trash, more-vertical, calendar, loader, etc. `loader` icon auto-spins with `.gms-icon-spin` class. |
+| `GmsBtn` | `variant='ghost'/'primary'/'danger'`, `icon`, `processing=false`, `disabled=false` | Button component with built-in processing state. Shows spinner when `processing=true`. Auto-disables during processing. |
 | `GmsAvatar` | `name`, `size='md'` (`sm/md/lg/xl`) | Initials, auto-colored from 10-palette. |
 | `GmsPill` | `type='status'/'tier'/'custom'`, `value`, `tiers=[]`, `bg`, `fg` | Status pills use built-in color map; tier pills need `tiers` prop. |
 | `GmsFilterDropdown` | `v-model`, `label`, `allLabel`, `options`, `valueKey='id'`, `labelKey='name'` | Reusable chip-style filter dropdown. Supports string or object arrays. Slot: `#item` for custom rendering. Emits `@open`. Auto-closes on outside click. |
 | `GmsDrawer` | `open`, `title`, `subtitle` + `@close` | Right-side sliding panel. Slots: default body, `#header-prefix`, `#footer`. |
-| `GmsModal` | `open`, `title`, `size=''` (`sm/lg`) + `@close` | Dialog. Slots: default body, `#footer`. |
+| `GmsModal` | `open`, `title`, `size=''` (`sm/lg`) + `@close` | Dialog. Slots: default body, `#footer`. **Modal buttons pattern:** Use `form.processing` to disable buttons and show spinner during form submission. See example below. |
 | `GmsToast` | `toasts` (array) | Rendered in layout — don't instantiate in pages. |
 | `GmsCommandPalette` | `@close` | Rendered in layout — don't instantiate in pages. |
+
+**Modal button processing pattern:**
+```vue
+<template #footer>
+  <button class="gms-btn gms-btn-ghost" @click="closeModal" :disabled="form.processing">Cancel</button>
+  <button class="gms-btn gms-btn-primary" @click="save" :disabled="form.processing">
+    <GmsIcon v-if="form.processing" name="loader" :size="14" style="margin-right: 6px;" />
+    Save
+  </button>
+</template>
+```
+The `form.processing` property from Inertia's `useForm()` is automatically `true` during form submission.
 
 ---
 
@@ -295,6 +309,33 @@ Props: `matches` (array from `GmsMockData::getMatches()`), `venues` (for venue d
 Local state: `localMatches` (reactive copy), `matchModal`, `editingMatch`, `deleteModal`, `deletingId`, `actionsMenuOpen`, `venueMap` (computed), `matchStats` (computed).
 
 **Database:** Currently using mock data from `GmsMockData::getMatches()`. CRUD operations stubbed via `GmsMatchesController`. Ready for DB wiring with `matches` table migration.
+
+### Groups (`Gms/Groups/Index.vue`)
+Group management page under Setup sidebar section. Card-based grid layout with Create/Edit/Delete functionality.
+
+**Features:**
+- **Stats strip:** 3 stat cards showing total groups, total guests across groups, and average group size
+- Card grid (`.gms-groups-grid`) with responsive layout (auto-fill, minmax 280px)
+- Each group card shows: icon, short name, full label, guest count, group ID
+- Action menu: Edit and Delete (vertical ellipsis dropdown)
+- "Add new" card with dashed border and hover effect
+- Create/Edit modal with form (ID, short name, full label)
+- Delete confirmation modal with validation (prevents deletion of groups with guests)
+
+**UI Elements:**
+- `.gms-groups-grid` — groups container grid
+- `.gms-group-card` — individual group card with hover effects
+- `.gms-group-icon` — group icon with maroon background
+- `.gms-group-name` — display font title (short name)
+- `.gms-group-label` — full descriptive label
+- `.gms-group-meta` — metadata row (guest count, group ID)
+- `.gms-group-mi` — metadata item with icon
+- `.gms-group-add` — dashed-border "create new" card
+
+Props: `groups` (array from `Group::withCount('guests')`), `event` (current event).
+Local state: `localGroups` (reactive copy), `groupModal`, `editingGroup`, `deleteModal`, `deletingId`, `actionsMenuOpen`.
+
+**Database:** Fully wired to `groups` table. CRUD operations persist via `GmsGroupsController` → `Group` model. Model includes `guests()` relationship and prevents deletion of groups with assigned guests.
 
 ---
 

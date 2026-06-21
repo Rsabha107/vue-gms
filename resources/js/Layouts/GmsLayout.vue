@@ -22,6 +22,7 @@ function toggleSidebar() {
 
 // ── Event selector ────────────────────────────────────────────────
 const eventSelectorOpen = ref(false)
+const eventSelectorRef = ref(null)
 
 function toggleEventSelector() {
     eventSelectorOpen.value = !eventSelectorOpen.value
@@ -55,7 +56,7 @@ function handleClickOutside(e) {
     if (userMenuRef.value && !userMenuRef.value.contains(e.target)) {
         userMenuOpen.value = false
     }
-    if (eventSelectorOpen.value && !e.target.closest('.gms-event-selector')) {
+    if (eventSelectorRef.value && !eventSelectorRef.value.contains(e.target)) {
         eventSelectorOpen.value = false
     }
 }
@@ -113,6 +114,7 @@ const breadcrumbMap = {
     'gms/events':            'Events',
     'gms/venues':            'Venues',
     'gms/matches':           'Matches',
+    'gms/groups':            'Groups',
     'gms/email-templates':   'Email Templates',
     'gms/settings':          'Settings',
 }
@@ -143,6 +145,7 @@ const setup = [
     { name: 'gms.events.index',        label: 'Events',        icon: 'calendar',  href: '/gms/events' },
     { name: 'gms.venues.index',        label: 'Venues',        icon: 'map',       href: '/gms/venues' },
     { name: 'gms.matches.index',       label: 'Matches',       icon: 'trophy',    href: '/gms/matches' },
+    { name: 'gms.groups.index',        label: 'Groups',        icon: 'users',     href: '/gms/groups' },
     { name: 'gms.email-templates.index', label: 'Email Templates', icon: 'mail',    href: '/gms/email-templates' },
     { name: 'gms.settings',            label: 'Settings',      icon: 'settings',  href: '/gms/settings' },
 ]
@@ -178,7 +181,7 @@ function isActive(item) {
       </div>
 
       <!-- Event selector -->
-      <div style="margin: 14px 16px 8px; position: relative;" v-show="!sidebarCollapsed">
+      <div ref="eventSelectorRef" style="margin: 14px 16px 8px; position: relative;" v-show="!sidebarCollapsed">
         <button 
           class="gms-event-switch"
           @click="toggleEventSelector"

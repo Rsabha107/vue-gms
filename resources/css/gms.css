@@ -653,6 +653,13 @@
   text-decoration: none;
 }
 .gms-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.gms-icon-spin {
+  animation: gms-spin 0.8s linear infinite;
+}
+@keyframes gms-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 .gms-btn-primary {
   background: var(--gms-maroon);
   color: #fff;
@@ -1425,6 +1432,92 @@
   background: var(--gms-maroon);
   border-radius: 5px;
   transition: width 0.3s ease;
+}
+
+/* ── Groups grid ──────────────────────────────────────────────── */
+.gms-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.gms-group-card {
+  position: relative;
+  background: var(--gms-surface);
+  border: 1px solid var(--gms-border);
+  border-radius: var(--gms-radius-lg);
+  box-shadow: var(--gms-shadow-sm);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: .15s;
+}
+
+.gms-group-card:hover:not(.gms-group-add) {
+  box-shadow: var(--gms-shadow);
+  border-color: rgba(26, 18, 16, 0.15);
+}
+
+.gms-group-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--gms-maroon-light);
+  color: var(--gms-maroon);
+  flex-shrink: 0;
+}
+
+.gms-group-name {
+  font-family: var(--gms-font-display);
+  font-size: 19px;
+  line-height: 1.1;
+  color: var(--gms-text);
+  font-weight: 400;
+}
+
+.gms-group-label {
+  font-size: 13px;
+  color: var(--gms-text-2);
+  margin-top: -4px;
+}
+
+.gms-group-meta {
+  display: flex;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gms-border);
+  flex-wrap: wrap;
+}
+
+.gms-group-mi {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--gms-text-3);
+}
+
+.gms-group-mi svg {
+  color: var(--gms-text-3);
+  flex-shrink: 0;
+}
+
+.gms-group-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 170px;
+  border: 1.5px dashed var(--gms-border);
+  background: transparent;
+  cursor: pointer;
+}
+
+.gms-group-add:hover {
+  border-color: var(--gms-maroon);
+  background: var(--gms-maroon-light);
 }
 
 /* ── Chip multi-pick (venues) ─────────────────────────────── */
