@@ -42,7 +42,9 @@ class GmsTransportController extends Controller
             'requests' => $requests,
             'guests'   => Guest::where('guestType', 'international')
                 ->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                ->with(['tierInfo', 'group'])
+                ->with(['tierInfo', 'group', 'invitation' => function($query) use ($eventId) {
+                    $query->when($eventId, fn($q) => $q->where('event_id', $eventId));
+                }])
                 ->orderBy('name')
                 ->get()
                 ->map(function($g) {
@@ -54,6 +56,8 @@ class GmsTransportController extends Controller
                         'group' => $g->group->name ?? null,
                         'host' => $g->host,
                         'email' => $g->email,
+                        'invitationStatus' => $g->invitation?->status ?? null,
+                        'hasConfirmedInvitation' => $g->invitation?->status === 'confirmed',
                     ];
                 }),
             'tiers'    => GmsMockData::getTiers(),

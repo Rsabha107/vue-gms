@@ -6,6 +6,7 @@ const props = defineProps({
 
 const icons = {
     home: `<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`,
+    menu: `<line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>`,
     users: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
     mail: `<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>`,
     grid: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>`,
@@ -57,6 +58,8 @@ const icons = {
     'refresh-cw': `<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v4h4"></path>`,
     'badge': `<circle cx="12" cy="15" r="6"></circle><path d="M12 12.5 13 15l2.6.2-2 1.7.6 2.5L12 18l-2.2 1.4.6-2.5-2-1.7 2.6-.2 1-2.5Z"></path><path d="M8.5 9 5.5 3.5M15.5 9l3-5.5M9.5 3h5"></path>`,
     loader: `<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/>`,
+    minus: `<line x1="5" y1="12" x2="19" y2="12"/>`,
+    'x-circle': `<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>`,
 }
 </script>
 

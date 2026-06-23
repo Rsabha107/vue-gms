@@ -26,19 +26,23 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/events/switch', [GmsEventController::class, 'switch'])->name('events.switch');
 
     // Guests
-    Route::get('/guests',          [GmsGuestController::class, 'index'])->name('guests.index');
-    Route::post('/guests',         [GmsGuestController::class, 'store'])->name('guests.store');
-    Route::post('/guests/import',  [GmsGuestController::class, 'import'])->name('guests.import');
-    Route::put('/guests/{id}',     [GmsGuestController::class, 'update'])->name('guests.update');
-    Route::delete('/guests/{id}',  [GmsGuestController::class, 'destroy'])->name('guests.destroy');
+    Route::get('/guests',                  [GmsGuestController::class, 'index'])->name('guests.index');
+    Route::post('/guests',                 [GmsGuestController::class, 'store'])->name('guests.store');
+    Route::post('/guests/import',          [GmsGuestController::class, 'import'])->name('guests.import');
+    Route::post('/guests/add-to-event',    [GmsGuestController::class, 'addToEvent'])->name('guests.addToEvent');
+    Route::post('/guests/remove-from-event', [GmsGuestController::class, 'removeFromEvent'])->name('guests.removeFromEvent');
+    Route::put('/guests/{id}',             [GmsGuestController::class, 'update'])->name('guests.update');
+    Route::delete('/guests/{id}',          [GmsGuestController::class, 'destroy'])->name('guests.destroy');
 
     // Invitations
-    Route::get('/invitations',                    [GmsInvitationController::class, 'index'])->name('invitations.index');
-    Route::post('/invitations/send',              [GmsInvitationController::class, 'send'])->name('invitations.send');
-    Route::post('/invitations/{id}/accept-behalf', [GmsInvitationController::class, 'acceptOnBehalf'])->name('invitations.acceptOnBehalf');
-    Route::post('/invitations/{id}/mark-confirmed', [GmsInvitationController::class, 'markConfirmed'])->name('invitations.markConfirmed');
-    Route::post('/invitations/{id}/mark-declined', [GmsInvitationController::class, 'markDeclined'])->name('invitations.markDeclined');
-    Route::post('/invitations/{id}/reset-pending', [GmsInvitationController::class, 'resetToPending'])->name('invitations.resetToPending');
+    Route::get('/invitations',                        [GmsInvitationController::class, 'index'])->name('invitations.index');
+    Route::post('/invitations/send',                  [GmsInvitationController::class, 'send'])->name('invitations.send');
+    Route::post('/invitations/add-guests',            [GmsInvitationController::class, 'addGuests'])->name('invitations.addGuests');
+    Route::delete('/invitations/remove-guest/{guestId}', [GmsInvitationController::class, 'removeGuest'])->name('invitations.removeGuest');
+    Route::post('/invitations/{id}/accept-behalf',    [GmsInvitationController::class, 'acceptOnBehalf'])->name('invitations.acceptOnBehalf');
+    Route::post('/invitations/{id}/mark-confirmed',   [GmsInvitationController::class, 'markConfirmed'])->name('invitations.markConfirmed');
+    Route::post('/invitations/{id}/mark-declined',    [GmsInvitationController::class, 'markDeclined'])->name('invitations.markDeclined');
+    Route::post('/invitations/{id}/reset-pending',    [GmsInvitationController::class, 'resetToPending'])->name('invitations.resetToPending');
 
     // Seating
     Route::get('/seating',                                     [GmsSeatingController::class, 'index'])->name('seating.index');

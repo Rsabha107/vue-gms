@@ -17,7 +17,7 @@ class RsvpController extends Controller
     /** GET /rsvp/{token} */
     public function show(string $token): Response
     {
-        $invitation = Invitation::with(['guest', 'event', 'matches.venue'])
+        $invitation = Invitation::with(['guest', 'event', 'matches.venue', 'status'])
             ->where('rsvp_token', $token)
             ->firstOrFail();
 
@@ -68,18 +68,40 @@ class RsvpController extends Controller
         // Update invitation status based on responses and set responded_at timestamp
         $invitation->update(['responded_at' => now()]);
         $invitation->updateStatusFromResponses();
+        
+        // Reload invitation to get updated status relationship
+        $invitation->load('status');
 
         // Update guest status based on invitation status
-        $guestStatusName = match($invitation->status) {
+        $invitationStatusName = $invitation->status?->name ?? 'pending';
+        $guestStatusName = match($invitationStatusName) {
             'accepted' => 'confirmed',  // Guest accepted = mark guest as confirmed
-            'partial' => 'confirmed',   // Partial acceptance still counts as confirmed guest
+            'pending' => 'confirmed',   // Partial acceptance still counts as confirmed guest
             'declined' => 'declined',
-            default => $invitation->guest->status ?? 'pending',
+            default => 'pending',
         };
         
-        $invitation->guest->update([
-            'status' => $guestStatusName,
-        ]);
+        // Update guest status_id (guest_statuses table)
+        $guestStatus = \App\Models\GuestStatus::where('name', $guestStatusName)->first();
+        if ($guestStatus && $invitation->guest) {
+            $invitation->guest->update([
+                'status_id' => $guestStatus->id,
+            ]);
+        }
+
+        // Update guest_event pivot status (matches invitation status names)
+        if ($invitation->event_id && $invitation->guest) {
+            $pivotStatus = match($invitationStatusName) {
+                'accepted' => 'accepted',
+                'pending' => 'pending',  // Partial responses
+                'declined' => 'declined',
+                default => 'invited',
+            };
+            
+            $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
+                'status' => $pivotStatus,
+            ]);
+        }
 
         return back()->with('success', 'Your RSVP has been recorded. Thank you!');
     }

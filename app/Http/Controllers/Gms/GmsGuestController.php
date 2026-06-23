@@ -17,22 +17,80 @@ class GmsGuestController extends Controller
 {
     public function index()
     {
-        // Get current event
         $event = GmsMockData::getEvent();
         $eventId = $event['id'] ?? null;
 
+        $allEvents = GmsMockData::getEvents();
+
         return Inertia::render('Gms/Guests/Index', [
-            'guests'  => Guest::with(['status', 'group', 'invitations.matches'])
-                ->when($eventId, fn($q) => $q->where('event_id', $eventId))
+            'guests'  => Guest::with([
+                'status',
+                'group',
+                'events',
+                'invitations.matches',
+                'invitations.status',
+                'flightRequests',
+                'accommodationRequests',
+                'transportRequests',
+                'arrivalDepartureRequests',
+                'seats.match'
+            ])
                 ->orderBy('created_at', 'desc')
                 ->get()
-                ->map(function ($guest) {
+                ->map(function ($guest) use ($allEvents) {
                     $guestArray = $guest->toArray();
+
+                    // Build attendance map: { eventId: { status, added_at, invited_at } }
+                    $attendance = [];
+                    foreach ($guest->events as $ev) {
+                        $attendance[$ev->id] = [
+                            'status'     => $ev->pivot->status,
+                            'added_at'   => $ev->pivot->added_at,
+                            'invited_at' => $ev->pivot->invited_at,
+                        ];
+                    }
+                    $guestArray['attendance'] = (object) $attendance;
+
+                    // Map service statuses
+                    $serviceStatuses = [
+                        'flights' => null,
+                        'accommodation' => null,
+                        'seating' => null,
+                        'transport' => null,
+                        'arrival' => null,
+                    ];
+
+                    if ($guest->flightRequests->isNotEmpty()) {
+                        $latestFlight = $guest->flightRequests->sortByDesc('created_at')->first();
+                        $serviceStatuses['flights'] = $latestFlight->status ?? 'pending';
+                    }
+
+                    if ($guest->accommodationRequests->isNotEmpty()) {
+                        $latestAccomm = $guest->accommodationRequests->sortByDesc('created_at')->first();
+                        $serviceStatuses['accommodation'] = $latestAccomm->status_id ?? 'pending';
+                    }
+
+                    if ($guest->seats->isNotEmpty()) {
+                        $serviceStatuses['seating'] = 'confirmed';
+                    }
+
+                    if ($guest->transportRequests->isNotEmpty()) {
+                        $latestTransport = $guest->transportRequests->sortByDesc('created_at')->first();
+                        $serviceStatuses['transport'] = $latestTransport->status_id ?? 'pending';
+                    }
+
+                    if ($guest->arrivalDepartureRequests->isNotEmpty()) {
+                        $latestAD = $guest->arrivalDepartureRequests->sortByDesc('created_at')->first();
+                        $serviceStatuses['arrival'] = $latestAD->status ?? 'pending';
+                    }
+
+                    $guestArray['serviceStatuses'] = $serviceStatuses;
+
                     // Map invitations with match details
                     $guestArray['invitations'] = $guest->invitations->map(function ($invitation) {
                         return [
                             'id' => $invitation->id,
-                            'status' => $invitation->status,
+                            'status' => $invitation->status?->name ?? 'not_invited',
                             'subject' => $invitation->subject,
                             'body' => $invitation->body,
                             'sent_at' => $invitation->sent_at?->format('Y-m-d H:i:s'),
@@ -53,6 +111,7 @@ class GmsGuestController extends Controller
                             })->toArray(),
                         ];
                     })->toArray();
+
                     return $guestArray;
                 })
                 ->toArray(),
@@ -70,7 +129,6 @@ class GmsGuestController extends Controller
 
     public function store(Request $request)
     {
-        // Get current event
         $event = GmsMockData::getEvent();
         $eventId = $event['id'] ?? null;
 
@@ -101,9 +159,7 @@ class GmsGuestController extends Controller
         ]);
 
         // Generate reference number
-        $lastGuest = Guest::when($eventId, fn($q) => $q->where('event_id', $eventId))
-            ->orderBy('reference_number', 'desc')
-            ->first();
+        $lastGuest = Guest::orderBy('reference_number', 'desc')->first();
         if ($lastGuest && $lastGuest->reference_number) {
             $lastNumber = (int) substr($lastGuest->reference_number, 1);
             $validated['reference_number'] = 'G' . str_pad($lastNumber + 1, 3, '0', STR_PAD_LEFT);
@@ -113,7 +169,15 @@ class GmsGuestController extends Controller
 
         $validated['event_id'] = $eventId;
 
-        Guest::create($validated);
+        $guest = Guest::create($validated);
+
+        // Auto-add to current event if one is active
+        if ($eventId) {
+            $guest->events()->attach($eventId, [
+                'status' => 'not_invited',
+                'added_at' => now(),
+            ]);
+        }
 
         return back()->with('success', 'Guest created.');
     }
@@ -160,14 +224,68 @@ class GmsGuestController extends Controller
         return back()->with('success', 'Guest deleted.');
     }
 
+    /**
+     * Add one or more guests to the current event
+     */
+    public function addToEvent(Request $request)
+    {
+        $validated = $request->validate([
+            'guest_ids'   => 'required|array|min:1',
+            'guest_ids.*' => 'required|exists:guests,id',
+        ]);
+
+        $event = GmsMockData::getEvent();
+        $eventId = $event['id'] ?? null;
+
+        if (!$eventId) {
+            return back()->with('error', 'No active event selected.');
+        }
+
+        $added = 0;
+        foreach ($validated['guest_ids'] as $guestId) {
+            $guest = Guest::find($guestId);
+            if ($guest && !$guest->events()->where('event_id', $eventId)->exists()) {
+                $guest->events()->attach($eventId, [
+                    'status' => 'not_invited',
+                    'added_at' => now(),
+                ]);
+                $added++;
+            }
+        }
+
+        $eventName = $event['name'] ?? 'event';
+        return back()->with('success', "{$added} guest(s) added to {$eventName}.");
+    }
+
+    /**
+     * Remove a guest from the current event
+     */
+    public function removeFromEvent(Request $request)
+    {
+        $validated = $request->validate([
+            'guest_id' => 'required|exists:guests,id',
+        ]);
+
+        $event = GmsMockData::getEvent();
+        $eventId = $event['id'] ?? null;
+
+        if (!$eventId) {
+            return back()->with('error', 'No active event selected.');
+        }
+
+        $guest = Guest::findOrFail($validated['guest_id']);
+        $guest->events()->detach($eventId);
+
+        return back()->with('success', "{$guest->name} removed from {$event['name']}.");
+    }
+
     public function import(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // 10MB max
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
         ]);
 
         try {
-            // Get current event
             $event = GmsMockData::getEvent();
             $eventId = $event['id'] ?? null;
 
@@ -175,10 +293,8 @@ class GmsGuestController extends Controller
                 return back()->with('error', 'No active event selected.');
             }
 
-            // Create import instance
             $import = new GuestsImport($eventId);
-            
-            // Import the file
+
             Excel::import($import, $request->file('file'));
 
             $imported = $import->getImported();

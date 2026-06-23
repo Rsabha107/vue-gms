@@ -95,9 +95,22 @@ class GmsFlightController extends Controller
             'requests' => $flightRequests,
             'guests'   => Guest::where('guestType', 'international')
                 ->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                ->with('tierInfo')
+                ->with(['tierInfo', 'invitation' => function($query) use ($eventId) {
+                    $query->when($eventId, fn($q) => $q->where('event_id', $eventId));
+                }])
                 ->orderBy('name')
-                ->get(['id', 'name', 'tier', 'guestType', 'nationality']),
+                ->get()
+                ->map(function($guest) {
+                    return [
+                        'id' => $guest->id,
+                        'name' => $guest->name,
+                        'tier' => $guest->tier,
+                        'guestType' => $guest->guestType,
+                        'nationality' => $guest->nationality,
+                        'invitationStatus' => $guest->invitation?->status ?? null,
+                        'hasConfirmedInvitation' => $guest->invitation?->status === 'confirmed',
+                    ];
+                }),
             'tiers'    => ServiceLevel::all(),
             'event'    => $event,
         ]);
@@ -109,10 +122,21 @@ class GmsFlightController extends Controller
             'guestId'     => 'required|exists:guests,id',
             'class'       => 'required|string',
             'pax'         => 'required|integer|min:1',
-            'date'        => 'required|date',
-            'outboundDate'=> 'required|date',
             'origin'      => 'required|string|max:3',
             'destination' => 'required|string|max:3',
+            // Inbound leg
+            'inboundFlightNo' => 'required|string|max:20',
+            'date'        => 'required|date',
+            'inboundDepTime' => 'required|string|max:10',
+            'inboundArrTime' => 'required|string|max:10',
+            'inboundDuration' => 'nullable|string|max:20',
+            // Outbound leg
+            'outboundFlightNo' => 'required|string|max:20',
+            'outboundDate' => 'required|date',
+            'outboundDepTime' => 'required|string|max:10',
+            'outboundArrTime' => 'required|string|max:10',
+            'outboundDuration' => 'nullable|string|max:20',
+            // Optional
             'isChange'    => 'sometimes|boolean',
         ]);
 
@@ -139,37 +163,37 @@ class GmsFlightController extends Controller
             'ref' => strtoupper(substr(md5(uniqid()), 0, 6)), // Generate PNR
         ]);
 
-        // Create inbound leg
+        // Create inbound leg with user-provided data
         $flightRequest->legs()->create([
             'dir' => 'Inbound',
             'airline' => 'Qatar Airways',
-            'flight_no' => 'QR' . rand(100, 999),
+            'flight_no' => $validated['inboundFlightNo'],
             'from_code' => strtoupper($validated['destination']),
             'from_city' => strtoupper($validated['destination']),
             'to_code' => strtoupper($validated['origin']),
             'to_city' => 'Doha',
             'date' => $validated['date'],
-            'dep' => '08:00',
-            'arr' => '12:00',
+            'dep' => $validated['inboundDepTime'],
+            'arr' => $validated['inboundArrTime'],
             'cls' => $validated['class'],
-            'dur' => '4h 00m',
+            'dur' => $validated['inboundDuration'] ?? '',
             'sort' => 0,
         ]);
 
-        // Create outbound leg
+        // Create outbound leg with user-provided data
         $flightRequest->legs()->create([
             'dir' => 'Outbound',
             'airline' => 'Qatar Airways',
-            'flight_no' => 'QR' . rand(100, 999),
+            'flight_no' => $validated['outboundFlightNo'],
             'from_code' => strtoupper($validated['origin']),
             'from_city' => 'Doha',
             'to_code' => strtoupper($validated['destination']),
             'to_city' => strtoupper($validated['destination']),
             'date' => $validated['outboundDate'],
-            'dep' => '14:00',
-            'arr' => '18:00',
+            'dep' => $validated['outboundDepTime'],
+            'arr' => $validated['outboundArrTime'],
             'cls' => $validated['class'],
-            'dur' => '4h 00m',
+            'dur' => $validated['outboundDuration'] ?? '',
             'sort' => 1,
         ]);
 

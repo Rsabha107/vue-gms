@@ -14,10 +14,19 @@ const currentUrl = computed(() => page.url)
 
 // ── Sidebar collapse state ────────────────────────────────────────
 const sidebarCollapsed = ref(localStorage.getItem('gms-sidebar-collapsed') === 'true')
+const mobileMenuOpen = ref(false)
 
 function toggleSidebar() {
     sidebarCollapsed.value = !sidebarCollapsed.value
     localStorage.setItem('gms-sidebar-collapsed', sidebarCollapsed.value.toString())
+}
+
+function toggleMobileMenu() {
+    mobileMenuOpen.value = !mobileMenuOpen.value
+}
+
+function closeMobileMenu() {
+    mobileMenuOpen.value = false
 }
 
 // ── Event selector ────────────────────────────────────────────────
@@ -59,6 +68,10 @@ function handleClickOutside(e) {
     if (eventSelectorRef.value && !eventSelectorRef.value.contains(e.target)) {
         eventSelectorOpen.value = false
     }
+}
+
+function handleMobileBackdropClick() {
+    closeMobileMenu()
 }
 
 function logout() {
@@ -162,8 +175,11 @@ function isActive(item) {
 <div class="gms-app">
   <div class="gms-shell">
 
+    <!-- Mobile backdrop -->
+    <div v-if="mobileMenuOpen" class="gms-mobile-backdrop" @click="handleMobileBackdropClick"></div>
+
     <!-- ── Sidebar ──────────────────────────────────────────────── -->
-    <aside class="gms-sidebar" :class="{collapsed: sidebarCollapsed}">
+    <aside class="gms-sidebar" :class="{collapsed: sidebarCollapsed, 'mobile-open': mobileMenuOpen}">
       <!-- Toggle button -->
       <button class="gms-sidebar-toggle" @click="toggleSidebar" :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
         <GmsIcon :name="sidebarCollapsed ? 'chevron-right' : 'chevron-left'" :size="14" />
@@ -225,7 +241,8 @@ function isActive(item) {
             <Link :href="item.href"
                   class="gms-nav-item"
                   :class="{ active: isActive(item) }"
-                  :title="sidebarCollapsed ? item.label : ''">
+                  :title="sidebarCollapsed ? item.label : ''"
+                  @click="closeMobileMenu">
               <GmsIcon :name="item.icon" :size="16" class="gms-nav-icon" />
               <span v-show="!sidebarCollapsed">{{ item.label }}</span>
             </Link>
@@ -238,7 +255,8 @@ function isActive(item) {
             <Link :href="item.href"
                   class="gms-nav-item"
                   :class="{ active: isActive(item) }"
-                  :title="sidebarCollapsed ? item.label : ''">
+                  :title="sidebarCollapsed ? item.label : ''"
+                  @click="closeMobileMenu">
               <GmsIcon :name="item.icon" :size="16" class="gms-nav-icon" />
               <span v-show="!sidebarCollapsed">{{ item.label }}</span>
             </Link>
@@ -251,7 +269,8 @@ function isActive(item) {
             <Link :href="item.href"
                   class="gms-nav-item"
                   :class="{ active: isActive(item) }"
-                  :title="sidebarCollapsed ? item.label : ''">
+                  :title="sidebarCollapsed ? item.label : ''"
+                  @click="closeMobileMenu">
               <GmsIcon :name="item.icon" :size="16" class="gms-nav-icon" />
               <span v-show="!sidebarCollapsed">{{ item.label }}</span>
             </Link>
@@ -276,6 +295,11 @@ function isActive(item) {
 
       <!-- Topbar -->
       <header class="gms-topbar">
+        <!-- Mobile menu toggle -->
+        <button class="gms-mobile-menu-btn" @click="toggleMobileMenu" title="Menu">
+          <GmsIcon name="menu" :size="20" />
+        </button>
+        
         <div class="gms-topbar-breadcrumb">
           <Link href="/gms" style="color: inherit; text-decoration: none;">GMS</Link>
           <span class="gms-bc-sep">›</span>
@@ -326,7 +350,9 @@ function isActive(item) {
       </header>
 
       <!-- Page content -->
-      <slot />
+      <div class="gms-content">
+        <slot />
+      </div>
     </div>
   </div>
 

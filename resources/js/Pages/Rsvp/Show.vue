@@ -205,6 +205,14 @@ function confirm() {
   background: var(--gms-maroon-600);
 }
 
+.btn.pri:focus:not(:disabled),
+.btn.pri:active:not(:disabled) {
+  background: var(--gms-maroon-600);
+  color: #fff;
+  outline: 2px solid var(--gms-maroon);
+  outline-offset: 2px;
+}
+
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;

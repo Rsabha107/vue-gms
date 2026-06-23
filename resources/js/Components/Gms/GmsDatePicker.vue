@@ -8,6 +8,7 @@ const props = defineProps({
     placeholder: { type: String, default: 'Select date...' },
     dateFormat: { type: String, default: 'd/m/Y' },
     enableTime: { type: Boolean, default: false },
+    noCalendar: { type: Boolean, default: false },
     time24hr: { type: Boolean, default: true },
     minDate: { type: String, default: null },
     maxDate: { type: String, default: null },
@@ -25,6 +26,7 @@ onMounted(() => {
         picker = flatpickr(inputRef.value, {
             dateFormat: props.dateFormat,
             enableTime: props.enableTime,
+            noCalendar: props.noCalendar,
             time_24hr: props.time24hr,
             minDate: props.minDate,
             maxDate: props.maxDate,

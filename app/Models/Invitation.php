@@ -10,7 +10,7 @@ class Invitation extends Model
     protected $fillable = [
         'guest_id',
         'event_id',
-        'status',
+        'status_id',
         'subject',
         'body',
         'rsvp_token',
@@ -51,6 +51,14 @@ class Invitation extends Model
     public function event()
     {
         return $this->belongsTo(Event::class, 'event_id', 'id');
+    }
+
+    /**
+     * Get the status for this invitation
+     */
+    public function status()
+    {
+        return $this->belongsTo(InvitationStatus::class, 'status_id', 'id');
     }
 
     /**
@@ -109,6 +117,10 @@ class Invitation extends Model
      * - 'sent': No responses yet (all null)
      * - 'accepted': All matches accepted (all 'yes') - guest action
      * - 'partial': Some accepted, some declined (mix of 'yes' and 'no')
+    /**
+     * Update invitation status based on match responses:
+     * - 'sent': No responses yet
+     * - 'accepted': All matches accepted (all 'yes')
      * - 'declined': All matches declined (all 'no')
      * - 'confirmed': Admin-only override (not set by this method)
      */
@@ -116,16 +128,21 @@ class Invitation extends Model
     {
         $responses = $this->matches()->pluck('response')->filter();
         
+        $statusName = 'sent';
         if ($responses->isEmpty()) {
-            $this->status = 'sent';
+            $statusName = 'sent';
         } elseif ($responses->every(fn($r) => $r === 'yes')) {
-            $this->status = 'accepted';
+            $statusName = 'accepted';
         } elseif ($responses->every(fn($r) => $r === 'no')) {
-            $this->status = 'declined';
+            $statusName = 'declined';
         } else {
-            $this->status = 'partial';
+            $statusName = 'pending';
         }
         
-        $this->save();
+        $status = InvitationStatus::where('name', $statusName)->first();
+        if ($status) {
+            $this->status_id = $status->id;
+            $this->save();
+        }
     }
 }

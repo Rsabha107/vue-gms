@@ -473,6 +473,15 @@
   min-width: 0;
 }
 
+/* ── Content area (scrollable) ──────────────────────────────────── */
+.gms-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
 /* ── Topbar ────────────────────────────────────────────────────── */
 .gms-topbar {
   height: var(--gms-topbar-h);
@@ -549,6 +558,45 @@
   border-radius: 3px;
   padding: 1px 5px;
   margin-left: 16px;
+}
+
+/* ── Mobile menu button ───────────────────────────────────────────── */
+.gms-mobile-menu-btn {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  border-radius: var(--gms-radius-sm);
+  align-items: center;
+  justify-content: center;
+  color: var(--gms-text);
+  cursor: pointer;
+  transition: background var(--gms-dur-fast);
+  margin-right: 4px;
+}
+.gms-mobile-menu-btn:hover {
+  background: var(--gms-surface-3);
+}
+.gms-mobile-menu-btn:active {
+  background: var(--gms-border);
+}
+
+/* ── Mobile backdrop ───────────────────────────────────────────── */
+.gms-mobile-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ── View content ──────────────────────────────────────────────── */
@@ -1067,8 +1115,19 @@
   animation: gmsPopIn .12s ease;
 }
 
+.gms-menu-pop.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+  animation: gmsPopInUp .12s ease;
+}
+
 @keyframes gmsPopIn {
   from { opacity: 0; transform: translateY(6px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes gmsPopInUp {
+  from { opacity: 0; transform: translateY(-6px) scale(.97); }
   to { opacity: 1; transform: none; }
 }
 
@@ -3235,7 +3294,39 @@
 
 /* ── Responsive mobile ───────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .gms-sidebar { display: none; }
+  /* Show mobile menu button */
+  .gms-mobile-menu-btn {
+    display: flex;
+  }
+  
+  /* Enable mobile backdrop */
+  .gms-mobile-backdrop {
+    display: block;
+  }
+  
+  /* Sidebar as overlay */
+  .gms-sidebar { 
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 1001;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+  }
+  .gms-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .gms-sidebar.collapsed {
+    width: var(--gms-sidebar-w);
+  }
+  .gms-sidebar-toggle {
+    display: none;
+  }
+  
+  /* Adjust view padding */
   .gms-view { padding: 16px; }
   .gms-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .gms-form-grid { grid-template-columns: 1fr; }
@@ -7049,3 +7140,102 @@
   padding-top: 16px;
   border-top: 1px solid var(--gms-border);
 }
+
+/* ================================================================
+   Directory — Guests page (checkbox, events chips, action bar)
+   ================================================================ */
+
+/* Checkbox */
+.dir-check-wrap { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.dir-check {
+  appearance: none; -webkit-appearance: none;
+  width: 17px; height: 17px; border: 1.5px solid var(--line-2); border-radius: 4px;
+  background: var(--surface); cursor: pointer; transition: all 0.12s;
+  display: grid; place-content: center;
+}
+.dir-check:checked {
+  background: var(--maroon); border-color: var(--maroon);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 14 14' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3.5 7.5L6 10l4.5-5' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 13px; background-repeat: no-repeat; background-position: center;
+}
+.dir-check:hover { border-color: var(--maroon); }
+
+/* Selected row highlight */
+.dir-row-sel { background: var(--maroon-tint) !important; }
+
+/* Events column chips */
+.dir-ev-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.dir-ev-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500;
+  background: var(--surface-2); color: var(--ink-2); white-space: nowrap;
+  border: 1px solid var(--line);
+}
+.dir-ev-chip.current { border-color: var(--maroon); color: var(--maroon); background: var(--maroon-tint); }
+.dir-ev-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.dir-add-btn { font-size: 11px !important; padding: 2px 8px !important; }
+.dir-ev-x {
+  display: none; background: none; border: none; padding: 1px; margin-left: 2px;
+  cursor: pointer; color: inherit; opacity: 0.45; line-height: 0; border-radius: 50%;
+  transition: opacity 0.1s;
+}
+.dir-ev-x:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+.dir-ev-chip:hover .dir-ev-x { display: inline-flex; }
+
+/* Bottom action bar */
+.dir-action-bar {
+  position: fixed; bottom: 0; left: var(--gms-sidebar-w, 240px); right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 28px; background: var(--side); color: #fff;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.18); z-index: 90;
+}
+.dir-bar-info { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.dir-bar-sub { opacity: 0.65; font-weight: 400; }
+.dir-bar-actions { display: flex; gap: 8px; }
+
+/* Transition */
+.dir-bar-enter-active, .dir-bar-leave-active { transition: transform 0.2s ease, opacity 0.2s ease; }
+.dir-bar-enter-from, .dir-bar-leave-to { transform: translateY(100%); opacity: 0; }
+
+/* ================================================================
+   Invitations — Roster status pills
+   ================================================================ */
+.inv-status-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 500;
+  white-space: nowrap;
+}
+.inv-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+.inv-status-pill.not_invited { background: var(--surface-2); color: var(--ink-3); }
+.inv-status-pill.not_invited .inv-status-dot { background: var(--ink-3); }
+
+.inv-status-pill.invited { background: var(--warn-soft); color: var(--warn); }
+.inv-status-pill.invited .inv-status-dot { background: var(--warn); }
+
+.inv-status-pill.pending { background: #fef3c7; color: #f59e0b; }
+.inv-status-pill.pending .inv-status-dot { background: #f59e0b; }
+
+.inv-status-pill.accepted,
+.inv-status-pill.confirmed { background: var(--good-soft); color: var(--good); }
+.inv-status-pill.accepted .inv-status-dot,
+.inv-status-pill.confirmed .inv-status-dot { background: var(--good); }
+
+.inv-status-pill.declined { background: var(--bad-soft); color: var(--bad); }
+.inv-status-pill.declined .inv-status-dot { background: var(--bad); }
+
+/* ================================================================
+   Add-guests picker (modal)
+   ================================================================ */
+.add-picker-list {
+  max-height: 380px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: var(--r);
+}
+.add-picker-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; cursor: pointer; transition: background 0.1s;
+  border-bottom: 1px solid var(--line);
+}
+.add-picker-row:last-child { border-bottom: none; }
+.add-picker-row:hover { background: var(--surface-2); }
+.add-picker-row.sel { background: var(--gold-soft); border-color: var(--gold); }

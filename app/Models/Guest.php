@@ -51,11 +51,21 @@ class Guest extends Model
     ];
 
     /**
-     * Get the event for this guest
+     * Get the event for this guest (legacy single-event)
      */
     public function event()
     {
         return $this->belongsTo(Event::class);
+    }
+
+    /**
+     * Events this guest is on (many-to-many via guest_event pivot)
+     */
+    public function events()
+    {
+        return $this->belongsToMany(Event::class, 'guest_event')
+            ->withPivot('status', 'added_at', 'invited_at')
+            ->withTimestamps();
     }
 
     /**
@@ -88,6 +98,14 @@ class Guest extends Model
     public function invitations()
     {
         return $this->hasMany(Invitation::class, 'guest_id', 'id');
+    }
+
+    /**
+     * Get the latest invitation for this guest
+     */
+    public function invitation()
+    {
+        return $this->hasOne(Invitation::class, 'guest_id', 'id')->latestOfMany();
     }
 
     /**
@@ -202,6 +220,30 @@ class Guest extends Model
     public function accommodationRequests()
     {
         return $this->hasMany(AccommodationRequest::class);
+    }
+
+    /**
+     * Get all transport requests for this guest
+     */
+    public function transportRequests()
+    {
+        return $this->hasMany(TransportRequest::class);
+    }
+
+    /**
+     * Get all arrival/departure requests for this guest
+     */
+    public function arrivalDepartureRequests()
+    {
+        return $this->hasMany(ArrivalDepartureRequest::class);
+    }
+
+    /**
+     * Get all seats for this guest
+     */
+    public function seats()
+    {
+        return $this->hasMany(Seat::class);
     }
 
     /**

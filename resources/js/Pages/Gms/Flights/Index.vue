@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject } from 'vue'
+import { ref, computed, inject, watch } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
@@ -10,6 +10,8 @@ import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 import GmsBtn from '@/Components/Gms/GmsBtn.vue'
 import GmsGuestPicker from '@/Components/Gms/GmsGuestPicker.vue'
+import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
+import GmsTimePicker from '@/Components/Gms/GmsTimePicker.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -381,10 +383,45 @@ const newModal = ref(false)
 const selectedGuestId = ref(null)
 
 const form = useForm({
-    guestId: '', flightNo: '', route: '', origin: 'DOH', destination: '',
-    class: 'Business', pax: 1, date: '', time: '',
-    outboundDate: '', outboundTime: '', airline: '', notes: '',
+    guestId: '', origin: 'DOH', destination: '',
+    class: 'Business', pax: 1,
+    // Inbound leg
+    inboundFlightNo: '', date: '', inboundDepTime: '', inboundArrTime: '', inboundDuration: '',
+    // Outbound leg
+    outboundFlightNo: '', outboundDate: '', outboundDepTime: '', outboundArrTime: '', outboundDuration: '',
     isChange: false,
+})
+
+// Calculate duration between two times in HH:MM format
+function calculateDuration(depTime, arrTime) {
+    if (!depTime || !arrTime) return ''
+    
+    const [depHour, depMin] = depTime.split(':').map(Number)
+    const [arrHour, arrMin] = arrTime.split(':').map(Number)
+    
+    if (isNaN(depHour) || isNaN(depMin) || isNaN(arrHour) || isNaN(arrMin)) return ''
+    
+    let totalMinutes = (arrHour * 60 + arrMin) - (depHour * 60 + depMin)
+    
+    // Handle next-day arrivals (e.g., depart 23:00, arrive 02:00)
+    if (totalMinutes < 0) {
+        totalMinutes += 24 * 60
+    }
+    
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+}
+
+// Auto-calculate inbound duration
+watch(() => [form.inboundDepTime, form.inboundArrTime], ([depTime, arrTime]) => {
+    form.inboundDuration = calculateDuration(depTime, arrTime)
+})
+
+// Auto-calculate outbound duration
+watch(() => [form.outboundDepTime, form.outboundArrTime], ([depTime, arrTime]) => {
+    form.outboundDuration = calculateDuration(depTime, arrTime)
 })
 
 // Sort guests: international first
@@ -394,6 +431,11 @@ const sortedGuestList = computed(() => {
         const bIntl = b.guestType === 'international' ? 0 : 1
         return aIntl - bIntl
     })
+})
+
+// Filter guests who have confirmed invitations
+const confirmedGuests = computed(() => {
+    return sortedGuestList.value.filter(g => g.hasConfirmedInvitation)
 })
 
 // Guest IDs that already have flights
@@ -438,8 +480,29 @@ function decrementPax() {
 }
 
 function saveNew() {
+    // Convert dates from d/m/Y to Y-m-d format for Laravel
+    const formatDateForBackend = (dateStr) => {
+        if (!dateStr) return ''
+        // If already in Y-m-d format, return as is
+        if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return dateStr
+        // Convert d/m/Y to Y-m-d
+        const parts = dateStr.split('/')
+        if (parts.length === 3) {
+            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+        }
+        return dateStr
+    }
+
     const guest = props.guests.find(g => g.id === form.guestId)
-    form.post(route('gms.flights.store'), {
+    
+    // Create a copy of form data with converted dates
+    const formData = {
+        ...form.data(),
+        date: formatDateForBackend(form.date),
+        outboundDate: formatDateForBackend(form.outboundDate),
+    }
+    
+    form.transform(() => formData).post(route('gms.flights.store'), {
         onSuccess: () => {
             newModal.value = false
             selectedGuestId.value = null
@@ -457,7 +520,13 @@ function saveNew() {
                 },
             })
         },
-        onError: () => toast('Failed to create.', 'error'),
+        onError: (errors) => {
+            // Show first validation error with field name
+            const firstError = Object.keys(errors)[0]
+            const errorMessage = firstError ? `${firstError}: ${errors[firstError]}` : 'Failed to create flight request.'
+            toast(errorMessage, 'error')
+            console.error('Flight request validation errors:', errors)
+        },
     })
 }
 </script>
@@ -860,8 +929,16 @@ function saveNew() {
       <!-- Step 1: Guest selection -->
       <div class="nf-step">1 · Guest</div>
       <div style="margin:2px 0 10px;">
+        <div v-if="confirmedGuests.length === 0" class="gms-empty" style="padding: 40px 20px; background: var(--gms-surface-2); border-radius: 8px; margin-top: 10px;">
+          <GmsIcon name="users" :size="32" style="opacity: 0.3; margin-bottom: 12px;" />
+          <div class="gms-empty-title">No guests with confirmed invitations</div>
+          <div class="gms-empty-sub" style="max-width: 400px; margin: 8px auto 0;">
+            Only guests who have confirmed their invitations can request flights. Confirm guest invitations first.
+          </div>
+        </div>
         <GmsGuestPicker
-          :guests="sortedGuestList"
+          v-else
+          :guests="confirmedGuests"
           :selected-guest-id="selectedGuestId"
           :tiers="props.tiers"
           :show-existing-indicator="true"
@@ -964,22 +1041,80 @@ function saveNew() {
               </div>
             </div>
 
-            <!-- Inbound date -->
-            <div class="gms-field">
-              <label class="gms-label">Inbound date</label>
-              <input v-model="form.date" type="date" class="gms-input" />
-            </div>
+          </div>
 
-            <!-- Outbound date -->
+          <!-- Inbound Flight Details -->
+          <div class="gms-section-title" style="margin-top:20px;margin-bottom:10px;font-size:13px;">
+            Inbound Flight (to Doha)
+          </div>
+          <div class="gms-form-grid">
             <div class="gms-field">
-              <label class="gms-label">Outbound date</label>
-              <input v-model="form.outboundDate" type="date" class="gms-input" />
+              <label class="gms-label">Flight Number</label>
+              <input v-model="form.inboundFlightNo" class="gms-input" placeholder="QR 123" style="font-family:var(--gms-font-mono);" />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Date</label>
+              <GmsDatePicker
+                v-model="form.date"
+                placeholder="Select date"
+                date-format="d/m/Y"
+              />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Departure Time</label>
+              <GmsTimePicker
+                v-model="form.inboundDepTime"
+                placeholder="08:00"
+              />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Arrival Time</label>
+              <GmsTimePicker
+                v-model="form.inboundArrTime"
+                placeholder="12:00"
+              />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Duration</label>
+              <input v-model="form.inboundDuration" class="gms-input" placeholder="4h 00m" readonly style="font-family:var(--gms-font-mono);background:var(--gms-surface-2);cursor:not-allowed;" />
             </div>
           </div>
 
-          <div class="gms-muted" style="font-size:12px;margin-top:10px;padding:10px;background:var(--gms-surface-2);border-radius:8px;">
-            <span style="display:inline-block;padding:2px 6px;background:var(--gms-bg);border-radius:4px;font-weight:600;font-size:10px;margin-right:6px;">draft</span>
-            Created as a <strong>{{ form.isChange ? 'Change' : 'New' }}</strong> request — flight numbers & times are pre-filled and editable, then Confirm to issue.
+          <!-- Outbound Flight Details -->
+          <div class="gms-section-title" style="margin-top:20px;margin-bottom:10px;font-size:13px;">
+            Outbound Flight (from Doha)
+          </div>
+          <div class="gms-form-grid">
+            <div class="gms-field">
+              <label class="gms-label">Flight Number</label>
+              <input v-model="form.outboundFlightNo" class="gms-input" placeholder="QR 456" style="font-family:var(--gms-font-mono);" />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Date</label>
+              <GmsDatePicker
+                v-model="form.outboundDate"
+                placeholder="Select date"
+                date-format="d/m/Y"
+              />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Departure Time</label>
+              <GmsTimePicker
+                v-model="form.outboundDepTime"
+                placeholder="14:00"
+              />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Arrival Time</label>
+              <GmsTimePicker
+                v-model="form.outboundArrTime"
+                placeholder="18:00"
+              />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Duration</label>
+              <input v-model="form.outboundDuration" class="gms-input" placeholder="4h 00m" readonly style="font-family:var(--gms-font-mono);background:var(--gms-surface-2);cursor:not-allowed;" />
+            </div>
           </div>
         </div>
       </div>

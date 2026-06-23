@@ -138,6 +138,11 @@ const sortedGuestList = computed(() => {
     })
 })
 
+// Filter guests who have confirmed invitations
+const confirmedGuests = computed(() => {
+    return sortedGuestList.value.filter(g => g.hasConfirmedInvitation)
+})
+
 // Guest IDs that already have accommodations
 const existingAccommodationGuestIds = computed(() => {
     return localReqs.value
@@ -348,8 +353,16 @@ function saveEdit() {
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="gms-field">
         <label class="gms-label">Guest</label>
+        <div v-if="confirmedGuests.length === 0" class="gms-empty" style="padding: 40px 20px; background: var(--gms-surface-2); border-radius: 8px; margin-top: 10px;">
+          <GmsIcon name="users" :size="32" style="opacity: 0.3; margin-bottom: 12px;" />
+          <div class="gms-empty-title">No guests with confirmed invitations</div>
+          <div class="gms-empty-sub" style="max-width: 400px; margin: 8px auto 0;">
+            Only guests who have confirmed their invitations can request accommodation. Confirm guest invitations first.
+          </div>
+        </div>
         <GmsGuestPicker
-          :guests="sortedGuestList"
+          v-else
+          :guests="confirmedGuests"
           :selected-guest-id="selectedGuestId"
           :tiers="props.tiers"
           :show-existing-indicator="true"

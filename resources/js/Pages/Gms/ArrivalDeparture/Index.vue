@@ -7,6 +7,8 @@ import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
 import GmsPill from '@/Components/Gms/GmsPill.vue'
 import GmsDrawer from '@/Components/Gms/GmsDrawer.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
+import GmsGuestPicker from '@/Components/Gms/GmsGuestPicker.vue'
+import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -72,14 +74,44 @@ function deleteReq(id) {
 }
 
 const newModal = ref(false)
+const selectedGuestId = ref(null)
 const form = useForm({ guestId:'', type:'arrival', flightNo:'', terminal:'', datetime:'', lounge:'', greeter:'', notes:'' })
+
+// Filter guests who have confirmed invitations
+const confirmedGuests = computed(() => {
+    return props.guests.filter(g => g.hasConfirmedInvitation)
+})
+
+// Sort guests: international first
+const sortedGuestList = computed(() => {
+    return confirmedGuests.value.slice().sort((a, b) => {
+        const aIntl = a.guestType === 'international' ? 0 : 1
+        const bIntl = b.guestType === 'international' ? 0 : 1
+        return aIntl - bIntl
+    })
+})
+
+// Guest IDs that already have A&D requests
+const existingADGuestIds = computed(() => {
+    return localReqs.value
+        .filter(r => r.status !== 'cancelled')
+        .map(r => r.guestId)
+})
+
+function pickGuest(guest) {
+    selectedGuestId.value = guest.id
+    form.guestId = guest.id
+}
 
 function saveNew() {
     const guest = props.guests.find(g => g.id === form.guestId)
     form.post(route('gms.ad.store'), {
         onSuccess: () => {
             localReqs.value.unshift({ id:'AD-'+Date.now(), ...form.data(), guestName: guest?.name ?? '', status:'pending' })
-            newModal.value = false; form.reset(); toast('A&D request created.')
+            newModal.value = false
+            selectedGuestId.value = null
+            form.reset()
+            toast('A&D request created.')
         },
         onError: () => toast('Failed.','error'),
         preserveScroll: true,
@@ -102,13 +134,13 @@ function saveNew() {
     </div>
 
     <!-- Type toggle -->
-    <div style="display:flex;gap:8px;margin-bottom:14px;">
-      <button class="gms-filter-btn" :class="{ active: typeFilter==='all' }" @click="typeFilter='all'">All</button>
-      <button class="gms-filter-btn" :class="{ active: typeFilter==='arrival' }" @click="typeFilter='arrival'">
-        <GmsIcon name="arrivals" :size="12" /> Arrivals ({{ localReqs.filter(r=>r.type==='arrival').length }})
+    <div class="gms-seg" style="width: fit-content; margin-bottom: 14px;">
+      <button :class="{ on: typeFilter === 'all' }" @click="typeFilter = 'all'">All</button>
+      <button :class="{ on: typeFilter === 'arrival' }" @click="typeFilter = 'arrival'">
+        Arrivals <span class="gms-seg-count">{{ localReqs.filter(r=>r.type==='arrival').length }}</span>
       </button>
-      <button class="gms-filter-btn" :class="{ active: typeFilter==='departure' }" @click="typeFilter='departure'">
-        Departures ({{ localReqs.filter(r=>r.type==='departure').length }})
+      <button :class="{ on: typeFilter === 'departure' }" @click="typeFilter = 'departure'">
+        Departures <span class="gms-seg-count">{{ localReqs.filter(r=>r.type==='departure').length }}</span>
       </button>
     </div>
 
@@ -117,10 +149,12 @@ function saveNew() {
         <GmsIcon name="search" :size="14" class="gms-search-icon" />
         <input v-model="search" class="gms-search-input" placeholder="Search guest, flight…" />
       </div>
-      <button v-for="s in statuses" :key="s" class="gms-filter-btn" :class="{ active: statusFilter===s }" @click="statusFilter=s">
-        {{ s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }}
-        <span class="gms-filter-count">{{ countFor(s) }}</span>
-      </button>
+      <div class="gms-seg">
+        <button v-for="s in statuses" :key="s" :class="{ on: statusFilter === s }" @click="statusFilter = s">
+          {{ s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }}
+          <span v-if="s !== 'all'" class="gms-seg-count">{{ countFor(s) }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="gms-card">
@@ -182,14 +216,23 @@ function saveNew() {
     </template>
   </GmsDrawer>
 
-  <GmsModal :open="newModal" title="New A&amp;D Request" @close="newModal = false">
+  <GmsModal :open="newModal" title="New A&amp;D Request" @close="newModal = false; selectedGuestId = null; form.reset()">
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="gms-field">
         <label class="gms-label">Guest</label>
-        <select v-model="form.guestId" class="gms-input gms-select">
-          <option value="">— Select —</option>
-          <option v-for="g in guests" :key="g.id" :value="g.id">{{ g.name }}</option>
-        </select>
+        <div v-if="confirmedGuests.length === 0" style="padding:16px;background:var(--gms-bg);border-radius:6px;text-align:center;color:var(--gms-text-2);">
+          No guests with confirmed invitations. Guests must confirm their invitation before creating A&amp;D requests.
+        </div>
+        <GmsGuestPicker
+          v-else
+          :guests="sortedGuestList"
+          :selected-guest-id="selectedGuestId"
+          :tiers="props.tiers"
+          :show-existing-indicator="true"
+          :existing-guest-ids="existingADGuestIds"
+          existing-label="has A&D"
+          @select="pickGuest"
+        />
       </div>
       <div class="gms-form-grid">
         <div class="gms-field">
@@ -209,7 +252,12 @@ function saveNew() {
         </div>
         <div class="gms-field">
           <label class="gms-label">Date &amp; Time</label>
-          <input v-model="form.datetime" type="datetime-local" class="gms-input" />
+          <GmsDatePicker
+            v-model="form.datetime"
+            placeholder="Select date and time"
+            date-format="d/m/Y H:i"
+            :enable-time="true"
+          />
         </div>
         <div class="gms-field">
           <label class="gms-label">Lounge</label>
@@ -226,7 +274,7 @@ function saveNew() {
       </div>
     </div>
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="newModal = false">Cancel</button>
+      <button class="gms-btn gms-btn-ghost" @click="newModal = false; selectedGuestId = null">Cancel</button>
       <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="saveNew">Create Request</button>
     </template>
   </GmsModal>

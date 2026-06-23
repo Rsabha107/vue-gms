@@ -106,8 +106,8 @@ Seat mutations currently use `axios.post` to stub endpoints (`/gms/seating/{matc
 | GmsEventController | `POST /gms/events/switch` | (switches current event) |
 | GmsEventsController | `GET /gms/events` + CRUD | `Gms/Events/Index` |
 | GmsGroupsController | `GET /gms/groups` + CRUD | `Gms/Groups/Index` |
-| GmsGuestController | `GET /gms/guests` + CRUD + `POST /gms/guests/import` | `Gms/Guests/Index` |
-| GmsInvitationController | `GET /gms/invitations` | `Gms/Invitations/Index` |
+| GmsGuestController | `GET /gms/guests` + CRUD + `POST /gms/guests/import` + `POST /gms/guests/add-to-event` + `POST /gms/guests/remove-from-event` | `Gms/Guests/Index` |
+| GmsInvitationController | `GET /gms/invitations` + `POST /gms/invitations/add-guests` + `DELETE /gms/invitations/remove-guest/{id}` | `Gms/Invitations/Index` |
 | GmsSeatingController | `GET /gms/seating` | `Gms/Seating/Index` |
 | GmsServiceLevelController | `GET /gms/service-levels` + CRUD | `Gms/ServiceLevels/Index` |
 | GmsFlightController | `GET /gms/flights` + CRUD | `Gms/Flights/Index` |
@@ -187,33 +187,44 @@ Data mutations use `useForm` from `@inertiajs/vue3` + `form.post/put/delete(rout
 Stats grid (6 cards), upcoming fixtures list, recent guests, module quick-links grid.
 Props: `event`, `stats`, `matches` (first 4), `guests` (first 8), `tiers`.
 
-### Guests (`Gms/Guests/Index.vue`)
-Full guest registry. Features: search, status filter (all/confirmed/invited/pending/declined), tier filter dropdown, sortable table. Row click opens **GmsDrawer** (profile, tier facilities, notes). Edit button opens **GmsModal** (full create/edit form). Delete routes through a confirm modal.
+### Guests (`Gms/Guests/Index.vue`) — Directory view
+Central directory of all guests, reused across events. Each guest carries an `attendance` map (`{eventId: {status, added_at, invited_at}}`) from the `guest_event` pivot table.
 
-**Import functionality:** Bulk import guests from Excel (.xlsx, .xls) or CSV files. Click **Import** button → opens upload modal with template download option. Backend validates file (max 10MB), processes rows with `GuestsImport` class (Laravel Excel), auto-generates reference numbers, skips invalid rows. Success message shows imported/skipped counts. See `GUEST_IMPORT_DOCUMENTATION.md` for detailed usage guide.
+**Key features:**
+- **Events column:** Per-event status chips; current event highlighted in maroon
+- **Scope filter:** All / On this event / Not on event — filters the directory by event membership
+- **Checkbox multi-select:** Select guests → bottom action bar shows "Add N to {event}" button
+- **Per-row Add button:** "+" button on rows not yet on the current event
+- **Import:** Bulk upload from Excel/CSV via `GuestsImport` class
+- **Profile drawer:** Overview (contact, companions, preferences, service level), Facilities tab, Invitations tab — now shows attendance across all events
 
-**Preference fields:** Three simple text fields for capturing guest preferences:
-- `flightPreferences` (text, optional) — freeform notes about flight preferences (class, meals, seating, etc.)
-- `accommodationPreferences` (text, optional) — freeform notes about accommodation preferences (floor, room type, accessibility)
-- `transportationPreferences` (text, optional) — freeform notes about transportation preferences (vehicle type, special requirements)
+**Attendance data model:**
+- `guest_event` pivot table: `guest_id`, `event_id`, `status` (not_invited/invited/accepted/declined/confirmed), `added_at`, `invited_at`
+- Guest model has `events()` belongsToMany relationship
+- Controller returns ALL guests (no event_id filter) with attendance loaded
+- Two separate actions: **add to event** (roster membership) vs **send invite** (email/RSVP step)
 
 **Facility Management:** Two-layer system for service customization:
-- **Tier baseline:** Facilities inherited from service level (e.g., "VIP Lounge", "Premium Dining")
+- **Tier baseline:** Facilities inherited from service level
 - **Guest overrides:** `facilityOverrides` JSON column with `{added: [], removed: []}` structure
-  - `added`: Custom facilities beyond tier package
-  - `removed`: Tier facilities excluded for this guest
 - Final facilities computed via `getFinalFacilitiesAttribute()` in Guest model
-- Interactive UI in Facilities tab: toggle to remove tier facilities, input to add custom facilities
-- Reporting service: `GuestFacilityReport` with 6 analytics methods (see `FACILITY_REPORTING_GUIDE.md`)
 
-Props: `guests`, `tiers`, `groups`, `hosts`, `hotels`, `event`.
-Local state: `localGuests` (reactive copy), `drawerOpen`, `activeGuest`, `guestModal`, `editingGuest`, `deleteModal`, `importModal`, `importFile`, `isImporting`.
-Routes: `gms.guests.index` (GET), `gms.guests.store` (POST), `gms.guests.import` (POST), `gms.guests.update` (PUT), `gms.guests.destroy` (DELETE).
-Import class: `app/Imports/GuestsImport.php` — handles row validation, reference number generation, facilities parsing.
+Props: `guests` (all, with `attendance` map), `tiers`, `groups`, `hosts`, `hotels`, `event`, `gmsEvents`.
+Routes: `gms.guests.index` (GET), `gms.guests.store` (POST), `gms.guests.import` (POST), `gms.guests.addToEvent` (POST), `gms.guests.removeFromEvent` (POST), `gms.guests.update` (PUT), `gms.guests.destroy` (DELETE).
 
-### Invitations (`Gms/Invitations/Index.vue`)
-Bulk-select guest table (checkbox per row + select-all). "Send to Selected" opens template-picker modal → calls `route('gms.invitations.send')`. Bottom section shows email template list with edit modal.
-Props: `guests`, `tiers`, `emailTemplates`, `event`.
+### Invitations (`Gms/Invitations/Index.vue`) — Event roster view
+Roster for the current event — everyone who's been added, and where their invitation stands.
+
+**Key features:**
+- **Stats strip:** On roster · Not invited · Invited/awaiting · Accepted · Declined
+- **Add guests picker:** Modal pulls from directory (guests NOT on event), multi-select, adds as "Not invited"
+- **Status vocabulary:** `not_invited` (on roster, no invite), `invited` (sent, awaiting), `accepted`/`confirmed`, `declined`
+- **Table columns:** Guest, Service (tier pill), Sessions (accepted match count), Status, Sent/Accepted dates, Passport
+- **Row actions:** "Invite" button (not-invited), edit icon (invited+), more menu (accept on behalf, mark confirmed/declined, remove from roster)
+- **Guest services overview:** Second tab showing service module statuses for confirmed guests
+
+Props: `roster` (guests on event with invitation data), `directory` (guests NOT on event, for picker), `tiers`, `emailTemplates`, `event`.
+Routes: `gms.invitations.index` (GET), `gms.invitations.send` (POST), `gms.invitations.addGuests` (POST), `gms.invitations.removeGuest` (DELETE), `gms.invitations.acceptOnBehalf` (POST), `gms.invitations.markConfirmed` (POST), `gms.invitations.markDeclined` (POST), `gms.invitations.resetToPending` (POST).
 
 ### Seating (`Gms/Seating/Index.vue`)
 Internal view state machine: `view = 'list' | 'map'`.

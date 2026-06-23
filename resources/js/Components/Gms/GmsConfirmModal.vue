@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import GmsModal from './GmsModal.vue'
 import GmsIcon from './GmsIcon.vue'
+import GmsBtn from './GmsBtn.vue'
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -17,10 +18,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'confirm'])
-
-const buttonClass = computed(() => {
-    return props.variant === 'danger' ? 'gms-btn gms-btn-danger' : 'gms-btn gms-btn-primary'
-})
 
 function handleConfirm() {
     emit('confirm')
@@ -66,21 +63,22 @@ function handleClose() {
     </div>
 
     <template #footer>
-      <button 
-        class="gms-btn gms-btn-ghost" 
+      <GmsBtn 
+        variant="ghost"
         @click="handleClose"
         :disabled="loading"
       >
         {{ cancelText }}
-      </button>
-      <button 
-        :class="buttonClass"
+      </GmsBtn>
+      <GmsBtn 
+        :variant="variant"
+        :icon="confirmIcon"
         @click="handleConfirm"
         :disabled="loading"
+        :processing="loading"
       >
-        <GmsIcon v-if="confirmIcon" :name="confirmIcon" :size="14" />
         {{ confirmText }}
-      </button>
+      </GmsBtn>
     </template>
   </GmsModal>
 </template>

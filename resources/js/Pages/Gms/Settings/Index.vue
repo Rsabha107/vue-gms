@@ -1,7 +1,9 @@
 <script setup>
-import { ref, inject, computed } from 'vue'
+import { ref, inject, computed, watch } from 'vue'
+import { useForm } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
+import GmsBtn from '@/Components/Gms/GmsBtn.vue'
 import GmsAvatar from '@/Components/Gms/GmsAvatar.vue'
 
 defineOptions({ layout: GmsLayout })
@@ -34,10 +36,39 @@ const localEmailTemplates = ref(props.emailTemplates.map((t, idx) => ({
     active: idx === 0 
 })))
 const activeTemplate = ref(localEmailTemplates.value.find(t => t.active) || localEmailTemplates.value[0])
+const templateName = ref(activeTemplate.value?.name || '')
 const templateSubject = ref(activeTemplate.value?.subject || '')
 const templateBody = ref(activeTemplate.value?.body || '')
 const templateTags = ['guest_name', 'guest_title', 'event_name', 'event_date', 'venue', 'tier_name', 'rsvp_deadline', 'flight_details', 'accommodation_details', 'transport_details']
 const bodyTextarea = ref(null)
+
+// Forms for template operations
+const saveForm = useForm({
+    name: '',
+    subject: '',
+    body: ''
+})
+const createForm = useForm({
+    name: 'New Template',
+    subject: 'Welcome to {{ event_name }}',
+    body: 'Dear {{ guest_name }},\n\nWe are pleased to invite you to {{ event_name }}.\n\nBest regards'
+})
+const deleteForm = useForm({})
+const isSendingTest = ref(false)
+
+// Watch for changes to email templates from server (after create/delete)
+watch(() => props.emailTemplates, (newTemplates) => {
+    localEmailTemplates.value = newTemplates.map((t, idx) => ({ 
+        ...t, 
+        active: idx === 0 
+    }))
+    activeTemplate.value = localEmailTemplates.value[0]
+    if (activeTemplate.value) {
+        templateName.value = activeTemplate.value.name
+        templateSubject.value = activeTemplate.value.subject
+        templateBody.value = activeTemplate.value.body
+    }
+}, { deep: true })
 
 // Team members (from database)
 const roleLabels = { admin: 'Admin', coordinator: 'Coordinator', protocol: 'Protocol', viewer: 'Viewer' }
@@ -82,6 +113,7 @@ function selectTemplate(template) {
     activeTemplate.value = template
     localEmailTemplates.value.forEach(t => t.active = false)
     template.active = true
+    templateName.value = template.name
     templateSubject.value = template.subject
     templateBody.value = template.body
 }
@@ -98,6 +130,82 @@ function insertTag(tag) {
         el.selectionStart = el.selectionEnd = start + insert.length
         el.focus()
     })
+}
+
+function createNewTemplate() {
+    createForm.post(route('gms.email-templates.store'), {
+        onSuccess: () => {
+            toast('New template created')
+            // Reset form for next use
+            createForm.reset()
+        },
+        onError: () => {
+            toast('Failed to create template', 'error')
+        }
+    })
+}
+
+function deleteTemplate() {
+    if (localEmailTemplates.value.length <= 1) {
+        toast('Cannot delete the last template', 'error')
+        return
+    }
+    
+    deleteForm.delete(route('gms.email-templates.destroy', activeTemplate.value.id), {
+        onSuccess: () => {
+            toast('Template deleted')
+        },
+        onError: () => {
+            toast('Failed to delete template', 'error')
+        }
+    })
+}
+
+function saveTemplate() {
+    if (!templateName.value.trim()) {
+        toast('Template name is required', 'error')
+        return
+    }
+    if (!templateSubject.value.trim()) {
+        toast('Subject is required', 'error')
+        return
+    }
+    if (!templateBody.value.trim()) {
+        toast('Body is required', 'error')
+        return
+    }
+    
+    // Update form data
+    saveForm.name = templateName.value
+    saveForm.subject = templateSubject.value
+    saveForm.body = templateBody.value
+    
+    saveForm.put(route('gms.email-templates.update', activeTemplate.value.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            toast('Template saved')
+            // Update local state with saved values
+            const templateIndex = localEmailTemplates.value.findIndex(t => t.id === activeTemplate.value.id)
+            if (templateIndex !== -1) {
+                localEmailTemplates.value[templateIndex].name = templateName.value
+                localEmailTemplates.value[templateIndex].subject = templateSubject.value
+                localEmailTemplates.value[templateIndex].body = templateBody.value
+            }
+        },
+        onError: () => {
+            toast('Failed to save template', 'error')
+        }
+    })
+}
+
+function sendTestEmail() {
+    isSendingTest.value = true
+    
+    // Simulate async send operation
+    setTimeout(() => {
+        isSendingTest.value = false
+        toast('Test email sent', 'info')
+    }, 1000)
 }
 </script>
 
@@ -406,7 +514,7 @@ function insertTag(tag) {
                 <GmsIcon v-if="template.active" name="chevron-right" :size="14" class="etpl-chev" />
               </button>
             </div>
-            <button class="etpl-new">
+            <button class="etpl-new" @click="createNewTemplate">
               <GmsIcon name="plus" :size="14" />
               New template
             </button>
@@ -421,7 +529,7 @@ function insertTag(tag) {
             <div class="email-editor-b">
               <div class="gms-field">
                 <label class="gms-label">Template name</label>
-                <input :value="activeTemplate.name" type="text" class="gms-input" />
+                <input v-model="templateName" type="text" class="gms-input" />
               </div>
               <div class="gms-field">
                 <label class="gms-label">Subject</label>
@@ -439,16 +547,35 @@ function insertTag(tag) {
               </div>
             </div>
             <div class="email-footer">
-              <button class="gms-btn gms-btn-ghost email-delete-btn">
-                <GmsIcon name="trash" :size="13" />
+              <GmsBtn 
+                variant="ghost" 
+                icon="trash" 
+                :icon-size="13"
+                :processing="deleteForm.processing"
+                class="email-delete-btn"
+                @click="deleteTemplate"
+              >
                 Delete
-              </button>
+              </GmsBtn>
               <div style="display:flex;gap:8px;">
-                <button class="gms-btn gms-btn-ghost">
-                  <GmsIcon name="send" :size="13" />
+                <GmsBtn 
+                  variant="ghost" 
+                  icon="send" 
+                  :icon-size="13"
+                  :processing="isSendingTest"
+                  @click="sendTestEmail"
+                >
                   Send test
-                </button>
-                <button class="gms-btn gms-btn-primary" @click="toast('Template saved')">Save template</button>
+                </GmsBtn>
+                <GmsBtn 
+                  variant="primary" 
+                  icon="check" 
+                  :icon-size="13"
+                  :processing="saveForm.processing"
+                  @click="saveTemplate"
+                >
+                  Save template
+                </GmsBtn>
               </div>
             </div>
           </div>

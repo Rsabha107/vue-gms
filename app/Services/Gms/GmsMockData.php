@@ -519,15 +519,25 @@ class GmsMockData
 
     public static function getArrivalDepartureRequests(): array
     {
-        return [
-            ['id' => 'AD-001', 'guestId' => 'G002', 'guestName' => 'Emmanuel Macron',   'status' => 'confirmed', 'type' => 'arrival',   'flightNo' => 'QR 2025', 'terminal' => 'VIP Terminal', 'datetime' => '2026-01-14 18:45', 'lounge' => 'Al Safwa Lounge', 'greeter' => 'Khalid Al-Hamadi',   'notes' => 'Diplomatic courtesy lane'],
-            ['id' => 'AD-002', 'guestId' => 'G002', 'guestName' => 'Emmanuel Macron',   'status' => 'pending',   'type' => 'departure', 'flightNo' => 'QR 2026', 'terminal' => 'VIP Terminal', 'datetime' => '2026-01-20 23:00', 'lounge' => 'Al Safwa Lounge', 'greeter' => 'Nour Al-Rashidi',    'notes' => ''],
-            ['id' => 'AD-003', 'guestId' => 'G004', 'guestName' => 'Prince William',    'status' => 'confirmed', 'type' => 'arrival',   'flightNo' => 'QR 5',    'terminal' => 'Royal Terminal', 'datetime' => '2026-01-15 07:00', 'lounge' => 'Royal Lounge',    'greeter' => 'Sara Al-Jassim',     'notes' => 'Full state welcome ceremony'],
-            ['id' => 'AD-004', 'guestId' => 'G003', 'guestName' => 'Gianni Infantino',  'status' => 'confirmed', 'type' => 'arrival',   'flightNo' => 'QR 47',   'terminal' => 'Terminal 1',     'datetime' => '2026-01-14 22:10', 'lounge' => 'Premium Lounge',  'greeter' => 'Mohammed Al-Dosari', 'notes' => ''],
-            ['id' => 'AD-005', 'guestId' => 'G006', 'guestName' => 'Olaf Scholz',       'status' => 'confirmed', 'type' => 'arrival',   'flightNo' => 'LH 688',  'terminal' => 'Terminal 1',     'datetime' => '2026-01-15 19:30', 'lounge' => 'Premium Lounge',  'greeter' => 'Khalid Al-Hamadi',   'notes' => ''],
-            ['id' => 'AD-006', 'guestId' => 'G005', 'guestName' => 'Sheikh Mohammed',   'status' => 'confirmed', 'type' => 'arrival',   'flightNo' => 'FZ 001',  'terminal' => 'VIP Terminal', 'datetime' => '2026-01-14 14:00', 'lounge' => 'Al Safwa Lounge', 'greeter' => 'Sara Al-Jassim',     'notes' => 'UAE State protocol'],
-            ['id' => 'AD-007', 'guestId' => 'G009', 'guestName' => 'Cristiano Ronaldo', 'status' => 'pending',   'type' => 'arrival',   'flightNo' => 'QR 271',  'terminal' => 'Terminal 2',     'datetime' => '2026-01-17 18:30', 'lounge' => 'Business Lounge', 'greeter' => 'Mohammed Al-Dosari', 'notes' => ''],
-        ];
+        return \App\Models\ArrivalDepartureRequest::with('guest:id,first_name,last_name')
+            ->orderBy('datetime')
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id' => $request->id,
+                    'guestId' => $request->guest_id,
+                    'guestName' => $request->guest->first_name . ' ' . $request->guest->last_name,
+                    'status' => $request->status,
+                    'type' => $request->type,
+                    'flightNo' => $request->flight_no,
+                    'terminal' => $request->terminal,
+                    'datetime' => $request->datetime->format('Y-m-d H:i'),
+                    'lounge' => $request->lounge,
+                    'greeter' => $request->greeter,
+                    'notes' => $request->notes,
+                ];
+            })
+            ->toArray();
     }
 
     public static function getEmailTemplates(): array
