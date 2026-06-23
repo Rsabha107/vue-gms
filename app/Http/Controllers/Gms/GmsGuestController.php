@@ -29,11 +29,12 @@ class GmsGuestController extends Controller
                 'events',
                 'invitations.matches',
                 'invitations.status',
-                'flightRequests',
+                'flightRequests.legs',
                 'accommodationRequests',
                 'transportRequests',
                 'arrivalDepartureRequests',
-                'seats.match'
+                'seats.match',
+                'seats.block'
             ])
                 ->orderBy('created_at', 'desc')
                 ->get()
@@ -111,6 +112,47 @@ class GmsGuestController extends Controller
                             })->toArray(),
                         ];
                     })->toArray();
+
+                    // Map seat assignments with match info
+                    $guestArray['seatAssignments'] = $guest->seats->map(function ($seat) {
+                        return [
+                            'id' => $seat->id,
+                            'seat_code' => $seat->code,
+                            'block' => $seat->block?->name ?? null,
+                            'block_label' => $seat->block?->label ?? null,
+                            'match_id' => $seat->game_match_id,
+                            'match_name' => $seat->match?->name ?? 'Unknown Match',
+                            'status' => $seat->status,
+                        ];
+                    })->toArray();
+
+                    // Map flight requests with leg info
+                    $guestArray['flightInfo'] = $guest->flightRequests
+                        ->filter(fn($f) => $f->status !== 'cancelled')
+                        ->map(function ($flight) {
+                            $inbound = $flight->legs->where('dir', 'Inbound')->first();
+                            $outbound = $flight->legs->where('dir', 'Outbound')->first();
+                            return [
+                                'id' => $flight->id,
+                                'code' => $flight->code,
+                                'status' => $flight->status,
+                                'route' => $inbound && $outbound 
+                                    ? "{$inbound->from_code} → {$inbound->to_code}"
+                                    : '—',
+                                'inbound' => $inbound ? [
+                                    'flight_no' => $inbound->flight_no,
+                                    'date' => $inbound->date,
+                                    'from' => $inbound->from_code,
+                                    'to' => $inbound->to_code,
+                                ] : null,
+                                'outbound' => $outbound ? [
+                                    'flight_no' => $outbound->flight_no,
+                                    'date' => $outbound->date,
+                                    'from' => $outbound->from_code,
+                                    'to' => $outbound->to_code,
+                                ] : null,
+                            ];
+                        })->toArray();
 
                     return $guestArray;
                 })

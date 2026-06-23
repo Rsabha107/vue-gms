@@ -11,7 +11,10 @@ import GmsBtn from '@/Components/Gms/GmsBtn.vue'
 import GmsConfirmModal from '@/Components/Gms/GmsConfirmModal.vue'
 import InviteWizard from '@/Components/Gms/InviteWizard.vue'
 
-defineOptions({ layout: GmsLayout })
+defineOptions({ 
+    layout: GmsLayout,
+    inheritAttrs: false 
+})
 
 const props = defineProps({
     roster:         { type: Array,  default: () => [] },
@@ -234,16 +237,18 @@ function toggleActionsMenu(guestId, event) {
 }
 
 function getServiceStatusIcon(status) {
+  // console.log('getServiceStatusIcon called with status:', status)
     if (!status) return 'minus'
-    if (status === 'confirmed') return 'check-circle'
+    if (status === 'confirmed' || status === 'assigned') return 'check-circle'
     if (status === 'pending' || status === 'new') return 'clock'
     if (status === 'cancelled') return 'x-circle'
     return 'minus'
 }
 
 function getServiceStatusColor(status) {
+  // console.log('getServiceStatusIcon called with status:', status)
     if (!status) return 'var(--gms-text-3)'
-    if (status === 'confirmed') return 'var(--good)'
+    if (status === 'confirmed' || status === 'assigned') return 'var(--good)'
     if (status === 'pending' || status === 'new') return 'var(--warn)'
     if (status === 'cancelled') return 'var(--bad)'
     return 'var(--gms-text-3)'
@@ -448,11 +453,41 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                 </td>
                 <td><span class="gms-muted gms-small">{{ g.group }}</span></td>
                 <td><span class="inv-status-pill" :class="g.status"><span class="inv-status-dot"></span>{{ statusLabel(g.status) }}</span></td>
-                <td><GmsPill v-if="g.services?.flight" :value="g.services.flight" /><span v-else class="gms-muted">—</span></td>
-                <td><GmsPill v-if="g.services?.accommodation" :value="g.services.accommodation" /><span v-else class="gms-muted">—</span></td>
-                <td><GmsPill v-if="g.services?.seat" :value="g.services.seat" /><span v-else class="gms-muted">—</span></td>
-                <td><GmsPill v-if="g.services?.transport" :value="g.services.transport" /><span v-else class="gms-muted">—</span></td>
-                <td><GmsPill v-if="g.services?.ad" :value="g.services.ad" /><span v-else class="gms-muted">—</span></td>
+                <td>
+                  <span v-if="g.services?.flight" class="inv-status-pill" :class="g.services.flight">
+                    <span class="inv-status-dot"></span>
+                    {{ g.services.flight.charAt(0).toUpperCase() + g.services.flight.slice(1) }}
+                  </span>
+                  <span v-else class="gms-muted">—</span>
+                </td>
+                <td>
+                  <span v-if="g.services?.accommodation" class="inv-status-pill" :class="g.services.accommodation">
+                    <span class="inv-status-dot"></span>
+                    {{ g.services.accommodation.charAt(0).toUpperCase() + g.services.accommodation.slice(1) }}
+                  </span>
+                  <span v-else class="gms-muted">—</span>
+                </td>
+                <td>
+                  <span v-if="g.services?.seat" class="inv-status-pill" :class="g.services.seat">
+                    <span class="inv-status-dot"></span>
+                    {{ g.services.seat.charAt(0).toUpperCase() + g.services.seat.slice(1) }}
+                  </span>
+                  <span v-else class="gms-muted">—</span>
+                </td>
+                <td>
+                  <span v-if="g.services?.transport" class="inv-status-pill" :class="g.services.transport">
+                    <span class="inv-status-dot"></span>
+                    {{ g.services.transport.charAt(0).toUpperCase() + g.services.transport.slice(1) }}
+                  </span>
+                  <span v-else class="gms-muted">—</span>
+                </td>
+                <td>
+                  <span v-if="g.services?.ad" class="inv-status-pill" :class="g.services.ad">
+                    <span class="inv-status-dot"></span>
+                    {{ g.services.ad.charAt(0).toUpperCase() + g.services.ad.slice(1) }}
+                  </span>
+                  <span v-else class="gms-muted">—</span>
+                </td>
               </tr>
               <tr v-if="!filtered.length">
                 <td colspan="8"><div class="gms-empty"><div class="gms-empty-title">No confirmed guests yet</div></div></td>

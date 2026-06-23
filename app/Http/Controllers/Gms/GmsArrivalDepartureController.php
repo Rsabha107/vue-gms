@@ -23,7 +23,8 @@ class GmsArrivalDepartureController extends Controller
             'guests'   => Guest::where('guestType', 'international')
                 ->when($eventId, fn($q) => $q->where('event_id', $eventId))
                 ->with(['tierInfo', 'invitation' => function($query) use ($eventId) {
-                    $query->when($eventId, fn($q) => $q->where('event_id', $eventId));
+                    $query->when($eventId, fn($q) => $q->where('event_id', $eventId))
+                        ->with('status');
                 }])
                 ->orderBy('name')
                 ->get()
@@ -34,8 +35,8 @@ class GmsArrivalDepartureController extends Controller
                         'tier' => $guest->tier,
                         'guestType' => $guest->guestType,
                         'nationality' => $guest->nationality,
-                        'invitationStatus' => $guest->invitation?->status ?? null,
-                        'hasConfirmedInvitation' => $guest->invitation?->status === 'confirmed',
+                        'invitationStatus' => $guest->invitation?->status?->name ?? null,
+                        'hasConfirmedInvitation' => $guest->invitation?->status?->name === 'confirmed',
                     ];
                 }),
             'tiers'    => ServiceLevel::all(),

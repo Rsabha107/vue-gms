@@ -126,6 +126,9 @@ const showNames = ref(false)
 const templateModal = ref(false)
 const chosenTplId   = ref('')
 
+// ── Clear all confirmation modal ──────────────────────────────────
+const clearAllModal = ref(false)
+
 // ── Navigation ────────────────────────────────────────────────────
 function openMatch(m) {
     activeMatch.value  = m
@@ -337,6 +340,13 @@ function switchMode(m) {
 
 // ── Zoom ──────────────────────────────────────────────────────────
 const zoomBy = d => { zoom.value = Math.min(Z_MAX, Math.max(Z_MIN, Math.round((zoom.value + d) * 10) / 10)) }
+
+// ── Clear UI elements for clean interaction ───────────────────────
+function clearUIOnSeatInteraction() {
+    hover.value = null
+    pinSeat.value = null
+    clearTimeout(hoverTimer)
+}
 
 // ── Seat interaction ──────────────────────────────────────────────
 function seatClick(seat, event) {
@@ -596,6 +606,55 @@ function doRelease() {
     toast(`${resSel.value.length} seat${resSel.value.length > 1 ? 's' : ''} released`)
     resSel.value = []
     mode.value = 'assign'  // Exit reserve mode after releasing
+}
+
+// ── Clear all assigned seats ──────────────────────────────────────
+function clearAllAssigned() {
+    const assignedCount = seatStats.value.assigned
+    const reservedCount = seatStats.value.reserved
+    const totalCount = assignedCount + reservedCount
+    
+    if (totalCount === 0) {
+        toast('No seats to clear', 'info')
+        return
+    }
+    
+    clearAllModal.value = true
+}
+
+function confirmClearAll() {
+    const assignedCount = seatStats.value.assigned
+    const reservedCount = seatStats.value.reserved
+    const totalCount = assignedCount + reservedCount
+    
+    // Get all assigned/ticket/reserved seat IDs
+    const seatsToUnassign = activeSeats.value
+        .filter(s => s.status === 'assigned' || s.status === 'ticket' || s.status === 'reserved')
+        .map(s => s.id)
+    
+    // Clear all assignments optimistically
+    seatsToUnassign.forEach(id => {
+        const seats = seatState.value[activeMatch.value.id]
+        if (!seats) return
+        const idx = seats.findIndex(s => s.id === id)
+        if (idx === -1) return
+        seats[idx] = { ...seats[idx], status: 'available', guestId: null, resLabel: null }
+    })
+    seatState.value = { ...seatState.value }
+    
+    clearAllModal.value = false
+    
+    // Persist to database
+    axios.post(`/gms/seating/${activeMatch.value.id}/clear-all`, {})
+        .then(() => {
+            toast(`All ${totalCount} seat${totalCount > 1 ? 's' : ''} cleared`)
+        })
+        .catch(err => {
+            console.error('Failed to clear seats:', err)
+            toast('Failed to clear seats', 'error')
+            // Reload seats on error
+            router.reload({ only: ['matchSeats'] })
+        })
 }
 
 // ── Reservation summary ───────────────────────────────────────────
@@ -1198,6 +1257,10 @@ function deleteTemplate(tplId) {
         <button class="gms-btn gms-btn-sm" :class="mode==='hide' ? 'gms-btn-primary' : ''" @click="switchMode('hide')">
           <GmsIcon name="eye" :size="13" /> {{ mode === 'hide' ? 'Hiding…' : 'Hide' }}
         </button>
+        <button class="gms-btn gms-btn-sm gms-btn-danger" @click="clearAllAssigned" 
+          :disabled="seatStats.assigned === 0 && seatStats.reserved === 0" style="margin-left: 8px;">
+          <GmsIcon name="trash" :size="13" /> Clear all seats
+        </button>
       </div>
 
     </div>
@@ -1399,6 +1462,8 @@ function deleteTemplate(tplId) {
                           :style="smapSeatStyle(seat)"
                           :draggable="seat.guestId && !seat.hidden && mode==='assign'"
                           :title="seat.id + (seat.guestId ? ' – ' + guestById(seat.guestId)?.name : '') + (seat.resLabel ? ' [' + seat.resLabel + ']' : '')"
+                          @mousedown="clearUIOnSeatInteraction"
+                          @touchstart="clearUIOnSeatInteraction"
                           @click="seatClick(seat, $event)"
                           @mouseenter="seatEnter(seat, $event)"
                           @mouseleave="seatLeave()"
@@ -1475,6 +1540,8 @@ function deleteTemplate(tplId) {
                           :class="[pseatClass(seat), dragOverSeat===seat.id ? 'drag-over' : '', draggedSeat===seat.id ? 'dragging' : '']"
                           :style="pseatInfo(seat).style ?? {}"
                           :draggable="seat.guestId && !seat.hidden && mode==='assign'"
+                          @mousedown="clearUIOnSeatInteraction"
+                          @touchstart="clearUIOnSeatInteraction"
                           @click="seatClick(seat, $event)"
                           @mouseenter="seatEnter(seat, $event)"
                           @mouseleave="seatLeave()"
@@ -1777,6 +1844,32 @@ function deleteTemplate(tplId) {
     <template #footer>
       <button class="gms-btn gms-btn-ghost" @click="templateModal=false">Cancel</button>
       <button v-if="activeVenueTemplates.length > 0" class="gms-btn gms-btn-primary" @click="assignTemplate">Apply Template</button>
+    </template>
+  </GmsModal>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       CLEAR ALL CONFIRMATION MODAL
+  ══════════════════════════════════════════════════════════════ -->
+  <GmsModal :open="clearAllModal" title="Clear all seats?" size="sm" @close="clearAllModal=false">
+    <p style="font-size:13px;color:var(--gms-text-2);margin-bottom:16px;">
+      This will clear <strong>{{ seatStats.assigned + seatStats.reserved }} seat{{ (seatStats.assigned + seatStats.reserved) === 1 ? '' : 's' }}</strong>:
+    </p>
+    <ul style="font-size:13px;color:var(--gms-text-2);margin-bottom:16px;padding-left:24px;">
+      <li v-if="seatStats.assigned > 0">{{ seatStats.assigned }} assigned seat{{ seatStats.assigned === 1 ? '' : 's' }} (revoke all tickets)</li>
+      <li v-if="seatStats.reserved > 0">{{ seatStats.reserved }} reserved seat{{ seatStats.reserved === 1 ? '' : 's' }}</li>
+    </ul>
+    <p style="font-size:12px;color:var(--gms-text-3);margin-bottom:16px;">
+      Guest assignments will be removed, but guest records remain in the system.
+    </p>
+    <div style="padding:12px;background:var(--gms-surface-3);border-radius:6px;border-left:3px solid #dc2626;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:600;color:#dc2626;margin-bottom:4px;">⚠️ This action cannot be undone</div>
+      <div style="font-size:11.5px;color:var(--gms-text-3);">All seat assignments and reservations for this match will be permanently cleared.</div>
+    </div>
+    <template #footer>
+      <button class="gms-btn gms-btn-ghost" @click="clearAllModal=false">Cancel</button>
+      <button class="gms-btn gms-btn-danger" @click="confirmClearAll">
+        <GmsIcon name="trash" :size="13" /> Clear all seats
+      </button>
     </template>
   </GmsModal>
 </template>

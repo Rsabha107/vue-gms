@@ -226,6 +226,11 @@ const drawerOpen      = ref(false)
 const activeGuest     = ref(null)
 const actionsMenuOpen = ref(null)
 const drawerTab       = ref('overview')
+
+const guestVipLevel = computed(() => {
+    if (!activeGuest.value) return null
+    return ['T1', 'T2'].includes(activeGuest.value.tier) ? 'VVIP' : 'VIP'
+})
 const tierPickerOpen  = ref(false)
 const companionsExpanded = ref(true)
 const preferencesExpanded = ref(true)
@@ -393,7 +398,28 @@ function guestServices(g) {
         transport: g.serviceStatuses?.transport,
         arrival: g.serviceStatuses?.arrival,
     }
-    return serviceModules.filter(m => included.includes(m.id)).map(m => ({ ...m, status: statusMap[m.id] || 'Not requested' }))
+    return serviceModules.filter(m => included.includes(m.id)).map(m => {
+        const service = { ...m, status: statusMap[m.id] || 'Not requested' }
+        // Add seat info for seating module
+        if (m.id === 'seating') {
+            service.seatInfo = getGuestSeats(g)
+        }
+        // Add flight info for flights module
+        if (m.id === 'flights') {
+            service.flightInfo = g.flightInfo || []
+        }
+        return service
+    })
+}
+
+function getGuestSeats(g) {
+    if (!g?.seatAssignments || g.seatAssignments.length === 0) return []
+    // Get confirmed matches from invitations
+    const confirmedMatches = getConfirmedMatches(g)
+    const confirmedMatchIds = new Set(confirmedMatches.map(cm => cm.match.id))
+    
+    // Filter seat assignments to only confirmed matches
+    return g.seatAssignments.filter(seat => confirmedMatchIds.has(seat.match_id))
 }
 
 function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : '' }
@@ -717,6 +743,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       <div class="gd-hinfo">
         <div class="gd-name-row">
           <span class="gd-name">{{ activeGuest.name }}</span>
+          <span class="gms-pill" :style="{ background: guestVipLevel === 'VVIP' ? '#8a1f3d' : '#5b4a8a', color: '#ffffff', fontSize: '11px', fontWeight: '700' }">{{ guestVipLevel }}</span>
           <span class="gms-pill" :style="{ background: tierFor(activeGuest.tier)?.bg, color: tierFor(activeGuest.tier)?.color, fontSize: '11px' }">{{ tierFor(activeGuest.tier)?.name ?? activeGuest.tier }}</span>
         </div>
         <div class="gd-meta">
@@ -795,7 +822,22 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <div class="gd-service-grid">
           <div v-for="svc in guestServices(activeGuest)" :key="svc.id" class="gd-service-card" :class="{ 'gd-full': svc.full }">
             <div class="gd-svc-top"><div class="gd-svc-icon"><GmsIcon :name="svc.icon" :size="16" /></div><div class="gd-svc-name">{{ svc.label }}</div></div>
-            <div class="gd-svc-bot"><span class="gd-svc-sub">Included</span><GmsPill :value="svc.status" /></div>
+            <div class="gd-svc-bot">
+              <div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%;">
+                <GmsPill :value="svc.status" />
+                <div v-if="svc.id === 'seating' && svc.seatInfo && svc.seatInfo.length > 0" style="display:flex;flex-wrap:wrap;gap:4px;">
+                  <span v-for="seat in svc.seatInfo" :key="seat.id" class="gms-pill" style="background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;font-family:var(--gms-font-mono);">
+                    <span v-if="seat.block" style="opacity:0.7;">{{ seat.block }}</span><span v-if="seat.block && seat.block_label" style="opacity:0.5;margin:0 2px;">·</span><span v-if="seat.block_label" style="opacity:0.7;">{{ seat.block_label }}</span><span v-if="seat.block || seat.block_label" style="margin:0 4px;">•</span>{{ seat.seat_code }}
+                  </span>
+                </div>
+                <div v-if="svc.id === 'flights' && svc.flightInfo && svc.flightInfo.length > 0" style="display:flex;flex-direction:column;gap:4px;width:100%;">
+                  <div v-for="flight in svc.flightInfo" :key="flight.id" style="display:flex;align-items:center;gap:6px;font-size:11px;">
+                    <span class="gms-pill" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;font-family:var(--gms-font-mono);">{{ flight.code }}</span>
+                    <span style="color:var(--gms-text-2);">{{ flight.route }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </template>

@@ -7221,8 +7221,17 @@
 .inv-status-pill.accepted .inv-status-dot,
 .inv-status-pill.confirmed .inv-status-dot { background: var(--good); }
 
+.inv-status-pill.assigned { background: var(--good-soft); color: var(--good); }
+.inv-status-pill.assigned .inv-status-dot { background: var(--good); }
+
 .inv-status-pill.declined { background: var(--bad-soft); color: var(--bad); }
 .inv-status-pill.declined .inv-status-dot { background: var(--bad); }
+
+.inv-status-pill.cancelled { background: var(--bad-soft); color: var(--bad); }
+.inv-status-pill.cancelled .inv-status-dot { background: var(--bad); }
+
+.inv-status-pill.new { background: #fef3c7; color: #f59e0b; }
+.inv-status-pill.new .inv-status-dot { background: #f59e0b; }
 
 /* ================================================================
    Add-guests picker (modal)

@@ -35,6 +35,11 @@ class Seat extends Model
         return $this->belongsTo(SeatingTemplate::class, 'seating_template_id');
     }
 
+    public function block(): BelongsTo
+    {
+        return $this->belongsTo(SeatingBlock::class, 'block_code', 'code');
+    }
+
     /** Serialize to the flat shape the Vue seat map consumes. */
     public function toMapArray(): array
     {

@@ -25,9 +25,17 @@ class GmsInvitationController extends Controller
         // Roster = guests on this event (via guest_event pivot)
         $roster = [];
         if ($eventId) {
-            $roster = Guest::with(['status', 'group', 'events', 'invitations' => function ($q) use ($eventId) {
-                $q->where('event_id', $eventId)->with(['matches.venue', 'status']);
-            }])
+            $roster = Guest::with([
+                'status', 
+                'group', 
+                'events', 
+                'invitations' => function ($q) use ($eventId) {
+                    $q->where('event_id', $eventId)->with(['matches.venue', 'status']);
+                },
+                'seats',
+                'transportRequests',
+                'arrivalDepartureRequests'
+            ])
                 ->whereHas('events', fn($q) => $q->where('event_id', $eventId))
                 ->orderBy('name')
                 ->get()
@@ -44,6 +52,28 @@ class GmsInvitationController extends Controller
                     $accommodationRequest = AccommodationRequest::with('status')
                         ->where('guest_id', $guest->id)
                         ->orderBy('created_at', 'desc')->first();
+
+                    // Seat status - check if guest has any seat assignments
+                    $seatStatus = null;
+                    if ($guest->seats->isNotEmpty()) {
+                        $seatStatus = 'assigned';
+                    }
+
+                    // Transport status
+                    $transportStatus = null;
+                    if ($guest->transportRequests->isNotEmpty()) {
+                        $latestTransport = $guest->transportRequests->sortByDesc('created_at')->first();
+                        $transportStatus = $latestTransport->status?->name 
+                            ? strtolower($latestTransport->status->name)
+                            : 'pending';
+                    }
+
+                    // Arrival & Departure status
+                    $adStatus = null;
+                    if ($guest->arrivalDepartureRequests->isNotEmpty()) {
+                        $latestAD = $guest->arrivalDepartureRequests->sortByDesc('created_at')->first();
+                        $adStatus = $latestAD->status ?? 'pending';
+                    }
 
                     $sessions = 0;
                     if ($latestInvitation) {
@@ -90,9 +120,9 @@ class GmsInvitationController extends Controller
                             'accommodation' => $accommodationRequest?->status?->name
                                 ? strtolower($accommodationRequest->status->name)
                                 : null,
-                            'seat' => null,
-                            'transport' => null,
-                            'ad' => null,
+                            'seat' => $seatStatus,
+                            'transport' => $transportStatus,
+                            'ad' => $adStatus,
                         ],
                     ];
                 })

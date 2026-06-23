@@ -424,6 +424,26 @@ class GmsSeatingController extends Controller
         return back()->with('success', "Template assigned. Generated {$seatCount} seats.");
     }
 
+    public function clearAllAssigned($matchId)
+    {
+        $match = GameMatch::findOrFail($matchId);
+        
+        // Update all assigned, ticket, and reserved seats to available
+        $clearedCount = Seat::where('game_match_id', $matchId)
+            ->whereIn('status', [Seat::ASSIGNED, Seat::TICKET, Seat::RESERVED])
+            ->update([
+                'status'    => Seat::AVAILABLE,
+                'guest_id'  => null,
+                'res_label' => null,
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'cleared' => $clearedCount,
+            'message' => "Cleared {$clearedCount} seat(s)"
+        ]);
+    }
+
     private function calcStats(array $seats): array
     {
         $total    = 0;
