@@ -18,12 +18,15 @@ class Event extends Model
         'date_end',
         'logo',
         'active_flag',
+        'portal_enabled',
+        'portal_auth_mode',
     ];
 
     protected $casts = [
         'date_start' => 'date',
         'date_end' => 'date',
         'active_flag' => 'boolean',
+        'portal_enabled' => 'boolean',
     ];
 
     /**

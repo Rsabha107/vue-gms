@@ -12,6 +12,7 @@ import GmsBtn from '@/Components/Gms/GmsBtn.vue'
 import GmsGuestPicker from '@/Components/Gms/GmsGuestPicker.vue'
 import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
 import GmsTimePicker from '@/Components/Gms/GmsTimePicker.vue'
+import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -30,12 +31,22 @@ const viewMode = ref('queue') // queue | schedule
 // ── Filters ───────────────────────────────────────────────────────
 const search       = ref('')
 const statusFilter = ref('all')
+const sourceFilter = ref('all')
+
 const tabs = [
     { key: 'all',       label: 'All' },
     { key: 'new',       label: 'New' },
     { key: 'change',    label: 'Change' },
     { key: 'confirmed', label: 'Confirmed' },
     { key: 'cancelled', label: 'Cancelled' },
+]
+
+const sourceOptions = [
+    { id: 'all', name: 'All Sources' },
+    { id: 'portal', name: 'Portal' },
+    { id: 'manual', name: 'Manual' },
+    { id: 'phone', name: 'Phone' },
+    { id: 'email', name: 'Email' },
 ]
 
 function countFor(key) {
@@ -53,6 +64,11 @@ const filtered = computed(() => {
     else if (statusFilter.value === 'change')    list = list.filter(r => r.changeRequest)
     else if (statusFilter.value === 'confirmed') list = list.filter(r => r.status === 'confirmed')
     else if (statusFilter.value === 'cancelled') list = list.filter(r => r.status === 'cancelled')
+    
+    if (sourceFilter.value !== 'all') {
+        list = list.filter(r => r.source === sourceFilter.value)
+    }
+    
     if (search.value) {
         const q = search.value.toLowerCase()
         list = list.filter(r =>
@@ -594,6 +610,14 @@ function saveNew() {
         </button>
       </div>
       
+      <GmsFilterDropdown
+        v-model="sourceFilter"
+        label="Source"
+        all-label="All Sources"
+        :options="sourceOptions"
+        style="margin-left: 12px;"
+      />
+      
       <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ localReqs.length }}</span>
     </div>
 
@@ -620,8 +644,13 @@ function saveNew() {
                 <td>
                   <div style="display:flex;align-items:center;gap:9px;">
                     <GmsAvatar :name="r.guestName" size="sm" />
-                    <div>
-                      <div style="font-weight:600;font-size:13px;line-height:1.2;">{{ r.guestName }}</div>
+                    <div style="flex:1;">
+                      <div style="display:flex;align-items:center;gap:6px;">
+                        <div style="font-weight:600;font-size:13px;line-height:1.2;">{{ r.guestName }}</div>
+                        <span v-if="r.source === 'portal'" class="portal-badge">
+                          <GmsIcon name="globe" :size="10" />
+                        </span>
+                      </div>
                       <div style="font-size:11px;font-family:var(--gms-font-mono);color:var(--gms-text-3);margin-top:2px;">{{ r.pnr }}</div>
                     </div>
                   </div>
@@ -1252,3 +1281,16 @@ function saveNew() {
     </template>
   </GmsModal>
 </template>
+
+<style scoped>
+.portal-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--gms-maroon);
+    color: white;
+}
+</style>

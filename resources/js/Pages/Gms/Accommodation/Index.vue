@@ -10,6 +10,8 @@ import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 import GmsBtn from '@/Components/Gms/GmsBtn.vue'
 import GmsGuestPicker from '@/Components/Gms/GmsGuestPicker.vue'
+import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
+import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -27,6 +29,15 @@ const toast = inject('toast')
 const localReqs = ref(props.requests.map(r => ({ ...r })))
 const search       = ref('')
 const statusFilter = ref('all')
+const sourceFilter = ref('all')
+
+const sourceOptions = [
+    { id: 'all', name: 'All Sources' },
+    { id: 'portal', name: 'Portal' },
+    { id: 'manual', name: 'Manual' },
+    { id: 'phone', name: 'Phone' },
+    { id: 'email', name: 'Email' },
+]
 
 const statuses = ['all', 'new', 'change', 'confirmed', 'cancelled']
 const statusColors = {
@@ -39,6 +50,11 @@ const statusColors = {
 const filtered = computed(() => {
     let list = localReqs.value
     if (statusFilter.value !== 'all') list = list.filter(r => r.status === statusFilter.value)
+    
+    if (sourceFilter.value !== 'all') {
+        list = list.filter(r => r.source === sourceFilter.value)
+    }
+    
     if (search.value) {
         const q = search.value.toLowerCase()
         list = list.filter(r => r.guestName.toLowerCase().includes(q) || r.hotelName.toLowerCase().includes(q))
@@ -266,6 +282,14 @@ function saveEdit() {
         </button>
       </div>
       
+      <GmsFilterDropdown
+        v-model="sourceFilter"
+        label="Source"
+        all-label="All Sources"
+        :options="sourceOptions"
+        style="margin-left: 12px;"
+      />
+      
       <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ localReqs.length }}</span>
     </div>
 
@@ -289,7 +313,12 @@ function saveEdit() {
                 <td>
                   <div style="display:flex;align-items:center;gap:8px;">
                     <GmsAvatar :name="r.guestName" size="sm" />
-                    <span style="font-weight:600;font-size:13px;">{{ r.guestName }}</span>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <span style="font-weight:600;font-size:13px;">{{ r.guestName }}</span>
+                      <span v-if="r.source === 'portal'" class="portal-badge">
+                        <GmsIcon name="globe" :size="10" />
+                      </span>
+                    </div>
                   </div>
                 </td>
                 <td><span class="gms-small">{{ r.hotelName }}</span></td>
@@ -385,11 +414,11 @@ function saveEdit() {
         </div>
         <div class="gms-field">
           <label class="gms-label">Check-in</label>
-          <input v-model="form.checkIn" type="date" class="gms-input" />
+          <GmsDatePicker v-model="form.checkIn" placeholder="Select check-in date" dateFormat="Y-m-d" />
         </div>
         <div class="gms-field">
           <label class="gms-label">Check-out</label>
-          <input v-model="form.checkOut" type="date" class="gms-input" />
+          <GmsDatePicker v-model="form.checkOut" placeholder="Select check-out date" dateFormat="Y-m-d" />
         </div>
       </div>
       <div class="gms-field">
@@ -428,11 +457,11 @@ function saveEdit() {
         </div>
         <div class="gms-field">
           <label class="gms-label">Check-in</label>
-          <input v-model="form.checkIn" type="date" class="gms-input" />
+          <GmsDatePicker v-model="form.checkIn" placeholder="Select check-in date" dateFormat="Y-m-d" />
         </div>
         <div class="gms-field">
           <label class="gms-label">Check-out</label>
-          <input v-model="form.checkOut" type="date" class="gms-input" />
+          <GmsDatePicker v-model="form.checkOut" placeholder="Select check-out date" dateFormat="Y-m-d" />
         </div>
       </div>
       <div class="gms-field">
@@ -447,3 +476,16 @@ function saveEdit() {
   </GmsModal>
   </div>
 </template>
+
+<style scoped>
+.portal-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--gms-maroon);
+    color: white;
+}
+</style>

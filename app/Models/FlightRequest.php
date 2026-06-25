@@ -17,6 +17,17 @@ class FlightRequest extends Model
         'pax',
         'requested_at',
         'note',
+        'initiated_by',
+        'source',
+        'assigned_officer_id',
+        'reminded_at',
+        'escalated_at',
+        'escalation_reason',
+    ];
+
+    protected $casts = [
+        'reminded_at' => 'datetime',
+        'escalated_at' => 'datetime',
     ];
 
     public function event(): BelongsTo
@@ -27,6 +38,11 @@ class FlightRequest extends Model
     public function guest(): BelongsTo
     {
         return $this->belongsTo(Guest::class);
+    }
+
+    public function assignedOfficer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_officer_id');
     }
 
     public function legs(): HasMany

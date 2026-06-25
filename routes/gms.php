@@ -7,12 +7,14 @@ use App\Http\Controllers\Gms\GmsEmailTemplateController;
 use App\Http\Controllers\Gms\GmsEventController;
 use App\Http\Controllers\Gms\GmsEventsController;
 use App\Http\Controllers\Gms\GmsFlightController;
+use App\Http\Controllers\Gms\GmsFloorPlanController;
 use App\Http\Controllers\Gms\GmsGroupsController;
 use App\Http\Controllers\Gms\GmsGuestController;
 use App\Http\Controllers\Gms\GmsInvitationController;
 use App\Http\Controllers\Gms\GmsMatchesController;
 use App\Http\Controllers\Gms\GmsSeatingController;
 use App\Http\Controllers\Gms\GmsServiceLevelController;
+use App\Http\Controllers\Gms\GmsSettingsController;
 use App\Http\Controllers\Gms\GmsTransportController;
 use App\Http\Controllers\Gms\GmsVenuesController;
 use Illuminate\Support\Facades\Route;
@@ -43,6 +45,7 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/invitations/{id}/mark-confirmed',   [GmsInvitationController::class, 'markConfirmed'])->name('invitations.markConfirmed');
     Route::post('/invitations/{id}/mark-declined',    [GmsInvitationController::class, 'markDeclined'])->name('invitations.markDeclined');
     Route::post('/invitations/{id}/reset-pending',    [GmsInvitationController::class, 'resetToPending'])->name('invitations.resetToPending');
+    Route::post('/invitations/send-portal/{guestId}', [GmsInvitationController::class, 'sendPortalLink'])->name('invitations.sendPortalLink');
 
     // Seating
     Route::get('/seating',                                     [GmsSeatingController::class, 'index'])->name('seating.index');
@@ -59,6 +62,10 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/service-levels',        [GmsServiceLevelController::class, 'store'])->name('service-levels.store');
     Route::put('/service-levels/{id}',    [GmsServiceLevelController::class, 'update'])->name('service-levels.update');
     Route::delete('/service-levels/{id}', [GmsServiceLevelController::class, 'destroy'])->name('service-levels.destroy');
+
+    // Floor Plans
+    Route::get('/floorplans', [GmsFloorPlanController::class, 'index'])->name('floorplans.index');
+    Route::post('/floorplans/{plan}', [GmsFloorPlanController::class, 'save'])->name('floorplans.save');
 
     // Flights
     Route::get('/flights',                  [GmsFlightController::class, 'index'])->name('flights.index');
@@ -118,12 +125,6 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::delete('/groups/{id}',  [GmsGroupsController::class, 'destroy'])->name('groups.destroy');
 
     // Settings
-    Route::get('/settings', function () {
-        return inertia('Gms/Settings/Index', [
-            'user'           => auth()->user(),
-            'event'          => \App\Services\Gms\GmsMockData::getEvent(),
-            'teamUsers'      => \App\Models\User::orderBy('name')->get(),
-            'emailTemplates' => \App\Services\Gms\GmsMockData::getEmailTemplates(),
-        ]);
-    })->name('settings');
+    Route::get('/settings', [GmsSettingsController::class, 'index'])->name('settings');
+    Route::post('/settings/portal', [GmsSettingsController::class, 'updatePortalSettings'])->name('settings.portal');
 });

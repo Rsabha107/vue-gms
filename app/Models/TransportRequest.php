@@ -19,6 +19,17 @@ class TransportRequest extends Model
         'datetime',
         'driver',
         'notes',
+        'initiated_by',
+        'source',
+        'assigned_officer_id',
+        'reminded_at',
+        'escalated_at',
+        'escalation_reason',
+    ];
+
+    protected $casts = [
+        'reminded_at' => 'datetime',
+        'escalated_at' => 'datetime',
     ];
 
     public function event(): BelongsTo
@@ -34,6 +45,11 @@ class TransportRequest extends Model
     public function status(): BelongsTo
     {
         return $this->belongsTo(TransportStatus::class, 'status_id');
+    }
+
+    public function assignedOfficer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_officer_id');
     }
 
     /**

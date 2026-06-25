@@ -13,9 +13,18 @@ class GmsVenuesController extends Controller
     public function index()
     {
         $matches = GmsMockData::getMatches();
+        $currentEvent = GmsMockData::getEvent();
+        $currentEventId = $currentEvent['id'] ?? null;
 
-        $venues = Venue::withCount('events')->whereNotNull('name')->where('name', '!=', '')->orderByDesc('capacity')->get()->map(function ($venue) use ($matches) {
+        $venues = Venue::withCount('events')->whereNotNull('name')->where('name', '!=', '')->orderByDesc('capacity')->get()->map(function ($venue) use ($matches, $currentEventId) {
             $matchCount = count(array_filter($matches, fn($m) => $m['venueName'] === $venue->name));
+            
+            // Check if venue is associated with current event
+            $isInCurrentEvent = false;
+            if ($currentEventId) {
+                $isInCurrentEvent = $venue->events()->where('event_id', $currentEventId)->exists();
+            }
+            
             return [
                 'id'           => $venue->id,
                 'name'         => $venue->name,
@@ -26,12 +35,13 @@ class GmsVenuesController extends Controller
                 'notes'        => $venue->notes,
                 'events_count' => $venue->events_count,
                 'matches_count'=> $matchCount,
+                'in_current_event' => $isInCurrentEvent,
             ];
         });
 
         return Inertia::render('Gms/Venues/Index', [
             'venues' => $venues,
-            'event'  => GmsMockData::getEvent(),
+            'event'  => $currentEvent,
         ]);
     }
 

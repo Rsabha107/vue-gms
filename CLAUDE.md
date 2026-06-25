@@ -18,30 +18,53 @@ The original prototype (`GMS - Standalone.html`, root) is kept for reference onl
 
 ```
 app/
-  Http/Controllers/Gms/       ← controllers (one per view + event controller)
+  Http/Controllers/
+    Gms/                      ← controllers (one per view + event controller)
+    Portal/
+      PortalDashboardController.php ← guest portal dashboard
+  Mail/
+    GuestInvitationMail.php   ← invitation email mailable
+    PortalAccessMail.php      ← portal access email mailable (queued)
   Models/
     Event.php                 ← Event model with venues() relationship
     Venue.php                 ← Venue model
-  Services/Gms/GmsMockData.php ← mock data + event fetching
+    GameMatch.php             ← Match model
+    Guest.php                 ← Guest model
+    Invitation.php            ← Invitation model
+  Services/Gms/
+    GmsMockData.php           ← mock data + event fetching
+    PortalTokenService.php    ← signed URL generation & tracking
 
 database/
   migrations/
     2026_04_12_191803_create_venues_table.php
     2026_04_12_191803_create_events_table.php
     2026_04_12_191804_create_venue_event_table.php
+    2026_06_24_190514_add_guest_portal_columns_to_invitations_table.php
+    2026_06_24_190709_add_service_tracking_columns_to_service_requests.php
+    2026_06_24_192348_add_portal_settings_to_events_table.php
   seeders/
     VenueSeeder.php           ← venue data
     EventSeeder.php           ← sample events with venue attachments
 
 routes/
   gms.php                     ← all GMS routes
+  portal.php                  ← public portal routes (included in web.php)
 
 resources/
   css/gms.css                 ← GMS design tokens + all component CSS
   js/
-    Layouts/GmsLayout.vue     ← shell: sidebar + topbar + event selector + toast provider
-    Components/Gms/           ← shared primitives (see below)
-    Pages/Gms/                ← 9 page views (see below)
+    Layouts/
+      GmsLayout.vue           ← shell: sidebar + topbar + event selector + toast provider
+      PortalLayout.vue        ← guest portal shell
+    Components/Gms/           ← shared primitives
+    Pages/
+      Gms/                    ← GMS admin pages
+      Portal/
+        Dashboard.vue         ← guest portal dashboard
+  views/emails/
+    guest-invitation.blade.php ← invitation email template
+    portal-access.blade.php    ← portal access email template
 ```
 
 ---
@@ -107,13 +130,20 @@ Seat mutations currently use `axios.post` to stub endpoints (`/gms/seating/{matc
 | GmsEventsController | `GET /gms/events` + CRUD | `Gms/Events/Index` |
 | GmsGroupsController | `GET /gms/groups` + CRUD | `Gms/Groups/Index` |
 | GmsGuestController | `GET /gms/guests` + CRUD + `POST /gms/guests/import` + `POST /gms/guests/add-to-event` + `POST /gms/guests/remove-from-event` | `Gms/Guests/Index` |
-| GmsInvitationController | `GET /gms/invitations` + `POST /gms/invitations/add-guests` + `DELETE /gms/invitations/remove-guest/{id}` | `Gms/Invitations/Index` |
+| GmsInvitationController | `GET /gms/invitations` + `POST /gms/invitations/add-guests` + `POST /gms/invitations/sendPortalLink` + `DELETE /gms/invitations/remove-guest/{id}` | `Gms/Invitations/Index` |
 | GmsSeatingController | `GET /gms/seating` | `Gms/Seating/Index` |
 | GmsServiceLevelController | `GET /gms/service-levels` + CRUD | `Gms/ServiceLevels/Index` |
 | GmsFlightController | `GET /gms/flights` + CRUD | `Gms/Flights/Index` |
 | GmsAccommodationController | `GET /gms/accommodation` + CRUD | `Gms/Accommodation/Index` |
 | GmsTransportController | `GET /gms/transport` + CRUD | `Gms/Transport/Index` |
 | GmsArrivalDepartureController | `GET /gms/arrival-departure` + CRUD | `Gms/ArrivalDeparture/Index` |
+| GmsSettingsController | `GET /gms/settings` + `POST /gms/settings/portal` | `Gms/Settings/Index` |
+
+**Portal Controllers (`app/Http/Controllers/Portal/`):**
+
+| Controller | Route | Inertia page |
+|---|---|---|
+| PortalDashboardController | `GET /portal/dashboard/{guest}` (signed URL) | `Portal/Dashboard` |
 
 Each controller validates on mutations and returns `back()->with('success', …)` (stub until DB is wired).
 
@@ -145,7 +175,7 @@ Props accessed:
 
 | Component | Props | Notes |
 |---|---|---|
-| `GmsIcon` | `name`, `size=16` | ~40 inline SVGs including `loader` for spinners. See `icons` map in file for names. Includes: home, users, mail, eye, edit, trash, more-vertical, calendar, loader, etc. `loader` icon auto-spins with `.gms-icon-spin` class. |
+| `GmsIcon` | `name`, `size=16` | ~40 inline SVGs including `loader` for spinners. See `icons` map in file for names. Includes: home, users, mail, eye, edit, trash, more-vertical, calendar, loader, globe, etc. `loader` icon auto-spins with `.gms-icon-spin` class. |
 | `GmsBtn` | `variant='ghost'/'primary'/'danger'`, `icon`, `processing=false`, `disabled=false` | Button component with built-in processing state. Shows spinner when `processing=true`. Auto-disables during processing. |
 | `GmsAvatar` | `name`, `size='md'` (`sm/md/lg/xl`) | Initials, auto-colored from 10-palette. |
 | `GmsPill` | `type='status'/'tier'/'custom'`, `value`, `tiers=[]`, `bg`, `fg` | Status pills use built-in color map; tier pills need `tiers` prop. |
@@ -220,11 +250,12 @@ Roster for the current event — everyone who's been added, and where their invi
 - **Add guests picker:** Modal pulls from directory (guests NOT on event), multi-select, adds as "Not invited"
 - **Status vocabulary:** `not_invited` (on roster, no invite), `invited` (sent, awaiting), `accepted`/`confirmed`, `declined`
 - **Table columns:** Guest, Service (tier pill), Sessions (accepted match count), Status, Sent/Accepted dates, Passport
-- **Row actions:** "Invite" button (not-invited), edit icon (invited+), more menu (accept on behalf, mark confirmed/declined, remove from roster)
+- **Row actions:** "Invite" button (not-invited), edit icon (invited+), more menu (send portal link, accept on behalf, mark confirmed/declined, remove from roster)
 - **Guest services overview:** Second tab showing service module statuses for confirmed guests
+- **Portal link:** "Send portal link" in actions menu (⋮) — queues email with signed URL for guest self-service portal
 
 Props: `roster` (guests on event with invitation data), `directory` (guests NOT on event, for picker), `tiers`, `emailTemplates`, `event`.
-Routes: `gms.invitations.index` (GET), `gms.invitations.send` (POST), `gms.invitations.addGuests` (POST), `gms.invitations.removeGuest` (DELETE), `gms.invitations.acceptOnBehalf` (POST), `gms.invitations.markConfirmed` (POST), `gms.invitations.markDeclined` (POST), `gms.invitations.resetToPending` (POST).
+Routes: `gms.invitations.index` (GET), `gms.invitations.send` (POST), `gms.invitations.addGuests` (POST), `gms.invitations.sendPortalLink` (POST), `gms.invitations.removeGuest` (DELETE), `gms.invitations.acceptOnBehalf` (POST), `gms.invitations.markConfirmed` (POST), `gms.invitations.markDeclined` (POST), `gms.invitations.resetToPending` (POST).
 
 ### Seating (`Gms/Seating/Index.vue`)
 Internal view state machine: `view = 'list' | 'map'`.
@@ -348,6 +379,27 @@ Local state: `localGroups` (reactive copy), `groupModal`, `editingGroup`, `delet
 
 **Database:** Fully wired to `groups` table. CRUD operations persist via `GmsGroupsController` → `Group` model. Model includes `guests()` relationship and prevents deletion of groups with assigned guests.
 
+### Settings (`Gms/Settings/Index.vue`)
+Application configuration page under Setup sidebar section. Multi-section settings with left navigation.
+
+**Features:**
+- **Left Navigation:** Tabs for General, Modules, Account & profile, Users & roles, Notifications, Email templates, Branding, Data & export
+- **Modules Section:** Toggle switches for enabling/disabling GMS modules (Flights, Accommodation, Transport, Arrival & Departure)
+- **Guest Portal Toggle:** Enable/disable portal with authentication mode selector (Signed URL/Magic Link/Full Auth)
+- **Email Templates:** Template list sidebar + editor with merge tags, create/delete/test functionality
+- **Users & Roles:** Team member list with search, role permissions matrix
+- **Settings Persistence:** Per-event settings stored in `events` table
+
+**Portal Configuration:**
+- Toggle switch with globe icon for enabling guest portal
+- Nested authentication mode selector (visible when enabled)
+- Options: Signed URL (Basic), Magic Link (Enhanced Security), Full Authentication
+- Save button with `portalForm.processing` state
+- Backend route: `POST /gms/settings/portal`
+
+Props: `user`, `event`, `teamUsers`, `emailTemplates`, `portalSettings`.
+Routes: `gms.settings.index` (GET), `gms.settings.portal` (POST), `gms.email-templates.*` (CRUD).
+
 ---
 
 ## Design system (`resources/css/gms.css`)
@@ -393,6 +445,178 @@ Seating templates: `{id, venueId, name, blocks[]}`. Each block: `{id, label, col
 `GmsMockData::seatsFromTemplate($tpl)` generates the flat seat array from a template's blocks.
 
 Each match owns its own seat instance in `matchSeats[matchId]` — assignments never bleed between matches. Matches that haven't picked a template show the TemplatePicker.
+
+---
+
+## Guest Portal
+
+**Self-service portal for VIP guests** — Secure, personalized dashboard for viewing itineraries and service requests. Accessed via time-limited signed URLs sent by protocol officers.
+
+### Architecture
+
+**Authentication:** Laravel signed URLs (default 72-hour expiry)
+- Cryptographically authenticated, tamper-proof URLs
+- No password/login required for guest
+- Configurable auth modes: `signed_url` (default), `magic_link`, `full_auth`
+
+**Database Schema:**
+
+**Invitations table portal tracking:**
+- `portal_sent_at` — timestamp when portal link was sent
+- `portal_accessed_at` — first access timestamp
+- `portal_last_accessed_at` — most recent access timestamp
+- `portal_token` — URL signature token
+- `portal_token_expires_at` — expiry timestamp
+- `service_mode` — enum('portal','white_glove','hybrid') — workflow mode
+- `services_completed` — boolean flag
+- `services_completed_at` — completion timestamp
+
+**Service request tables tracking:**
+- `initiated_by` — enum('guest','team') — who initiated request
+- `source` — enum('portal','manual','phone','email') — request origin
+- `assigned_officer_id` — foreign key to users table
+- `reminded_at` — reminder timestamp
+- `escalated_at` — escalation timestamp
+- `escalation_reason` — text field
+
+**Events table portal settings:**
+- `portal_enabled` — boolean, default false
+- `portal_auth_mode` — enum('signed_url','magic_link','full_auth'), default 'signed_url'
+
+### Backend Services & Controllers
+
+**PortalTokenService (`app/Services/Gms/PortalTokenService.php`):**
+- `generateSignedUrl($guest, $hoursValid=72)` — create signed URL with expiry
+- `trackPortalSent($invitation, $token, $hoursValid)` — record link sent
+- `trackPortalAccess($invitation)` — record guest access
+- `isTokenValid($invitation)` — check token expiry
+- `generateMagicLink($guest)` — for enhanced security mode
+
+**PortalDashboardController (`app/Http/Controllers/Portal/PortalDashboardController.php`):**
+- Route: `GET /portal/dashboard/{guest}` (public, signed URL required)
+- Validates signature via `$request->hasValidSignature()`
+- Loads guest, event, invitation, matches, service requests
+- Tracks portal access timestamp
+- Returns `Portal/Dashboard` Inertia page
+
+**GmsInvitationController::sendPortalLink():**
+- Route: `POST /gms/invitations/send-portal/{guestId}`
+- Validates guest has email address
+- Generates signed URL via `PortalTokenService`
+- Queues email via `Mail::to($guest->email)->queue(new PortalAccessMail(...))`
+- Tracks `portal_sent_at` timestamp
+- Returns success toast: "Portal access link queued for {Guest Name}"
+
+**PortalAccessMail (`app/Mail/PortalAccessMail.php`):**
+- Implements `Queueable` trait for async delivery
+- Email template: `resources/views/emails/portal-access.blade.php`
+- Data: guest name/title, portal URL, event details, expiry time
+- Subject: "Your {Event Name} Guest Portal Access"
+
+### Frontend Components
+
+**PortalLayout (`resources/js/Layouts/PortalLayout.vue`):**
+- Guest-facing layout shell (different from GmsLayout)
+- Header with event branding, guest avatar
+- Container with responsive layout
+- Footer with contact info
+- CSS tokens: `--portal-*` (text, bg, border, maroon)
+
+**Portal/Dashboard (`resources/js/Pages/Portal/Dashboard.vue`):**
+- Welcome section with guest name
+- Invitation status card (status, service level, group)
+- Match schedule (date badge, teams, venue, kickoff, stage)
+- Service requests overview (flights, accommodation, transport)
+- Contact information card
+- Empty states for no matches/services
+- Props: `guest`, `event`, `invitation`, `matches`, `services`
+- **Match field mapping:** `date`, `team_a_name`, `team_b_name`, `time`, `venue.name`, `stage`
+
+### Settings Integration
+
+**Settings → Modules (`Gms/Settings/Index.vue`):**
+- Guest Portal toggle switch (globe icon)
+- Authentication mode selector (visible when enabled)
+- Save button with `portalForm.processing` state
+- Backend route: `POST /gms/settings/portal`
+- Persists to `events` table per event
+
+### Invitations Integration
+
+**Send Portal Link Action:**
+- Location: Invitations row actions dropdown (⋮ menu)
+- Menu item: "Send portal link" with globe icon
+- Visibility: All guests except `not_invited` status
+- Action: `sendPortalLink(guest)` → calls backend route
+- Toast: "Portal access link queued for {Guest Name}"
+- Button auto-closes menu on click
+
+### Email Queue System
+
+**Setup:**
+```bash
+# Start queue worker (development)
+php artisan queue:listen
+
+# Or for production
+php artisan queue:work
+```
+
+**Configuration:**
+- Queue driver: `database` (configured in `config/queue.php`)
+- Jobs table: `jobs` (migration exists)
+- Default retry: 90 seconds
+- Emails queued via `Mail::to()->queue()` for async delivery
+
+**Email Template Features:**
+- Branded header with event name
+- Portal features list (itinerary, service requests, profile)
+- Access button (CTA)
+- Event info box (location, dates, expiry)
+- Security warning (72-hour expiry, don't share link)
+- Responsive design matching invitation emails
+
+### Usage Flow
+
+**Protocol Officer Workflow:**
+1. Enable portal in Settings → Modules
+2. Navigate to Invitations view
+3. Click ⋮ menu on guest row
+4. Select "Send portal link"
+5. Email queued and sent asynchronously
+6. Toast confirms: "Portal access link queued for [Guest Name]"
+
+**Guest Workflow:**
+1. Receives email with portal access link
+2. Clicks link (no login required)
+3. Signature validated by Laravel
+4. Portal dashboard loads with:
+   - Invitation status
+   - Match schedule
+   - Service requests overview
+   - Contact information
+5. Access tracked in database
+6. Link expires after 72 hours (configurable)
+
+### Security Features
+
+- **Signed URLs:** Laravel's cryptographic signature prevents tampering
+- **Time-limited:** Default 72-hour expiry (max 720 hours configurable)
+- **One-time token:** Each link gets unique token stored in `invitations.portal_token`
+- **Access tracking:** First and last access timestamps recorded
+- **Email validation:** Won't send if guest missing email address
+- **Signature verification:** `hasValidSignature()` check on every portal request
+- **Per-guest isolation:** Each URL tied to specific guest ID in route parameter
+
+### Future Enhancements
+
+- Service request submission forms in portal
+- Real-time notifications via WebSockets
+- Multi-language support
+- PDF itinerary export
+- QR code access (signed URL embedded)
+- Portal analytics dashboard
+- Guest preferences management
 
 ---
 

@@ -220,6 +220,14 @@ function removeFromRoster(guest) {
     })
 }
 
+function sendPortalLink(guest) {
+    router.post(route('gms.invitations.sendPortalLink', guest.id), {}, {
+        preserveScroll: true,
+        onSuccess: () => { actionsMenuOpen.value = null; toast(`Portal access link sent to ${guest.name}`) },
+        onError: (errors) => { toast(Object.values(errors)[0] || 'Failed to send portal link', 'error') },
+    })
+}
+
 function toggleActionsMenu(guestId, event) {
     if (actionsMenuOpen.value === guestId) {
         actionsMenuOpen.value = null
@@ -271,6 +279,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <p class="gms-view-subtitle">Roster for {{ event?.name ?? 'event' }} — everyone added to {{ event?.name ?? 'event' }} to invite them.</p>
       </div>
       <div class="gms-view-actions">
+        <GmsBtn variant="ghost" icon="refresh-cw" icon-only :disabled="isRefreshing" :processing="isRefreshing" @click="refreshRoster" title="Refresh" />
         <GmsBtn icon="download" @click="() => toast('Export feature coming soon')">Export</GmsBtn>
         <GmsBtn icon="plus" @click="openAddGuests">Add guests</GmsBtn>
         <GmsBtn variant="primary" icon="mail" @click="openInviteWizard(null)">New invitation</GmsBtn>
@@ -328,7 +337,6 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
           {{ s === 'all' ? 'All' : statusLabel(s) }}
         </button>
       </div>
-      <GmsBtn variant="ghost" icon="refresh-cw" icon-only :disabled="isRefreshing" :processing="isRefreshing" @click="refreshRoster" title="Refresh" style="margin-left:4px;" />
       <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ rosterCount }}</span>
     </div>
 
@@ -651,7 +659,8 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     >
       <button class="gms-menu-item" @click="openGuestDrawer(filtered.find(g => g.id === actionsMenuOpen)); actionsMenuOpen = null"><GmsIcon name="eye" :size="16" /> View profile</button>
       <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="acceptOnBehalf(filtered.find(g => g.id === actionsMenuOpen)); actionsMenuOpen = null"><GmsIcon name="check-circle" :size="16" /> Accept on behalf</button>
-      <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="markConfirmed(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="badge" :size="16" /> Mark confirmed</button>
+      <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.status !== 'not_invited'" class="gms-menu-item" @click="sendPortalLink(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="globe" :size="16" /> Send portal link</button>
+      <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.status === 'not_invited' || filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="markConfirmed(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="badge" :size="16" /> Mark confirmed</button>
       <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="markDeclined(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="x" :size="16" /> Mark declined</button>
       <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="resetToPending(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="refresh-cw" :size="16" /> Reset to not invited</button>
       <div class="gms-menu-sep"></div>

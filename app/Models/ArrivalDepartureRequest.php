@@ -17,14 +17,27 @@ class ArrivalDepartureRequest extends Model
         'lounge',
         'greeter',
         'notes',
+        'initiated_by',
+        'source',
+        'assigned_officer_id',
+        'reminded_at',
+        'escalated_at',
+        'escalation_reason',
     ];
 
     protected $casts = [
         'datetime' => 'datetime',
+        'reminded_at' => 'datetime',
+        'escalated_at' => 'datetime',
     ];
 
     public function guest(): BelongsTo
     {
         return $this->belongsTo(Guest::class);
+    }
+
+    public function assignedOfficer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_officer_id');
     }
 }

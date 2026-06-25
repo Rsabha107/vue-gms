@@ -453,4 +453,54 @@ class GmsInvitationController extends Controller
 
         return back()->with('success', $invitation->guest->name . ' has been reset to pending.');
     }
+
+    /**
+     * Send portal access link to a guest
+     */
+    public function sendPortalLink(Request $request, $guestId)
+    {
+        $validated = $request->validate([
+            'hoursValid' => 'nullable|integer|min:1|max:720', // Default 72h, max 30 days
+        ]);
+
+        $guest = Guest::findOrFail($guestId);
+        
+        // Validate guest has email
+        if (!$guest->email) {
+            return back()->with('error', 'Guest ' . $guest->name . ' does not have an email address.');
+        }
+
+        $event = GmsMockData::getEvent();
+
+        // Get or create invitation for this event
+        $invitation = Invitation::firstOrCreate(
+            [
+                'guest_id' => $guest->id,
+                'event_id' => $event['id'],
+            ],
+            [
+                'status_id' => 'invited',
+                'subject' => 'Guest Portal Access',
+                'body' => 'Your personal portal link is included in this email.',
+            ]
+        );
+
+        // Generate signed portal URL
+        $hoursValid = $validated['hoursValid'] ?? 72;
+        $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest, $hoursValid);
+        
+        // Extract token from URL for tracking
+        $urlParts = parse_url($portalUrl);
+        parse_str($urlParts['query'] ?? '', $queryParams);
+        $token = $queryParams['token'] ?? \Illuminate\Support\Str::random(64);
+
+        // Track portal link sent
+        \App\Services\Gms\PortalTokenService::trackPortalSent($invitation, $token, $hoursValid);
+
+        // Queue email with portal link
+        \Illuminate\Support\Facades\Mail::to($guest->email)
+            ->queue(new \App\Mail\PortalAccessMail($guest, $portalUrl, $event, $hoursValid));
+
+        return back()->with('success', 'Portal access link queued for ' . $guest->name);
+    }
 }

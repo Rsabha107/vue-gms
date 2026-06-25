@@ -19,11 +19,19 @@ class AccommodationRequest extends Model
         'check_out',
         'nights',
         'notes',
+        'initiated_by',
+        'source',
+        'assigned_officer_id',
+        'reminded_at',
+        'escalated_at',
+        'escalation_reason',
     ];
 
     protected $casts = [
         'check_in'  => 'date',
         'check_out' => 'date',
+        'reminded_at' => 'datetime',
+        'escalated_at' => 'datetime',
     ];
 
     public function event(): BelongsTo
@@ -39,6 +47,11 @@ class AccommodationRequest extends Model
     public function status(): BelongsTo
     {
         return $this->belongsTo(AccommodationStatus::class, 'status_id');
+    }
+
+    public function assignedOfficer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_officer_id');
     }
 
     /**

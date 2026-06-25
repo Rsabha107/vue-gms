@@ -1283,9 +1283,10 @@ function deleteTemplate(tplId) {
       <div style="font-size:12px;color:var(--gms-text-3);margin-bottom:10px;">Click a row to jump to its seat on the map.</div>
 
       <!-- Assignments -->
-      <div v-if="listSubTab === 'assign'" class="gms-card">
+      <div v-if="listSubTab === 'assign'" class="gms-card gms-seat-assign-tbl-wrap">
         <div class="gms-card-body-0">
-          <table class="gms-table">
+          <div class="gms-table-wrap">
+            <table class="gms-table">
             <thead><tr><th>Guest</th><th>Seat</th><th>VAPP</th><th>Status</th><th></th></tr></thead>
             <tbody>
               <tr v-for="seat in assignedSeats" :key="seat.id" style="cursor:pointer;" @click="locateSeat(seat.id)">
@@ -1319,13 +1320,56 @@ function deleteTemplate(tplId) {
               </tr>
             </tbody>
           </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Assignment Cards -->
+      <div v-if="listSubTab === 'assign'" class="gms-seat-assign-mob-list">
+        <div v-for="seat in assignedSeats" :key="seat.id" class="gms-seat-mob-card" @click="locateSeat(seat.id)">
+          <div class="gms-seat-mob-header">
+            <div v-if="guestById(seat.guestId)" style="display:flex;align-items:center;gap:10px;flex:1;">
+              <GmsAvatar :name="guestById(seat.guestId).name" size="md" />
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;font-weight:600;">{{ guestById(seat.guestId).name }}</div>
+                <div style="font-size:12px;color:var(--gms-text-3);margin-top:2px;">{{ guestById(seat.guestId).title }}</div>
+              </div>
+            </div>
+            <span v-else class="gms-muted gms-small">—</span>
+          </div>
+          <div class="gms-seat-mob-meta">
+            <div class="gms-seat-mob-meta-item">
+              <span class="gms-seat-mob-meta-label">Seat</span>
+              <span class="gms-mono" style="font-size:13px;">{{ seat.id }}</span>
+            </div>
+            <div class="gms-seat-mob-meta-item">
+              <span class="gms-seat-mob-meta-label">VAPP</span>
+              <span class="gms-mono gms-muted" style="font-size:13px;">{{ seat.status === 'ticket' ? 'V-' + (800 + seat.col) : '—' }}</span>
+            </div>
+            <div class="gms-seat-mob-meta-item">
+              <span class="gms-seat-mob-meta-label">Status</span>
+              <span class="gms-pill" :style="seat.status==='ticket'
+                ? 'background:#dcfce7;color:#15803d;font-size:10.5px;'
+                : 'background:var(--gms-maroon-light);color:var(--gms-maroon);font-size:10.5px;'">
+                {{ seat.status === 'ticket' ? 'Ticket issued' : 'Assigned' }}
+              </span>
+            </div>
+          </div>
+          <button class="gms-btn gms-btn-ghost gms-btn-sm" style="width:100%;margin-top:8px;" @click.stop="locateSeat(seat.id)">
+            <GmsIcon name="map" :size="13" />
+            Locate on map
+          </button>
+        </div>
+        <div v-if="!assignedSeats.length" class="gms-empty" style="padding:32px 16px;">
+          <div class="gms-empty-title">No assigned seats yet</div>
         </div>
       </div>
 
       <!-- Reservations -->
-      <div v-else class="gms-card">
+      <div v-else class="gms-card gms-seat-reserve-tbl-wrap">
         <div class="gms-card-body-0">
-          <table class="gms-table">
+          <div class="gms-table-wrap">
+            <table class="gms-table">
             <thead><tr><th>Block</th><th>Seat</th><th>Label</th></tr></thead>
             <tbody>
               <tr v-for="seat in reservedSeats" :key="seat.id" style="cursor:pointer;" @click="locateSeat(seat.id)">
@@ -1342,6 +1386,31 @@ function deleteTemplate(tplId) {
               </tr>
             </tbody>
           </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Reservation Cards -->
+      <div v-if="listSubTab === 'reserve'" class="gms-seat-reserve-mob-list">
+        <div v-for="seat in reservedSeats" :key="seat.id" class="gms-seat-mob-card" @click="locateSeat(seat.id)">
+          <div class="gms-seat-mob-header">
+            <div style="font-size:15px;font-weight:600;">{{ seat.blockLabel }}</div>
+          </div>
+          <div class="gms-seat-mob-meta">
+            <div class="gms-seat-mob-meta-item">
+              <span class="gms-seat-mob-meta-label">Seat</span>
+              <span class="gms-mono" style="font-size:13px;">{{ seat.id }}</span>
+            </div>
+            <div class="gms-seat-mob-meta-item" style="grid-column:1/-1;">
+              <span class="gms-seat-mob-meta-label">Label</span>
+              <span class="gms-pill" :style="`background:${orgColor(seat.resLabel)}18;color:${orgColor(seat.resLabel)};border:1px solid ${orgColor(seat.resLabel)}44;font-size:10.5px;font-weight:700;`">
+                {{ seat.resLabel || 'Reserved' }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div v-if="!reservedSeats.length" class="gms-empty" style="padding:32px 16px;">
+          <div class="gms-empty-title">No reserved seats</div>
         </div>
       </div>
     </template>

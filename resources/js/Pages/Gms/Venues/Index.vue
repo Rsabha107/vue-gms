@@ -1,5 +1,5 @@
 <script setup>
-import { ref, inject } from 'vue'
+import { ref, inject, computed } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
@@ -16,6 +16,7 @@ const props = defineProps({
 const toast = inject('toast')
 
 const localVenues = ref(props.venues.map(v => ({ ...v })))
+const activeTab = ref('all')
 
 // ── Modal ─────────────────────────────────────────────────────────
 const venueModal   = ref(false)
@@ -75,6 +76,17 @@ function fmtCap(n) {
     if (!n) return '—'
     return Number(n).toLocaleString()
 }
+
+const filteredVenues = computed(() => {
+    if (activeTab.value === 'event') {
+        return localVenues.value.filter(v => v.in_current_event)
+    }
+    return localVenues.value
+})
+
+const eventVenuesCount = computed(() => {
+    return localVenues.value.filter(v => v.in_current_event).length
+})
 </script>
 
 <template>
@@ -88,6 +100,26 @@ function fmtCap(n) {
       </div>
       <div class="gms-view-actions">
         <GmsBtn variant="primary" icon="plus" :iconSize="14" @click="openNew">New venue</GmsBtn>
+      </div>
+    </div>
+
+    <!-- Segmented Control -->
+    <div style="margin-bottom: 20px;">
+      <div class="gms-seg">
+        <button 
+          :class="{ on: activeTab === 'all' }" 
+          @click="activeTab = 'all'"
+        >
+          All Venues
+          <span class="gms-seg-count">{{ localVenues.length }}</span>
+        </button>
+        <button 
+          :class="{ on: activeTab === 'event' }" 
+          @click="activeTab = 'event'"
+        >
+          {{ event?.name || 'Current Event' }}
+          <span class="gms-seg-count">{{ eventVenuesCount }}</span>
+        </button>
       </div>
     </div>
 
@@ -107,7 +139,7 @@ function fmtCap(n) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="v in localVenues" :key="v.id">
+              <tr v-for="v in filteredVenues" :key="v.id">
                 <!-- Venue name + notes -->
                 <td>
                   <div style="display:flex;align-items:center;gap:12px;">
@@ -144,9 +176,16 @@ function fmtCap(n) {
                   </div>
                 </td>
               </tr>
-              <tr v-if="!localVenues.length">
+              <tr v-if="!filteredVenues.length">
                 <td colspan="6">
-                  <div class="gms-empty"><div class="gms-empty-title">No venues yet</div></div>
+                  <div class="gms-empty">
+                    <div class="gms-empty-title">
+                      {{ activeTab === 'event' ? 'No venues for this event' : 'No venues yet' }}
+                    </div>
+                    <div v-if="activeTab === 'event'" class="gms-empty-text">
+                      Venues can be associated with events via Events → Edit Event → Select Venues
+                    </div>
+                  </div>
                 </td>
               </tr>
             </tbody>

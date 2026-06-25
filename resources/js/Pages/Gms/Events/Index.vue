@@ -214,9 +214,14 @@ onBeforeUnmount(() => {
             <GmsIcon name="map" :size="14" class="gms-ev-mi-icon" />
             <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ evt.location }}</span>
           </div>
-          <div class="gms-ev-mi">
+          <div class="gms-ev-mi" :style="evt.venues && evt.venues.length > 1 ? 'grid-column: 1 / -1;' : ''">
             <GmsIcon name="building" :size="14" class="gms-ev-mi-icon" />
-            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ evt.venue }}</span>
+            <div v-if="evt.venues && evt.venues.length > 0" style="display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; flex: 1;">
+              <span v-for="venue in evt.venues" :key="venue.id" class="gms-ev-venue-chip">
+                {{ venue.name }}
+              </span>
+            </div>
+            <span v-else style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ evt.venue }}</span>
           </div>
           <div class="gms-ev-mi">
             <GmsIcon name="calendar" :size="14" class="gms-ev-mi-icon" />

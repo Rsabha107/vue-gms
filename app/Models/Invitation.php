@@ -16,11 +16,25 @@ class Invitation extends Model
         'rsvp_token',
         'sent_at',
         'responded_at',
+        'service_mode',
+        'portal_sent_at',
+        'portal_accessed_at',
+        'portal_last_accessed_at',
+        'portal_token',
+        'portal_token_expires_at',
+        'services_completed',
+        'services_completed_at',
     ];
 
     protected $casts = [
         'sent_at' => 'datetime',
         'responded_at' => 'datetime',
+        'portal_sent_at' => 'datetime',
+        'portal_accessed_at' => 'datetime',
+        'portal_last_accessed_at' => 'datetime',
+        'portal_token_expires_at' => 'datetime',
+        'services_completed' => 'boolean',
+        'services_completed_at' => 'datetime',
     ];
 
     /**

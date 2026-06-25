@@ -1106,7 +1106,8 @@
   top: calc(100% + 4px);
   right: 0;
   z-index: 9999;
-  min-width: 166px;
+  min-width: 140px;
+  max-width: 180px;
   background: var(--gms-surface);
   border: 1px solid var(--gms-border);
   border-radius: 11px;
@@ -1266,6 +1267,19 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.gms-ev-venue-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: var(--gms-bg);
+  border: 1px solid var(--gms-border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gms-text-2);
+  white-space: nowrap;
 }
 
 .gms-ev-add {
@@ -3184,7 +3198,8 @@
   transition: color var(--gms-dur-fast), border-color var(--gms-dur-fast);
 }
 .gms-tab:hover { color: var(--gms-text); }
-.gms-tab.active {
+.gms-tab.active,
+.gms-tab.on {
   color: var(--gms-maroon);
   border-bottom-color: var(--gms-maroon);
   font-weight: 600;
@@ -6553,6 +6568,49 @@
 /* Panel backdrop — hidden on desktop */
 .gms-gpanel-backdrop { display: none; }
 
+/* Mobile list cards (hidden on desktop) */
+.gms-seat-assign-mob-list,
+.gms-seat-reserve-mob-list { display: none; }
+
+.gms-seat-mob-card {
+  background: var(--gms-surface);
+  border: 1px solid var(--gms-border);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.gms-seat-mob-card:active {
+  border-color: var(--gms-maroon);
+  box-shadow: 0 2px 8px rgba(138,31,61,.12);
+}
+
+.gms-seat-mob-header {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gms-border);
+}
+
+.gms-seat-mob-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.gms-seat-mob-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gms-seat-mob-meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gms-text-3);
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    MOBILE (≤ 768 px) — portrait phones + small tablets
    ═══════════════════════════════════════════════════════════════════ */
@@ -6690,6 +6748,30 @@
 
   /* Hover popover constrained to viewport */
   .gms-seat-pop { max-width: calc(100vw - 20px); }
+
+  /* List tab — hide tables, show mobile cards */
+  .gms-seat-assign-tbl-wrap,
+  .gms-seat-reserve-tbl-wrap { display: none !important; }
+  .gms-seat-assign-mob-list,
+  .gms-seat-reserve-mob-list { display: flex; flex-direction: column; gap: 10px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LANDSCAPE MOBILE (height ≤ 600px, landscape orientation)
+   Apply mobile-friendly card layout in landscape mode (e.g., iPhone in landscape)
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-height: 600px) and (orientation: landscape) {
+  /* List tab — hide tables, show mobile cards */
+  .gms-seat-assign-tbl-wrap,
+  .gms-seat-reserve-tbl-wrap { display: none !important; }
+  .gms-seat-assign-mob-list,
+  .gms-seat-reserve-mob-list { display: flex; flex-direction: column; gap: 10px; }
+  
+  /* Ensure tables scroll horizontally if they somehow appear */
+  .gms-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════

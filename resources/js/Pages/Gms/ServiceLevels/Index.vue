@@ -173,10 +173,19 @@ function saveTier() {
 }
 
 function confirmDelete() {
-    localTiers.value = localTiers.value.filter(t => t.id !== deletingId.value)
     router.delete(route('gms.service-levels.destroy', deletingId.value), {
-        onSuccess: () => { deleteModal.value = false; toast('Service level deleted.') },
-        onError:   () => toast('Failed to delete.', 'error'), preserveScroll: true,
+        onSuccess: () => { 
+            localTiers.value = localTiers.value.filter(t => t.id !== deletingId.value)
+            deleteModal.value = false
+            toast('Service level deleted.') 
+        },
+        onError: (errors) => {
+            deleteModal.value = false
+            // Extract error message from validation errors or general errors
+            const errorMsg = errors?.delete || errors?.message || Object.values(errors)[0] || 'Failed to delete service level.'
+            toast(errorMsg, 'error')
+        },
+        preserveScroll: true,
     })
 }
 

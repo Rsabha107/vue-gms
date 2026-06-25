@@ -120,6 +120,7 @@ const breadcrumbMap = {
     'gms/invitations':       'Invitations',
     'gms/seating':           'Seating',
     'gms/service-levels':    'Service Levels',
+    'gms/floorplans':        'Floor Plans',
     'gms/flights':           'Flights',
     'gms/accommodation':     'Accommodation',
     'gms/transport':         'Transport',
@@ -147,6 +148,7 @@ const nav = [
     { name: 'gms.invitations.index', label: 'Invitations',      icon: 'mail',     href: '/gms/invitations' },
     { name: 'gms.seating.index',   label: 'Seating',            icon: 'grid',     href: '/gms/seating' },
     { name: 'gms.service-levels.index', label: 'Service Levels', icon: 'star',    href: '/gms/service-levels' },
+    { name: 'gms.floorplans.index', label: 'Floor Plans',       icon: 'layout',   href: '/gms/floorplans' },
 ]
 const modules = [
     { name: 'gms.flights.index',       label: 'Flights',       icon: 'plane',     href: '/gms/flights' },

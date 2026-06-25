@@ -50,6 +50,8 @@ class GmsMockData
                     'dateStart' => $event->date_start->format('Y-m-d'),
                     'dateEnd'   => $event->date_end->format('Y-m-d'),
                     'logo'     => $event->logo,
+                    'portal_enabled' => $event->portal_enabled ?? false,
+                    'portal_auth_mode' => $event->portal_auth_mode ?? 'signed_url',
                 ];
             }
         }
@@ -69,6 +71,8 @@ class GmsMockData
                 'dateStart' => $event->date_start->format('Y-m-d'),
                 'dateEnd'   => $event->date_end->format('Y-m-d'),
                 'logo'     => $event->logo,
+                'portal_enabled' => $event->portal_enabled ?? false,
+                'portal_auth_mode' => $event->portal_auth_mode ?? 'signed_url',
             ];
         }
 
@@ -83,6 +87,8 @@ class GmsMockData
             'dateStart' => '2026-01-15',
             'dateEnd'   => '2026-02-28',
             'logo'     => null,
+            'portal_enabled' => false,
+            'portal_auth_mode' => 'signed_url',
         ];
     }
 

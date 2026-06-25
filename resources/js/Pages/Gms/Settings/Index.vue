@@ -13,6 +13,7 @@ const props = defineProps({
     event: { type: Object, default: () => ({}) },
     teamUsers: { type: Array, default: () => ([]) },
     emailTemplates: { type: Array, default: () => ([]) },
+    portalSettings: { type: Object, default: () => ({ enabled: false, authMode: 'signed_url' }) },
 })
 
 const toast = inject('toast')
@@ -108,6 +109,35 @@ const brandColors = [
 const notificationsEnabled = ref(true)
 const emailReminders = ref(true)
 const autoAssignSeats = ref(false)
+
+// Guest Portal
+const guestPortalEnabled = ref(props.portalSettings.enabled)
+const portalAuthMode = ref(props.portalSettings.authMode)
+
+const portalForm = useForm({
+    enabled: props.portalSettings.enabled,
+    authMode: props.portalSettings.authMode,
+})
+
+function togglePortal() {
+    guestPortalEnabled.value = !guestPortalEnabled.value
+    savePortalSettings()
+}
+
+function savePortalSettings() {
+    portalForm.enabled = guestPortalEnabled.value
+    portalForm.authMode = portalAuthMode.value
+    
+    portalForm.post(route('gms.settings.portal'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            toast('Portal settings saved')
+        },
+        onError: () => {
+            toast('Failed to save portal settings', 'error')
+        }
+    })
+}
 
 function selectTemplate(template) {
     activeTemplate.value = template
@@ -235,7 +265,7 @@ function sendTestEmail() {
         </button>
         <button class="set-nav-item" :class="{ on: activeSection === 'team' }" @click="activeSection = 'team'">
           <span class="ic"><GmsIcon name="users" :size="16" /></span>
-          Team & roles
+          Users & roles
         </button>
         <button class="set-nav-item" :class="{ on: activeSection === 'notifications' }" @click="activeSection = 'notifications'">
           <span class="ic"><GmsIcon name="bell" :size="16" /></span>
@@ -265,7 +295,7 @@ function sendTestEmail() {
           <div class="set-panel team-panel-scrollable" style="margin-bottom: 24px;">
             <div class="set-panel-h sticky-header">
               <div style="flex: 1;">
-                <h2 class="set-panel-t">Team members</h2>
+                <h2 class="set-panel-t">Users</h2>
                 <p class="set-panel-d">People with access to this GMS workspace.</p>
               </div>
               <div class="team-search-trigger">
@@ -453,10 +483,36 @@ function sendTestEmail() {
                   <span class="kn"></span>
                 </button>
               </div>
+              
+              <!-- Guest Portal Toggle -->
+              <div class="set-row" style="border-top: 1px solid var(--gms-border); margin-top: 16px; padding-top: 16px;">
+                <div class="set-row-ic"><GmsIcon name="globe" :size="16" /></div>
+                <div class="set-row-tx">
+                  <div class="set-row-t">Guest Self-Service Portal</div>
+                  <div class="set-row-d">Allow guests to view itineraries and submit service requests</div>
+                </div>
+                <button class="sw" :class="{ on: guestPortalEnabled }" :disabled="portalForm.processing" @click="togglePortal">
+                  <span class="kn"></span>
+                </button>
+              </div>
+              
+              <!-- Portal Authentication Mode (nested, only if enabled) -->
+              <div v-if="guestPortalEnabled" class="set-row" style="margin-left: 32px; background: var(--gms-bg); border-radius: 6px;">
+                <div class="set-row-tx">
+                  <div class="set-row-t" style="font-size: 13px;">Portal Authentication</div>
+                  <select v-model="portalAuthMode" class="gms-input gms-select" style="margin-top: 8px; max-width: 280px;" :disabled="portalForm.processing" @change="savePortalSettings">
+                    <option value="signed_url">Signed URL (Basic)</option>
+                    <option value="magic_link">Magic Link (Enhanced Security)</option>
+                    <option value="full_auth">Full Authentication</option>
+                  </select>
+                  <div style="font-size: 11px; color: var(--gms-text-3); margin-top: 6px;">
+                    <span v-if="portalAuthMode === 'signed_url'">Time-limited, cryptographically signed URLs</span>
+                    <span v-else-if="portalAuthMode === 'magic_link'">Email verification required for each session</span>
+                    <span v-else>Password-based authentication with session management</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="set-panel-f">
-            <button class="gms-btn gms-btn-primary" @click="toast('Module settings saved')">Save</button>
           </div>
         </div>
 
