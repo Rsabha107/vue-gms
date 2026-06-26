@@ -8,6 +8,7 @@ import "primeicons/primeicons.css";
 
 import "../css/app.css";
 import "../css/gms.css";
+import "../css/pwa.css";
 
 import "bootstrap";
 import $ from "jquery";

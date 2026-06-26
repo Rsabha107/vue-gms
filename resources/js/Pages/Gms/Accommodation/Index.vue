@@ -48,8 +48,9 @@ const sourceOptions = [
     { id: 'email', name: 'Email' },
 ]
 
-const statuses = ['all', 'new', 'change', 'confirmed', 'cancelled']
+const statuses = ['all', 'requested', 'new', 'change', 'confirmed', 'cancelled']
 const statusColors = {
+    requested: { bg: '#ede9fe', fg: '#7c3aed' },
     new:       { bg: '#fef9c3', fg: '#a16207' },
     change:    { bg: '#e2edf3', fg: '#3a6a8a' },
     confirmed: { bg: '#e6f0e7', fg: '#3f7d52' },

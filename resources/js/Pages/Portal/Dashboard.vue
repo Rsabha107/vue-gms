@@ -1,5 +1,5 @@
 <script setup>
-import { ref, inject } from 'vue'
+import { ref, inject, computed } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import PortalLayout from '@/Layouts/PortalLayout.vue'
@@ -9,6 +9,8 @@ import PortalSelect from '@/Components/Portal/PortalSelect.vue'
 import PortalTextarea from '@/Components/Portal/PortalTextarea.vue'
 import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
 import GmsTimePicker from '@/Components/Gms/GmsTimePicker.vue'
+import GmsBtn from '@/Components/Gms/GmsBtn.vue'
+import GmsConfirmModal from '@/Components/Gms/GmsConfirmModal.vue'
 
 defineOptions({ layout: PortalLayout })
 
@@ -37,6 +39,88 @@ function formatDate(dateStr) {
     return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// Transport detail view
+const transportDriver = computed(() => {
+    const transports = props.services.transport || []
+    if (!transports.length) return null
+    const confirmed = transports.find(t => t.status?.name === 'confirmed')
+    const first = confirmed || transports[0]
+    const driverName = first.driver || 'Driver TBD'
+    const initials = driverName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()
+    return {
+        name: driverName,
+        initials,
+        vehicle: first.vehicle || 'Vehicle TBD',
+        plate: first.notes?.match(/[A-Z]{2}\s?\d{3,4}/)?.[0] || '',
+        status: confirmed ? 'confirmed' : (first.status?.name || 'pending'),
+    }
+})
+
+const transportMovements = computed(() => {
+    const transports = props.services.transport || []
+    if (!transports.length) return []
+
+    const now = new Date()
+    let foundUpNext = false
+
+    const sorted = [...transports]
+        .filter(t => t.datetime)
+        .sort((a, b) => new Date(a.datetime) - new Date(b.datetime))
+
+    return sorted.map(t => {
+        const dt = new Date(t.datetime)
+        const isPast = dt < now
+        const isUpNext = !isPast && !foundUpNext
+        if (isUpNext) foundUpNext = true
+
+        return {
+            id: t.id,
+            type: t.type || 'Transfer',
+            pickup: t.pickup_location || '',
+            dropoff: t.dropoff_location || '',
+            datetime: dt,
+            time: dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            dateKey: dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase(),
+            isPast,
+            isUpNext,
+            status: t.status?.name || 'pending',
+            source: t.source,
+            fulfilled_by_id: t.fulfilled_by_id,
+            notes: t.notes,
+            _raw: t,
+        }
+    })
+})
+
+const transportByDate = computed(() => {
+    const groups = []
+    let currentKey = null
+    for (const m of transportMovements.value) {
+        if (m.dateKey !== currentKey) {
+            currentKey = m.dateKey
+            groups.push({ dateLabel: m.dateKey, items: [] })
+        }
+        groups[groups.length - 1].items.push(m)
+    }
+    return groups
+})
+
+const transportNotes = computed(() => {
+    const transports = props.services.transport || []
+    return transports
+        .filter(t => t.notes)
+        .map(t => ({ id: t.id, notes: t.notes, source: t.source, fulfilled_by_id: t.fulfilled_by_id, _raw: t }))
+})
+
+function movementIcon(type) {
+    const t = (type || '').toLowerCase()
+    if (t.includes('airport') || t.includes('arrival')) return 'airport'
+    if (t.includes('match')) return 'match'
+    if (t.includes('return') || t.includes('hotel')) return 'hotel'
+    if (t.includes('departure')) return 'departure'
+    return 'transfer'
+}
+
 // Flight Request Modal
 const flightModalOpen = ref(false)
 const flightForm = useForm({
@@ -62,16 +146,16 @@ const editingFlightId = ref(null)
 function openFlightModal(flight = null) {
     if (flight) {
         editingFlightId.value = flight.id
-        const outbound = flight.legs?.find(l => l.dir.toLowerCase() === 'outbound')
         const inbound = flight.legs?.find(l => l.dir.toLowerCase() === 'inbound')
-        flightForm.trip_type = inbound ? 'round_trip' : 'one_way'
-        flightForm.departure_city = outbound?.from_city || ''
-        flightForm.arrival_city = outbound?.to_city || ''
-        flightForm.departure_date = outbound?.date || ''
-        flightForm.departure_time = outbound?.dep || ''
-        flightForm.return_date = inbound?.date || ''
-        flightForm.return_time = inbound?.dep || ''
-        flightForm.class = (outbound?.cls || 'business').toLowerCase()
+        const outbound = flight.legs?.find(l => l.dir.toLowerCase() === 'outbound')
+        flightForm.trip_type = outbound ? 'round_trip' : 'one_way'
+        flightForm.departure_city = inbound?.from_city || ''
+        flightForm.arrival_city = inbound?.to_city || ''
+        flightForm.departure_date = inbound?.date || ''
+        flightForm.departure_time = inbound?.dep || ''
+        flightForm.return_date = outbound?.date || ''
+        flightForm.return_time = outbound?.dep || ''
+        flightForm.class = (inbound?.cls || outbound?.cls || 'business').toLowerCase()
         flightForm.special_requests = flight.note || ''
     } else {
         editingFlightId.value = null
@@ -83,6 +167,7 @@ function closeFlightModal() {
     flightModalOpen.value = false
     editingFlightId.value = null
     flightForm.reset()
+    flightForm.clearErrors()
 }
 
 function submitFlightRequest() {
@@ -104,41 +189,42 @@ function submitFlightRequest() {
     })
 }
 
+// Delete confirmation modal
+const deleteModal = ref({ open: false, message: '', action: null, loading: false })
+
+function confirmDelete(message, action) {
+    deleteModal.value = { open: true, message, action, loading: false }
+}
+function closeDeleteModal() {
+    deleteModal.value = { open: false, message: '', action: null, loading: false }
+}
+function executeDelete() {
+    if (!deleteModal.value.action) return
+    deleteModal.value.loading = true
+    deleteModal.value.action()
+}
+
 function deleteFlight(flight) {
-    if (!confirm('Delete this flight request?')) return
-    router.delete(route('portal.services.flights.destroy', [props.guest.id, flight.id]), {
-        preserveScroll: true,
-        onSuccess: () => toast('Flight request deleted'),
+    confirmDelete('Are you sure you want to delete this flight request?', () => {
+        router.delete(route('portal.services.flights.destroy', [props.guest.id, flight.id]), {
+            preserveScroll: true,
+            onSuccess: () => { closeDeleteModal(); toast('Flight request deleted') },
+            onError: () => { deleteModal.value.loading = false },
+        })
     })
 }
 
 // Accommodation Request Modal
 const accommodationModalOpen = ref(false)
 const accommodationForm = useForm({
-    hotel_preferences: '',
-    check_in: '',
-    check_out: '',
-    room_type: 'double',
-    rooms: 1,
     special_requests: '',
 })
-
-const roomTypeOptions = [
-    { value: 'single', label: 'Single' },
-    { value: 'double', label: 'Double' },
-    { value: 'suite', label: 'Suite' },
-]
 
 const editingAccommId = ref(null)
 
 function openAccommodationModal(acc = null) {
     if (acc) {
         editingAccommId.value = acc.id
-        accommodationForm.hotel_preferences = acc.hotel_name || ''
-        accommodationForm.check_in = acc.check_in ? acc.check_in.split('T')[0] : ''
-        accommodationForm.check_out = acc.check_out ? acc.check_out.split('T')[0] : ''
-        accommodationForm.room_type = (acc.room_type || 'double').toLowerCase()
-        accommodationForm.rooms = 1
         accommodationForm.special_requests = acc.notes || ''
     } else {
         editingAccommId.value = null
@@ -150,9 +236,15 @@ function closeAccommodationModal() {
     accommodationModalOpen.value = false
     editingAccommId.value = null
     accommodationForm.reset()
+    accommodationForm.clearErrors()
 }
 
 function submitAccommodationRequest() {
+    if (!accommodationForm.special_requests?.trim()) {
+        accommodationForm.setError('special_requests', 'Please describe your accommodation preferences.')
+        return
+    }
+    accommodationForm.clearErrors()
     const routeName = editingAccommId.value
         ? route('portal.services.accommodation.update', [props.guest.id, editingAccommId.value])
         : route('portal.services.accommodation.store', props.guest.id)
@@ -172,10 +264,12 @@ function submitAccommodationRequest() {
 }
 
 function deleteAccommodation(acc) {
-    if (!confirm('Delete this accommodation request?')) return
-    router.delete(route('portal.services.accommodation.destroy', [props.guest.id, acc.id]), {
-        preserveScroll: true,
-        onSuccess: () => toast('Accommodation request deleted'),
+    confirmDelete('Are you sure you want to delete this accommodation request?', () => {
+        router.delete(route('portal.services.accommodation.destroy', [props.guest.id, acc.id]), {
+            preserveScroll: true,
+            onSuccess: () => { closeDeleteModal(); toast('Accommodation request deleted') },
+            onError: () => { deleteModal.value.loading = false },
+        })
     })
 }
 
@@ -201,9 +295,15 @@ function closeTransportModal() {
     transportModalOpen.value = false
     editingTransportId.value = null
     transportForm.reset()
+    transportForm.clearErrors()
 }
 
 function submitTransportRequest() {
+    if (!transportForm.special_requests?.trim()) {
+        transportForm.setError('special_requests', 'Please describe your transport preferences.')
+        return
+    }
+    transportForm.clearErrors()
     const routeName = editingTransportId.value
         ? route('portal.services.transport.update', [props.guest.id, editingTransportId.value])
         : route('portal.services.transport.store', props.guest.id)
@@ -223,10 +323,12 @@ function submitTransportRequest() {
 }
 
 function deleteTransport(trans) {
-    if (!confirm('Delete this transport request?')) return
-    router.delete(route('portal.services.transport.destroy', [props.guest.id, trans.id]), {
-        preserveScroll: true,
-        onSuccess: () => toast('Transport request deleted'),
+    confirmDelete('Are you sure you want to delete this transport request?', () => {
+        router.delete(route('portal.services.transport.destroy', [props.guest.id, trans.id]), {
+            preserveScroll: true,
+            onSuccess: () => { closeDeleteModal(); toast('Transport request deleted') },
+            onError: () => { deleteModal.value.loading = false },
+        })
     })
 }
 
@@ -404,11 +506,9 @@ async function uploadCompFile(file, idx, field) {
             </div>
 
             <div style="display: flex; gap: 8px; margin-top: 8px;">
-              <button class="portal-btn portal-btn-primary portal-btn-sm" :disabled="!c.name.trim() || compForm.processing" @click="saveCompanions">
-                {{ compForm.processing ? 'Saving…' : 'Save' }}
-              </button>
-              <button v-if="c.name.trim()" class="portal-btn portal-btn-sm" @click="toggleEdit(ci)">Cancel</button>
-              <button v-else class="portal-btn portal-btn-sm" @click="localCompanions.splice(ci, 1)">Cancel</button>
+              <GmsBtn variant="primary" :disabled="!c.name.trim()" :processing="compForm.processing" @click="saveCompanions">Save</GmsBtn>
+              <GmsBtn v-if="c.name.trim()" variant="ghost" @click="toggleEdit(ci)">Cancel</GmsBtn>
+              <GmsBtn v-else variant="ghost" @click="localCompanions.splice(ci, 1)">Cancel</GmsBtn>
             </div>
           </div>
         </div>
@@ -448,13 +548,13 @@ async function uploadCompFile(file, idx, field) {
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <div class="portal-card-title" style="margin-bottom: 0;">Service Requests</div>
         <div style="display: flex; gap: 8px;">
-          <button class="portal-btn" @click="openFlightModal">
+          <button v-if="!services.flights?.length" class="portal-btn" @click="openFlightModal">
             Request Flight
           </button>
-          <button class="portal-btn" @click="openAccommodationModal">
+          <button v-if="!services.accommodation?.length" class="portal-btn" @click="openAccommodationModal">
             Request Hotel
           </button>
-          <button class="portal-btn" @click="openTransportModal">
+          <button v-if="!services.transport?.length" class="portal-btn" @click="openTransportModal">
             Request Transport
           </button>
         </div>
@@ -467,11 +567,14 @@ async function uploadCompFile(file, idx, field) {
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <div style="display: flex; align-items: center; gap: 8px;">
               <div style="font-size: 14px; font-weight: 500;">{{ flight.code }}</div>
-              <span class="portal-badge" :class="flight.status?.name === 'confirmed' ? 'success' : 'warning'">
-                {{ flight.status?.label || flight.status?.name || 'Pending' }}
+              <span v-if="flight.ref" style="font-size: 12px; color: var(--portal-text-3); font-family: var(--gms-font-mono, monospace);">
+                PNR: {{ flight.ref }}
               </span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="portal-badge" :class="flight.status?.name === 'confirmed' ? 'success' : 'warning'">
+                {{ flight.status?.label || flight.status?.name || 'Pending' }}
+              </span>
               <template v-if="flight.source === 'portal' && !flight.fulfilled_by_id">
                 <button class="portal-btn portal-btn-sm" @click="openFlightModal(flight)">Edit</button>
                 <button class="portal-btn portal-btn-sm portal-btn-danger" @click="deleteFlight(flight)">Delete</button>
@@ -482,8 +585,9 @@ async function uploadCompFile(file, idx, field) {
             <div v-for="leg in flight.legs" :key="leg.id"
                  style="background: var(--portal-bg); border: 1px solid var(--portal-border); border-radius: 6px; padding: 10px;">
               <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                <span style="font-size: 14px; line-height: 1;">{{ leg.dir.toLowerCase() === 'outbound' ? '✈️↗️' : '✈️↘️' }}</span>
                 <span style="color: var(--portal-text-2); font-size: 11px; font-weight: 500; text-transform: capitalize;">
-                  {{ leg.dir === 'outbound' ? '→' : '←' }} {{ leg.dir.charAt(0).toUpperCase() + leg.dir.slice(1) }}
+                  {{ leg.dir.charAt(0).toUpperCase() + leg.dir.slice(1).toLowerCase() }}
                 </span>
               </div>
               <div style="font-size: 13px; font-weight: 500; color: var(--portal-text); margin-bottom: 6px;">
@@ -506,19 +610,14 @@ async function uploadCompFile(file, idx, field) {
       <div v-if="services.accommodation?.length" class="service-section">
         <div class="portal-label">Accommodation</div>
         <div v-for="acc in services.accommodation" :key="acc.id" class="service-item">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 14px; font-weight: 500;">{{ acc.hotel_name }}</div>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--portal-text-2); margin-top: 4px;">
-                <span>{{ formatDate(acc.check_in) }} – {{ formatDate(acc.check_out) }}</span>
-                <span>· {{ acc.nights }} {{ acc.nights === 1 ? 'night' : 'nights' }}</span>
-                <span v-if="acc.room_type">· {{ acc.room_type }}</span>
-              </div>
-              <div v-if="acc.notes" style="font-size: 12px; color: var(--portal-text-2); margin-top: 4px; font-style: italic;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+              <div style="font-size: 14px; font-weight: 500;">Accommodation Request</div>
+              <div v-if="acc.notes" style="font-size: 13px; color: var(--portal-text-2); margin-top: 4px; font-style: italic;">
                 "{{ acc.notes }}"
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: 12px;">
               <span class="portal-badge" :class="acc.status?.name === 'confirmed' ? 'success' : 'warning'">
                 {{ acc.status?.label || acc.status?.name || 'Pending' }}
               </span>
@@ -535,21 +634,15 @@ async function uploadCompFile(file, idx, field) {
       <div v-if="services.transport?.length" class="service-section">
         <div class="portal-label">Transport</div>
         <div v-for="trans in services.transport" :key="trans.id" class="service-item">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
               <div style="font-size: 14px; font-weight: 500;">{{ trans.type || 'Transport Request' }}</div>
-              <div v-if="trans.pickup_location || trans.dropoff_location" style="font-size: 12px; color: var(--portal-text-2); margin-top: 2px;">
-                {{ trans.pickup_location }} → {{ trans.dropoff_location }}
-              </div>
-              <div v-if="trans.notes && !trans.type" style="font-size: 12px; color: var(--portal-text-2); margin-top: 2px; font-style: italic;">
+              <div v-if="trans.notes" style="font-size: 13px; color: var(--portal-text-2); margin-top: 4px; font-style: italic;">
                 "{{ trans.notes }}"
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="portal-badge" :class="{
-                success: trans.status?.name === 'confirmed',
-                warning: trans.status?.name !== 'confirmed'
-              }">
+            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: 12px;">
+              <span class="portal-badge" :class="trans.status?.name === 'confirmed' ? 'success' : 'warning'">
                 {{ trans.status?.label || trans.status?.name || 'Pending' }}
               </span>
               <template v-if="trans.source === 'portal' && !trans.fulfilled_by_id">
@@ -562,7 +655,7 @@ async function uploadCompFile(file, idx, field) {
       </div>
 
       <!-- Empty state -->
-      <div v-if="!services.flights?.length && !services.accommodation?.length && !services.transport?.length" 
+      <div v-if="!services.flights?.length && !services.accommodation?.length && !services.transport?.length"
            style="text-align: center; padding: 32px; color: var(--portal-text-2);">
         <p style="margin-bottom: 8px;">No service requests yet</p>
         <p style="font-size: 13px;">Your protocol officer will arrange services for your visit</p>
@@ -719,93 +812,35 @@ async function uploadCompFile(file, idx, field) {
       </form>
 
       <template #footer>
-        <button type="button" class="portal-btn" :disabled="flightForm.processing" @click="closeFlightModal">Cancel</button>
-        <button type="button" class="portal-btn portal-btn-primary" :disabled="flightForm.processing" @click="submitFlightRequest">
-          <span v-if="flightForm.processing">{{ editingFlightId ? 'Updating...' : 'Submitting...' }}</span>
-          <span v-else>{{ editingFlightId ? 'Update Request' : 'Submit Request' }}</span>
-        </button>
+        <GmsBtn variant="ghost" :disabled="flightForm.processing" @click="closeFlightModal">Cancel</GmsBtn>
+        <GmsBtn variant="primary" :processing="flightForm.processing" @click="submitFlightRequest">
+          {{ editingFlightId ? 'Update Request' : 'Submit Request' }}
+        </GmsBtn>
       </template>
     </PortalModal>
 
     <!-- Accommodation Request Modal -->
-    <PortalModal :open="accommodationModalOpen" :title="editingAccommId ? 'Edit Accommodation Request' : 'Request Accommodation'" :subtitle="editingAccommId ? 'Update your hotel preferences' : 'Submit your hotel requirements'" @close="closeAccommodationModal">
+    <PortalModal :open="accommodationModalOpen" :title="editingAccommId ? 'Edit Accommodation Request' : 'Request Accommodation'" :subtitle="editingAccommId ? 'Update your accommodation preferences' : 'Let your protocol officer know your hotel needs'" @close="closeAccommodationModal">
       <form @submit.prevent="submitAccommodationRequest">
-        <PortalInput
-          v-model="accommodationForm.hotel_preferences"
-          label="Hotel Preferences"
-          placeholder="Preferred hotel name or area..."
-          help="Let us know your preferred hotel or area"
-          :error="accommodationForm.errors.hotel_preferences"
-        />
-
-        <div class="portal-form-row">
-          <div class="portal-form-group">
-            <label class="portal-form-label">
-              Check-In Date
-              <span class="required">*</span>
-            </label>
-            <GmsDatePicker
-              v-model="accommodationForm.check_in"
-              placeholder="Select check-in date"
-              dateFormat="Y-m-d"
-              :minDate="new Date().toISOString().split('T')[0]"
-              :error="!!accommodationForm.errors.check_in"
-            />
-            <p v-if="accommodationForm.errors.check_in" class="portal-form-error">{{ accommodationForm.errors.check_in }}</p>
-          </div>
-          <div class="portal-form-group">
-            <label class="portal-form-label">
-              Check-Out Date
-              <span class="required">*</span>
-            </label>
-            <GmsDatePicker
-              v-model="accommodationForm.check_out"
-              placeholder="Select check-out date"
-              dateFormat="Y-m-d"
-              :minDate="accommodationForm.check_in || new Date().toISOString().split('T')[0]"
-              :error="!!accommodationForm.errors.check_out"
-            />
-            <p v-if="accommodationForm.errors.check_out" class="portal-form-error">{{ accommodationForm.errors.check_out }}</p>
-          </div>
-        </div>
-
-        <div class="portal-form-row">
-          <PortalSelect
-            v-model="accommodationForm.room_type"
-            label="Room Type"
-            :options="roomTypeOptions"
-            value-key="value"
-            label-key="label"
-            required
-            :error="accommodationForm.errors.room_type"
-          />
-          <PortalInput
-            v-model.number="accommodationForm.rooms"
-            type="number"
-            label="Number of Rooms"
-            :min="1"
-            :max="10"
-            required
-            :error="accommodationForm.errors.rooms"
-          />
-        </div>
+        <p style="font-size: 14px; color: var(--portal-text-2); line-height: 1.6; margin-bottom: 20px;">
+          Your protocol team will arrange the best hotel and room based on your itinerary. Use the field below to share any preferences or requirements.
+        </p>
 
         <PortalTextarea
           v-model="accommodationForm.special_requests"
-          label="Special Requests"
-          placeholder="Any special requirements, accessibility needs, or preferences..."
-          :rows="4"
-          help="Optional: Let us know if you have any special requirements"
+          label="Special Requests & Preferences"
+          placeholder="e.g., I prefer a suite, I need a room near the elevator, early check-in required, etc."
+          :rows="5"
+          help="Our team will arrange hotel, room type, and dates based on your event schedule."
           :error="accommodationForm.errors.special_requests"
         />
       </form>
 
       <template #footer>
-        <button type="button" class="portal-btn" :disabled="accommodationForm.processing" @click="closeAccommodationModal">Cancel</button>
-        <button type="button" class="portal-btn portal-btn-primary" :disabled="accommodationForm.processing" @click="submitAccommodationRequest">
-          <span v-if="accommodationForm.processing">{{ editingAccommId ? 'Updating...' : 'Submitting...' }}</span>
-          <span v-else>{{ editingAccommId ? 'Update Request' : 'Submit Request' }}</span>
-        </button>
+        <GmsBtn variant="ghost" :disabled="accommodationForm.processing" @click="closeAccommodationModal">Cancel</GmsBtn>
+        <GmsBtn variant="primary" :processing="accommodationForm.processing" @click="submitAccommodationRequest">
+          {{ editingAccommId ? 'Update Request' : 'Submit Request' }}
+        </GmsBtn>
       </template>
     </PortalModal>
 
@@ -827,13 +862,24 @@ async function uploadCompFile(file, idx, field) {
       </form>
 
       <template #footer>
-        <button type="button" class="portal-btn" :disabled="transportForm.processing" @click="closeTransportModal">Cancel</button>
-        <button type="button" class="portal-btn portal-btn-primary" :disabled="transportForm.processing" @click="submitTransportRequest">
-          <span v-if="transportForm.processing">{{ editingTransportId ? 'Updating...' : 'Submitting...' }}</span>
-          <span v-else>{{ editingTransportId ? 'Update Request' : 'Submit Request' }}</span>
-        </button>
+        <GmsBtn variant="ghost" :disabled="transportForm.processing" @click="closeTransportModal">Cancel</GmsBtn>
+        <GmsBtn variant="primary" :processing="transportForm.processing" @click="submitTransportRequest">
+          {{ editingTransportId ? 'Update Request' : 'Submit Request' }}
+        </GmsBtn>
       </template>
     </PortalModal>
+
+    <!-- Delete Confirmation Modal -->
+    <GmsConfirmModal
+      :open="deleteModal.open"
+      title="Delete Request"
+      :message="deleteModal.message"
+      confirmText="Delete"
+      variant="danger"
+      :loading="deleteModal.loading"
+      @close="closeDeleteModal"
+      @confirm="executeDelete"
+    />
   </div>
 </template>
 
@@ -884,4 +930,127 @@ async function uploadCompFile(file, idx, field) {
 .portal-btn-danger:hover { background: rgba(220,38,38,.06); border-color: #dc2626; }
 .portal-input { padding: 10px 12px; border: 1px solid var(--portal-border, var(--gms-border)); border-radius: 8px; font-size: 14px; background: var(--portal-surface, var(--gms-surface)); outline: none; width: 100%; transition: .12s; }
 .portal-input:focus { border-color: var(--gms-maroon); box-shadow: 0 0 0 3px rgba(138,31,61,.06); }
+
+/* ── Transport detail card ── */
+.tp-card { padding: 0; overflow: hidden; }
+.tp-header { padding: 20px 24px 0; }
+.tp-title { font-size: 22px; font-weight: 600; color: var(--portal-text); line-height: 1.2; }
+.tp-subtitle { font-size: 13px; color: var(--portal-text-2); margin-top: 2px; }
+
+.tp-driver {
+    display: flex; align-items: center; gap: 14px;
+    margin: 16px 20px 0; padding: 14px 16px;
+    background: #241d1b; border-radius: 12px;
+}
+.tp-driver-avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: #166534; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 15px; flex-shrink: 0;
+}
+.tp-driver-info { flex: 1; min-width: 0; }
+.tp-driver-name { font-size: 15px; font-weight: 600; color: #fff; }
+.tp-driver-vehicle { font-size: 12px; color: rgba(255,255,255,.55); margin-top: 1px; }
+.tp-phone-btn {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #166534; color: #fff; border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0; transition: background .15s;
+}
+.tp-phone-btn:hover { background: #15803d; }
+
+.tp-status-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 24px 0;
+}
+.tp-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 20px;
+    font-size: 13px; font-weight: 500;
+}
+.tp-pill-confirmed { background: #dcfce7; color: #166534; }
+.tp-pill-pending { background: #fef3c7; color: #92400e; }
+.tp-pill-count { background: var(--portal-bg); color: var(--portal-text-2); }
+.tp-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tp-dot-green { background: #16a34a; }
+.tp-dot-amber { background: #f59e0b; }
+
+/* Timeline */
+.tp-timeline { padding: 20px 24px 8px; }
+.tp-date-group { margin-bottom: 4px; }
+.tp-date-label {
+    font-size: 11px; font-weight: 600; color: var(--portal-text-3);
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: 12px 0 8px;
+}
+.tp-items { display: flex; flex-direction: column; }
+
+.tp-item {
+    display: flex; gap: 14px; min-height: 0;
+}
+.tp-item-rail {
+    display: flex; flex-direction: column; align-items: center;
+    width: 32px; flex-shrink: 0; padding-top: 2px;
+}
+.tp-icon {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.tp-icon-done { background: #dcfce7; color: #16a34a; }
+.tp-icon-upcoming { background: #f5eef0; color: #8a1f3d; }
+.tp-line {
+    width: 2px; flex: 1; min-height: 12px;
+    background: var(--portal-border);
+    margin: 4px 0;
+}
+
+.tp-item-body {
+    flex: 1; min-width: 0;
+    padding: 4px 0 20px;
+    border: 1px solid var(--portal-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    background: var(--portal-surface);
+}
+.tp-item-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 4px;
+}
+.tp-item-title-row { display: flex; align-items: center; gap: 8px; }
+.tp-item-type { font-size: 14px; font-weight: 600; color: var(--portal-text); }
+.tp-up-next {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 4px; font-size: 11px; font-weight: 600;
+    background: #fce4ec; color: #8a1f3d;
+}
+.tp-item-time {
+    font-size: 15px; font-weight: 600; color: var(--portal-text);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tp-item-route {
+    font-size: 13px; color: var(--portal-text-2);
+}
+.tp-item-actions {
+    display: flex; gap: 6px; margin-top: 8px;
+}
+
+.tp-notes { padding: 0 24px 4px; }
+.tp-note {
+    padding: 12px 14px; border-radius: 10px;
+    background: var(--portal-bg); border: 1px solid var(--portal-border);
+    margin-bottom: 10px;
+}
+.tp-note-text {
+    font-size: 14px; color: var(--portal-text-2);
+    font-style: italic; line-height: 1.5;
+}
+
+.tp-actions {
+    display: flex; gap: 12px; padding: 16px 24px 20px;
+    border-top: 1px solid var(--portal-border);
+}
+.tp-btn-call { flex: 1; justify-content: center; }
+.tp-btn-change { flex: 1; justify-content: center; }
 </style>

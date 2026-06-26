@@ -74,38 +74,38 @@ class PortalServiceController extends Controller
             'guest_id' => $guest->id,
             'event_id' => $event->id,
             'code' => $code,
-            'status_id' => \App\Models\InvitationStatus::where('name', 'new')->value('id'),
+            'status_id' => \App\Models\InvitationStatus::where('name', 'requested')->value('id'),
             'pax' => 1,
             'note' => $validated['special_requests'],
             'initiated_by' => 'guest',
             'source' => 'portal',
         ]);
 
-        // Create outbound flight leg
+        // Create inbound flight leg (guest arrival in Doha)
         $flightRequest->legs()->create([
-            'dir' => 'Outbound',
+            'dir' => 'Inbound',
             'airline' => 'Qatar Airways',
             'flight_no' => 'TBD',
             'from_code' => 'XXX',
             'from_city' => $validated['departure_city'],
             'to_code' => 'DOH',
-            'to_city' => $validated['arrival_city'],
+            'to_city' => 'Doha',
             'date' => $validated['departure_date'],
             'dep' => $validated['departure_time'],
             'arr' => null,
             'cls' => ucfirst($validated['class']),
             'dur' => null,
-            'sort' => 1,
+            'sort' => 0,
         ]);
 
-        // Create return flight leg if round trip
+        // Create outbound flight leg if round trip (guest departure from Doha)
         if ($validated['trip_type'] === 'round_trip' && !empty($validated['return_date'])) {
             $flightRequest->legs()->create([
-                'dir' => 'Inbound',
+                'dir' => 'Outbound',
                 'airline' => 'Qatar Airways',
                 'flight_no' => 'TBD',
                 'from_code' => 'DOH',
-                'from_city' => $validated['arrival_city'],
+                'from_city' => 'Doha',
                 'to_code' => 'XXX',
                 'to_city' => $validated['departure_city'],
                 'date' => $validated['return_date'],
@@ -113,7 +113,7 @@ class PortalServiceController extends Controller
                 'arr' => null,
                 'cls' => ucfirst($validated['class']),
                 'dur' => null,
-                'sort' => 2,
+                'sort' => 1,
             ]);
         }
 
@@ -128,23 +128,10 @@ class PortalServiceController extends Controller
         // Guest already validated access by loading the portal dashboard
         // No signature check needed for POST routes
         
-        // Validate accommodation request data
-        $validator = Validator::make($request->all(), [
-            'hotel_preferences' => 'nullable|string|max:500',
-            'check_in' => 'required|date|after_or_equal:today',
-            'check_out' => 'required|date|after:check_in',
-            'room_type' => 'required|in:single,double,suite',
-            'rooms' => 'required|integer|min:1|max:10',
+        $validated = $request->validate([
             'special_requests' => 'nullable|string|max:1000',
         ]);
 
-        if ($validator->fails()) {
-            return back()->withErrors($validator)->withInput();
-        }
-
-        $validated = $validator->validated();
-
-        // Get current event from guest's invitation
         $event = Event::where('active_flag', true)->first();
         if (!$event) {
             return back()->withErrors(['event' => 'No active event found']);
@@ -155,33 +142,26 @@ class PortalServiceController extends Controller
             return back()->withErrors(['event' => 'No invitation found for this event']);
         }
 
-        // Generate unique accommodation request code
         $latestCode = \App\Models\AccommodationRequest::where('code', 'like', 'ACC-%')
             ->orderByRaw('CAST(SUBSTRING(code, 5) AS UNSIGNED) DESC')
             ->value('code');
-        
+
         $nextNumber = 1;
         if ($latestCode) {
             $nextNumber = intval(substr($latestCode, 4)) + 1;
         }
         $code = 'ACC-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
 
-        // Calculate nights
-        $checkIn = new \DateTime($validated['check_in']);
-        $checkOut = new \DateTime($validated['check_out']);
-        $nights = $checkIn->diff($checkOut)->days;
-
-        // Create accommodation request
         \App\Models\AccommodationRequest::create([
             'guest_id' => $guest->id,
             'event_id' => $event->id,
             'code' => $code,
-            'status_id' => \App\Models\InvitationStatus::where('name', 'new')->value('id'),
-            'hotel_name' => $validated['hotel_preferences'] ?: 'Guest preference',
-            'room_type' => ucfirst($validated['room_type']),
-            'check_in' => $validated['check_in'],
-            'check_out' => $validated['check_out'],
-            'nights' => $nights,
+            'status_id' => \App\Models\InvitationStatus::where('name', 'requested')->value('id'),
+            'hotel_name' => 'Guest preference',
+            'room_type' => 'TBD',
+            'check_in' => now()->toDateString(),
+            'check_out' => now()->addDay()->toDateString(),
+            'nights' => 0,
             'notes' => $validated['special_requests'],
             'initiated_by' => 'guest',
             'source' => 'portal',
@@ -229,7 +209,7 @@ class PortalServiceController extends Controller
             'guest_id' => $guest->id,
             'event_id' => $event->id,
             'code' => $code,
-            'status_id' => \App\Models\InvitationStatus::where('name', 'pending')->value('id'),
+            'status_id' => \App\Models\InvitationStatus::where('name', 'requested')->value('id'),
             'notes' => $validated['special_requests'],
             'initiated_by' => 'guest',
             'source' => 'portal',
@@ -311,23 +291,11 @@ class PortalServiceController extends Controller
             ->firstOrFail();
 
         $validated = $request->validate([
-            'hotel_preferences' => 'nullable|string|max:500',
-            'check_in'  => 'required|date',
-            'check_out' => 'required|date|after:check_in',
-            'room_type' => 'required|in:single,double,suite',
             'special_requests' => 'nullable|string|max:1000',
         ]);
 
-        $checkIn = new \DateTime($validated['check_in']);
-        $checkOut = new \DateTime($validated['check_out']);
-
         $acc->update([
-            'hotel_name' => $validated['hotel_preferences'] ?: 'Guest preference',
-            'room_type'  => ucfirst($validated['room_type']),
-            'check_in'   => $validated['check_in'],
-            'check_out'  => $validated['check_out'],
-            'nights'     => $checkIn->diff($checkOut)->days,
-            'notes'      => $validated['special_requests'],
+            'notes' => $validated['special_requests'],
         ]);
 
         return back()->with('success', 'Accommodation request updated');

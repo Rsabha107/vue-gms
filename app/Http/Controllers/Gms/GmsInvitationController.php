@@ -11,6 +11,7 @@ use App\Models\FlightRequest;
 use App\Models\AccommodationRequest;
 use App\Services\Gms\GmsMockData;
 use App\Mail\GuestInvitationMail;
+use App\Mail\TemplatedMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
@@ -132,6 +133,9 @@ class GmsInvitationController extends Controller
                         'reference_number' => $guest->reference_number,
                         'phone' => $guest->phone,
                         'notes' => $guest->notes,
+                        'personal_photo' => $pivot?->personal_photo,
+                        'passport_front' => $pivot?->passport_front,
+                        'companions' => $pivot?->companions ?? [],
                         'status' => $invStatus,
                         'sessions' => $sessions,
                         'passport' => $guest->qid ? true : false,
@@ -440,6 +444,8 @@ class GmsInvitationController extends Controller
                 }
             }
 
+            $this->sendConfirmationEmail($invitation->guest, $invitation->event_id, $matchIds);
+
             return back()->with('success', $invitation->guest->name . ' confirmed with ' . count($matchIds) . ' match(es).');
         } else {
             // Case 2: No invitation — treat $id as guest ID, create invitation record
@@ -477,8 +483,45 @@ class GmsInvitationController extends Controller
                 $guest->update(['status_id' => $confirmedGuestStatus->id]);
             }
 
+            $this->sendConfirmationEmail($guest, $eventId, $matchIds);
+
             return back()->with('success', $guest->name . ' confirmed with ' . count($matchIds) . ' match(es).');
         }
+    }
+
+    private function sendConfirmationEmail(Guest $guest, $eventId, array $matchIds): void
+    {
+        if (!$guest->email) return;
+
+        $event = GmsMockData::getEvent();
+        $eventName = $event['name'] ?? 'Event';
+
+        $matches = GameMatch::with('venue')
+            ->whereIn('id', $matchIds)
+            ->get()
+            ->map(fn($m) => [
+                'stage'    => $m->stage_code ?? $m->stage ?? 'Match',
+                'homeTeam' => $m->team_a_name ?? 'TBD',
+                'awayTeam' => $m->team_b_name ?? 'TBD',
+                'date'     => $m->date?->format('D j M Y') ?? '',
+                'time'     => $m->time ?? '',
+                'venue'    => $m->venue?->name ?? '',
+            ])
+            ->toArray();
+
+        $portalUrl = null;
+        try {
+            $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest);
+        } catch (\Throwable $e) {}
+
+        TemplatedMail::deliver('confirmation', $guest->email, [
+            'guest_name'  => $guest->name,
+            'guest_title' => $guest->title ?? '',
+            'event_name'  => $eventName,
+        ], [
+            'matches'   => $matches,
+            'portalUrl' => $portalUrl,
+        ]);
     }
 
     public function markDeclined(Request $request, $id)
@@ -614,8 +657,13 @@ class GmsInvitationController extends Controller
         \App\Services\Gms\PortalTokenService::trackPortalSent($invitation, $token, $hoursValid);
 
         // Queue email with portal link
-        \Illuminate\Support\Facades\Mail::to($guest->email)
-            ->queue(new \App\Mail\PortalAccessMail($guest, $portalUrl, $event, $hoursValid));
+        TemplatedMail::deliver('portal_access', $guest->email, [
+            'guest_name'  => $guest->name,
+            'guest_title' => $guest->title ?? '',
+            'event_name'  => $event['name'] ?? 'Event',
+        ], [
+            'portalUrl' => $portalUrl,
+        ]);
 
         return back()->with('success', 'Portal access link queued for ' . $guest->name);
     }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Models\Guest;
 use App\Models\Event;
+use App\Models\Airport;
 use App\Services\Gms\PortalTokenService;
 use Illuminate\Http\Request;
 
@@ -57,6 +58,32 @@ class PortalDashboardController extends Controller
             ->where('event_id', $event->id)
             ->with(['legs', 'status'])
             ->get();
+
+        // Fetch city names from airports table for flight display
+        $airportCodes = $flightRequests->flatMap(function ($flight) {
+            return $flight->legs->flatMap(function ($leg) {
+                return [$leg->from_code, $leg->to_code];
+            });
+        })->unique()->filter()->values()->all();
+
+        $airports = Airport::whereIn('iata_code', $airportCodes)
+            ->get(['iata_code', 'municipality'])
+            ->keyBy('iata_code')
+            ->map(fn($airport) => $airport->municipality)
+            ->toArray();
+
+        // Map city names to flight legs for display
+        $flightRequests->each(function ($flight) use ($airports) {
+            $flight->legs->each(function ($leg) use ($airports) {
+                // Only lookup if city is empty or matches the code (needs lookup)
+                if (!$leg->from_city || $leg->from_city === $leg->from_code || $leg->from_city === 'XXX') {
+                    $leg->from_city = $airports[$leg->from_code] ?? $leg->from_code;
+                }
+                if (!$leg->to_city || $leg->to_city === $leg->to_code || $leg->to_city === 'XXX') {
+                    $leg->to_city = $airports[$leg->to_code] ?? $leg->to_code;
+                }
+            });
+        });
 
         $accommodationRequests = $guest->accommodationRequests()
             ->where('event_id', $event->id)

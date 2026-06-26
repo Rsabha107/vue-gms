@@ -38,6 +38,7 @@ const sourceOptions = [
     { id: 'email', name: 'Email' },
 ]
 const statusColors = {
+    requested: { bg: '#ede9fe', fg: '#7c3aed' },
     confirmed: { bg: '#dcfce7', fg: '#15803d' },
     pending:   { bg: '#fef9c3', fg: '#a16207' },
     cancelled: { bg: '#f3f4f6', fg: '#6b7280' },

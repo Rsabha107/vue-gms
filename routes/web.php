@@ -18,6 +18,9 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// ---- Guest PWA Portal ----
+Route::get('/pg', [\App\Http\Controllers\Pg\PgController::class, 'index'])->name('pg.index');
+
 // ---- PUBLIC guest-facing RSVP (token-guarded, no auth) ----
 Route::post('/rsvp/upload', function (\Illuminate\Http\Request $request) {
     $request->validate(['file' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120']);

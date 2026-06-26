@@ -9,6 +9,7 @@ use App\Models\Guest;
 use App\Models\ServiceLevel;
 use App\Services\Gms\GmsMockData;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class GmsFlightController extends Controller
@@ -23,10 +24,33 @@ class GmsFlightController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $transform = function ($fr) {
+        // Collect all unique airport codes from flight legs
+        $airportCodes = $allFlights->flatMap(fn($fr) => $fr->legs->pluck('from_code'))
+            ->merge($allFlights->flatMap(fn($fr) => $fr->legs->pluck('to_code')))
+            ->filter()
+            ->unique()
+            ->values();
+
+        // Fetch all airport cities in one query
+        $airports = \App\Models\Airport::whereIn('iata_code', $airportCodes)
+            ->get(['iata_code', 'municipality'])
+            ->keyBy('iata_code')
+            ->map(fn($a) => $a->municipality);
+
+        $transform = function ($fr) use ($airports) {
             $inbound = $fr->legs->where('dir', 'Inbound')->first();
             $outbound = $fr->legs->where('dir', 'Outbound')->first();
             $statusName = $fr->status->name ?? 'new';
+
+            // Inbound: FROM guest's city (destination) TO event city (origin)
+            // Outbound: FROM event city (origin) TO guest's city (destination)
+            // So we use outbound leg for intuitive origin/destination mapping
+            $originCode = $outbound ? $outbound->from_code : ($inbound ? $inbound->to_code : '');
+            $destCode = $outbound ? $outbound->to_code : ($inbound ? $inbound->from_code : '');
+
+            // Get cities from airports table
+            $originCity = $originCode ? ($airports[$originCode] ?? $originCode) : '';
+            $destCity = $destCode ? ($airports[$destCode] ?? $destCode) : '';
 
             return [
                 'id' => $fr->code,
@@ -47,15 +71,15 @@ class GmsFlightController extends Controller
                 'flightNo' => $inbound ? $inbound->flight_no : '',
                 'airline' => $inbound ? $inbound->airline : 'Qatar Airways',
                 'route' => $inbound && $outbound
-                    ? "{$inbound->from_code} → {$inbound->to_code}"
+                    ? "{$destCode} ⇄ {$originCode}"
                     : '',
                 'class' => $inbound ? $inbound->cls : 'Business',
 
                 'inboundFlight' => $inbound ? $inbound->flight_no : '',
-                'origin' => $inbound ? $inbound->from_code : '',
-                'originCity' => $inbound ? $inbound->from_city : '',
-                'destination' => $inbound ? $inbound->to_code : '',
-                'destCity' => $inbound ? $inbound->to_city : '',
+                'origin' => $originCode,
+                'originCity' => $originCity,
+                'destination' => $destCode,
+                'destCity' => $destCity,
                 'date' => $inbound ? $inbound->date : '',
                 'time' => $inbound ? $inbound->dep : '',
                 'arrival' => $inbound ? $inbound->date : '',
@@ -70,16 +94,28 @@ class GmsFlightController extends Controller
                 'outboundArrivalTime' => $outbound ? $outbound->arr : '',
                 'outboundTerminal' => 'Departure — Hamad International (HIA)',
 
-                'legs' => $fr->legs->map(function ($leg) {
+                'legs' => $fr->legs->map(function ($leg) use ($airports) {
+                    // For portal guest requests, from_code/to_code may be 'XXX' with actual city in from_city/to_city
+                    // Only use airport lookup if we don't have a proper city name stored
+                    $fromCity = $leg->from_city;
+                    if (!$fromCity || $fromCity === $leg->from_code || $fromCity === 'XXX') {
+                        $fromCity = $airports[$leg->from_code] ?? $leg->from_code;
+                    }
+                    
+                    $toCity = $leg->to_city;
+                    if (!$toCity || $toCity === $leg->to_code || $toCity === 'XXX') {
+                        $toCity = $airports[$leg->to_code] ?? $leg->to_code;
+                    }
+                    
                     return [
                         'id' => $leg->id,
                         'dir' => $leg->dir,
                         'airline' => $leg->airline,
                         'flightNo' => $leg->flight_no,
                         'fromCode' => $leg->from_code,
-                        'fromCity' => $leg->from_city,
+                        'fromCity' => $fromCity,
                         'toCode' => $leg->to_code,
-                        'toCity' => $leg->to_city,
+                        'toCity' => $toCity,
                         'date' => $leg->date,
                         'dep' => $leg->dep,
                         'arr' => $leg->arr,
@@ -134,8 +170,10 @@ class GmsFlightController extends Controller
             'guestId'     => 'required|exists:guests,id',
             'class'       => 'required|string',
             'pax'         => 'required|integer|min:1',
+            'pnr'         => 'nullable|string|max:12',
             'origin'      => 'required|string|max:3',
             'destination' => 'required|string|max:3',
+            'destinationCity' => 'nullable|string|max:100',
             'inboundFlightNo' => 'required|string|max:20',
             'date'        => 'required|date',
             'inboundDepTime' => 'required|string|max:10',
@@ -153,16 +191,22 @@ class GmsFlightController extends Controller
         $eventId = $event['id'] ?? null;
 
         $code = $this->nextCode($eventId);
-        $statusName = ($validated['isChange'] ?? false) ? 'change' : 'new';
-        $statusId = \App\Models\InvitationStatus::where('name', $statusName)->value('id');
+        // Manual flight creation by team should be 'confirmed' by default
+        $statusName = ($validated['isChange'] ?? false) ? 'change' : 'confirmed';
+        $status = \App\Models\InvitationStatus::where('name', $statusName)->first();
+        
+        if (!$status) {
+            \Log::error("Status '{$statusName}' not found in invitation_statuses table");
+            return back()->withErrors(['status' => "Status '{$statusName}' not found. Please contact administrator."]);
+        }
 
         $flightRequest = FlightRequest::create([
             'event_id' => $eventId,
             'guest_id' => $validated['guestId'],
             'code' => $code,
-            'status_id' => $statusId,
+            'status_id' => $status->id,
             'pax' => $validated['pax'],
-            'ref' => strtoupper(substr(md5(uniqid()), 0, 6)),
+            'ref' => !empty($validated['pnr']) ? strtoupper($validated['pnr']) : strtoupper(substr(md5(uniqid()), 0, 6)),
             'source' => 'manual',
             'initiated_by' => 'team',
         ]);
@@ -184,8 +228,10 @@ class GmsFlightController extends Controller
             'guestId'     => 'required|exists:guests,id',
             'class'       => 'required|string',
             'pax'         => 'required|integer|min:1',
+            'pnr'         => 'nullable|string|max:12',
             'origin'      => 'required|string|max:3',
             'destination' => 'required|string|max:3',
+            'destinationCity' => 'nullable|string|max:100',
             'inboundFlightNo' => 'required|string|max:20',
             'date'        => 'required|date',
             'inboundDepTime' => 'required|string|max:10',
@@ -200,15 +246,21 @@ class GmsFlightController extends Controller
 
         $code = $this->nextCode($guestRequest->event_id);
 
-        $newStatusId = \App\Models\InvitationStatus::where('name', 'new')->value('id');
+        // When team books a guest request, it should be confirmed immediately
+        $status = \App\Models\InvitationStatus::where('name', 'confirmed')->first();
+        
+        if (!$status) {
+            \Log::error("Status 'confirmed' not found in invitation_statuses table");
+            return back()->withErrors(['status' => "Status 'confirmed' not found. Please contact administrator."]);
+        }
 
         $booking = FlightRequest::create([
             'event_id' => $guestRequest->event_id,
             'guest_id' => $validated['guestId'],
             'code' => $code,
-            'status_id' => $newStatusId,
+            'status_id' => $status->id,
             'pax' => $validated['pax'],
-            'ref' => strtoupper(substr(md5(uniqid()), 0, 6)),
+            'ref' => !empty($validated['pnr']) ? strtoupper($validated['pnr']) : strtoupper(substr(md5(uniqid()), 0, 6)),
             'source' => 'manual',
             'initiated_by' => 'team',
             'fulfills_request_id' => $guestRequest->id,
@@ -236,6 +288,90 @@ class GmsFlightController extends Controller
         return back()->with('success', 'Flight updated.');
     }
 
+    public function updateFull(Request $request, string $id)
+    {
+        $flightRequest = FlightRequest::where('code', $id)->with('legs')->firstOrFail();
+
+        $validated = $request->validate([
+            'class'       => 'required|string',
+            'pax'         => 'required|integer|min:1',
+            'pnr'         => 'nullable|string|max:12',
+            'origin'      => 'required|string|max:3',
+            'destination' => 'required|string|max:3',
+            'inboundFlightNo' => 'required|string|max:20',
+            'date'        => 'required|date',
+            'inboundDepTime' => 'required|string|max:10',
+            'inboundArrTime' => 'required|string|max:10',
+            'inboundDuration' => 'nullable|string|max:20',
+            'outboundFlightNo' => 'required|string|max:20',
+            'outboundDate' => 'required|date',
+            'outboundDepTime' => 'required|string|max:10',
+            'outboundArrTime' => 'required|string|max:10',
+            'outboundDuration' => 'nullable|string|max:20',
+            'isChange'    => 'sometimes|boolean',
+        ]);
+
+        // Update flight request basic info
+        $statusName = ($validated['isChange'] ?? false) ? 'change' : $flightRequest->status->name;
+        $statusId = \App\Models\InvitationStatus::where('name', $statusName)->value('id');
+        
+        $flightRequest->update([
+            'pax' => $validated['pax'],
+            'ref' => !empty($validated['pnr']) ? strtoupper($validated['pnr']) : $flightRequest->ref,
+            'status_id' => $statusId,
+        ]);
+
+        // Update or create inbound leg
+        $inboundLeg = $flightRequest->legs->where('dir', 'Inbound')->first();
+        $inboundData = [
+            'dir' => 'Inbound',
+            'airline' => 'Qatar Airways',
+            'flight_no' => $validated['inboundFlightNo'],
+            'from_code' => $validated['destination'],
+            'from_city' => null,
+            'to_code' => $validated['origin'],
+            'to_city' => null,
+            'date' => $validated['date'],
+            'dep' => $validated['inboundDepTime'],
+            'arr' => $validated['inboundArrTime'],
+            'cls' => $validated['class'],
+            'dur' => $validated['inboundDuration'],
+            'sort' => 0,
+        ];
+
+        if ($inboundLeg) {
+            $inboundLeg->update($inboundData);
+        } else {
+            $flightRequest->legs()->create($inboundData);
+        }
+
+        // Update or create outbound leg
+        $outboundLeg = $flightRequest->legs->where('dir', 'Outbound')->first();
+        $outboundData = [
+            'dir' => 'Outbound',
+            'airline' => 'Qatar Airways',
+            'flight_no' => $validated['outboundFlightNo'],
+            'from_code' => $validated['origin'],
+            'from_city' => null,
+            'to_code' => $validated['destination'],
+            'to_city' => null,
+            'date' => $validated['outboundDate'],
+            'dep' => $validated['outboundDepTime'],
+            'arr' => $validated['outboundArrTime'],
+            'cls' => $validated['class'],
+            'dur' => $validated['outboundDuration'],
+            'sort' => 1,
+        ];
+
+        if ($outboundLeg) {
+            $outboundLeg->update($outboundData);
+        } else {
+            $flightRequest->legs()->create($outboundData);
+        }
+
+        return back()->with('success', 'Flight request updated.');
+    }
+
     public function updateStatus(Request $request, string $id)
     {
         $validated = $request->validate([
@@ -243,8 +379,22 @@ class GmsFlightController extends Controller
         ]);
 
         $statusId = \App\Models\InvitationStatus::where('name', $validated['status'])->value('id');
-        $flightRequest = FlightRequest::where('code', $id)->firstOrFail();
+        $flightRequest = FlightRequest::with(['guest', 'legs'])->where('code', $id)->firstOrFail();
         $flightRequest->update(['status_id' => $statusId]);
+
+        if ($validated['status'] === 'confirmed' && $flightRequest->guest?->email) {
+            $inbound = $flightRequest->legs->where('dir', 'Inbound')->first();
+            $outbound = $flightRequest->legs->where('dir', 'Outbound')->first();
+            $event = GmsMockData::getEvent();
+            \App\Services\Gms\ServiceConfirmationService::sendFlightConfirmation($flightRequest->guest, $event['name'] ?? '', [
+                'code'     => $flightRequest->ref ?? $flightRequest->code,
+                'route'    => ($inbound?->from_code ?? '') . ' → ' . ($inbound?->to_code ?? ''),
+                'class'    => $inbound?->cls ?? '',
+                'pax'      => $flightRequest->pax,
+                'inbound'  => ($inbound?->date ?? '') . ' · ' . ($inbound?->dep ?? ''),
+                'outbound' => ($outbound?->date ?? '') . ' · ' . ($outbound?->dep ?? ''),
+            ]);
+        }
 
         return back()->with('success', 'Status updated.');
     }
@@ -275,6 +425,13 @@ class GmsFlightController extends Controller
         return back()->with('success', 'Flight leg updated.');
     }
 
+    public function confirmBoarding(string $id)
+    {
+        $flightRequest = FlightRequest::where('code', $id)->firstOrFail();
+        $flightRequest->update(['boarded_at' => now()]);
+        return back()->with('success', 'Boarding confirmed.');
+    }
+
     public function destroy(string $id)
     {
         $flightRequest = FlightRequest::where('code', $id)->firstOrFail();
@@ -294,12 +451,15 @@ class GmsFlightController extends Controller
 
     private function createLegs(FlightRequest $flightRequest, array $validated): void
     {
+        // Use destinationCity if provided (for portal guest requests), otherwise lookup from airports table
+        $destinationCity = $validated['destinationCity'] ?? null;
+        
         $flightRequest->legs()->create([
             'dir' => 'Inbound',
             'airline' => 'Qatar Airways',
             'flight_no' => $validated['inboundFlightNo'],
             'from_code' => strtoupper($validated['destination']),
-            'from_city' => strtoupper($validated['destination']),
+            'from_city' => $destinationCity,
             'to_code' => strtoupper($validated['origin']),
             'to_city' => 'Doha',
             'date' => $validated['date'],
@@ -317,7 +477,7 @@ class GmsFlightController extends Controller
             'from_code' => strtoupper($validated['origin']),
             'from_city' => 'Doha',
             'to_code' => strtoupper($validated['destination']),
-            'to_city' => strtoupper($validated['destination']),
+            'to_city' => $destinationCity,
             'date' => $validated['outboundDate'],
             'dep' => $validated['outboundDepTime'],
             'arr' => $validated['outboundArrTime'],

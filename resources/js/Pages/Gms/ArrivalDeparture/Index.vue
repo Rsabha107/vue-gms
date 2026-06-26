@@ -24,8 +24,9 @@ const localReqs = ref(props.requests.map(r => ({ ...r })))
 const search       = ref('')
 const statusFilter = ref('all')
 const typeFilter   = ref('all')
-const statuses     = ['all', 'confirmed', 'pending', 'cancelled']
+const statuses     = ['all', 'requested', 'confirmed', 'pending', 'cancelled']
 const statusColors = {
+    requested: { bg: '#ede9fe', fg: '#7c3aed' },
     confirmed: { bg: '#dcfce7', fg: '#15803d' },
     pending:   { bg: '#fef9c3', fg: '#a16207' },
     cancelled: { bg: '#f3f4f6', fg: '#6b7280' },

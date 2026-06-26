@@ -188,8 +188,20 @@ class GmsAccommodationController extends Controller
         $validated = $request->validate(['status' => 'required|in:new,change,confirmed,cancelled']);
 
         $statusId = \App\Models\InvitationStatus::where('name', $validated['status'])->value('id');
-        $accommodationRequest = AccommodationRequest::where('code', $id)->firstOrFail();
+        $accommodationRequest = AccommodationRequest::with('guest')->where('code', $id)->firstOrFail();
         $accommodationRequest->update(['status_id' => $statusId]);
+
+        if ($validated['status'] === 'confirmed' && $accommodationRequest->guest?->email) {
+            $event = GmsMockData::getEvent();
+            \App\Services\Gms\ServiceConfirmationService::sendAccommodationConfirmation($accommodationRequest->guest, $event['name'] ?? '', [
+                'code'     => $accommodationRequest->code,
+                'hotel'    => $accommodationRequest->hotel_name,
+                'roomType' => $accommodationRequest->room_type,
+                'checkIn'  => $accommodationRequest->check_in?->format('d M Y'),
+                'checkOut' => $accommodationRequest->check_out?->format('d M Y'),
+                'nights'   => $accommodationRequest->nights,
+            ]);
+        }
 
         return back()->with('success', 'Status updated.');
     }
@@ -255,6 +267,20 @@ class GmsAccommodationController extends Controller
         $guestRequest->update(['fulfilled_by_id' => $booking->id]);
 
         return back()->with('success', 'Accommodation booked from guest request.');
+    }
+
+    public function checkIn(string $id)
+    {
+        $req = AccommodationRequest::where('code', $id)->firstOrFail();
+        $req->update(['checked_in_at' => now()]);
+        return back()->with('success', 'Check-in confirmed.');
+    }
+
+    public function checkOut(string $id)
+    {
+        $req = AccommodationRequest::where('code', $id)->firstOrFail();
+        $req->update(['checked_out_at' => now()]);
+        return back()->with('success', 'Check-out confirmed.');
     }
 
     // ── Hotel CRUD ──

@@ -33,6 +33,18 @@ class InvitationStatusSeeder extends Seeder
                 'color' => '#f59e0b', // Amber
             ],
             [
+                'name' => 'new',
+                'label' => 'New',
+                'description' => 'New request, not yet processed',
+                'color' => '#f59e0b', // Amber
+            ],
+            [
+                'name' => 'requested',
+                'label' => 'Requested',
+                'description' => 'Guest has requested service via portal',
+                'color' => '#8b5cf6', // Purple
+            ],
+            [
                 'name' => 'accepted',
                 'label' => 'Accepted',
                 'description' => 'Guest has accepted the invitation',
@@ -43,6 +55,18 @@ class InvitationStatusSeeder extends Seeder
                 'label' => 'Confirmed',
                 'description' => 'Attendance confirmed',
                 'color' => '#059669', // Dark Green
+            ],
+            [
+                'name' => 'change',
+                'label' => 'Change Request',
+                'description' => 'Request for changes to existing booking',
+                'color' => '#3b82f6', // Blue
+            ],
+            [
+                'name' => 'cancelled',
+                'label' => 'Cancelled',
+                'description' => 'Booking has been cancelled',
+                'color' => '#6b7280', // Gray
             ],
             [
                 'name' => 'declined',

@@ -19,6 +19,7 @@ class GuestEvent extends Pivot
         'personal_photo',
         'passport_front',
         'totp_secret',
+        'attendance_mode',
         'preference_overrides',
     ];
 

@@ -19,6 +19,7 @@ class TransportRequest extends Model
         'datetime',
         'driver',
         'notes',
+        'completed_at',
         'fulfilled_by_id',
         'fulfills_request_id',
         'initiated_by',
@@ -30,6 +31,7 @@ class TransportRequest extends Model
     ];
 
     protected $casts = [
+        'completed_at' => 'datetime',
         'reminded_at' => 'datetime',
         'escalated_at' => 'datetime',
     ];

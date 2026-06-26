@@ -20,6 +20,8 @@ class AccommodationRequest extends Model
         'check_out',
         'nights',
         'notes',
+        'checked_in_at',
+        'checked_out_at',
         'fulfilled_by_id',
         'fulfills_request_id',
         'initiated_by',
@@ -33,6 +35,8 @@ class AccommodationRequest extends Model
     protected $casts = [
         'check_in'  => 'date',
         'check_out' => 'date',
+        'checked_in_at' => 'datetime',
+        'checked_out_at' => 'datetime',
         'reminded_at' => 'datetime',
         'escalated_at' => 'datetime',
     ];

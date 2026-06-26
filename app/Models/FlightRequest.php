@@ -17,6 +17,7 @@ class FlightRequest extends Model
         'pax',
         'requested_at',
         'note',
+        'boarded_at',
         'fulfilled_by_id',
         'fulfills_request_id',
         'initiated_by',
@@ -28,6 +29,7 @@ class FlightRequest extends Model
     ];
 
     protected $casts = [
+        'boarded_at' => 'datetime',
         'reminded_at' => 'datetime',
         'escalated_at' => 'datetime',
     ];

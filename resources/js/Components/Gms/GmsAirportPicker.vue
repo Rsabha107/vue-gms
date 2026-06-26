@@ -7,6 +7,7 @@ const props = defineProps({
     modelValue: { type: String, default: '' },
     placeholder: { type: String, default: 'Search airport…' },
     readonly: { type: Boolean, default: false },
+    displayLabel: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:modelValue', 'select'])
@@ -21,6 +22,13 @@ let debounce = null
 
 watch(() => props.modelValue, (val) => {
     if (!val) { query.value = ''; selectedLabel.value = '' }
+}, { immediate: true })
+
+// Set initial display label when component mounts with a value
+watch(() => props.displayLabel, (val) => {
+    if (val && props.modelValue && !selectedLabel.value) {
+        selectedLabel.value = val
+    }
 }, { immediate: true })
 
 function search(q) {
@@ -54,7 +62,8 @@ function pick(airport) {
 }
 
 function onFocus() {
-    if (selectedLabel.value) {
+    // Only clear if we don't have a pre-populated displayLabel
+    if (selectedLabel.value && !props.displayLabel) {
         query.value = ''
         selectedLabel.value = ''
         emit('update:modelValue', '')
@@ -88,7 +97,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
         v-else
         type="text"
         class="gms-input"
-        :value="modelValue"
+        :value="displayLabel || modelValue"
         readonly
         style="background:var(--gms-surface-2);cursor:not-allowed;"
       />

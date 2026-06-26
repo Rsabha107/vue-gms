@@ -639,7 +639,8 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     @close="guestDrawerOpen = false; activeGuest = null"
   >
     <template v-if="activeGuest" #header-prefix>
-      <GmsAvatar :name="activeGuest.name" size="lg" />
+      <img v-if="activeGuest.personal_photo" :src="`/gms/api/document/${activeGuest.personal_photo}`" style="width:56px;height:56px;border-radius:50%;object-fit:cover;" />
+      <GmsAvatar v-else :name="activeGuest.name" size="lg" />
     </template>
 
     <div v-if="activeGuest" style="padding: 24px;">
@@ -654,6 +655,32 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       <div class="gms-detail-row"><span class="gms-detail-label">Status</span><span class="gms-detail-value"><span class="inv-status-pill" :style="{ '--status-color': statusColor(activeGuest.status) }"><span class="inv-status-dot"></span>{{ statusLabel(activeGuest.status) }}</span></span></div>
       <div v-if="activeGuest.group" class="gms-detail-row"><span class="gms-detail-label">Group</span><span class="gms-detail-value">{{ activeGuest.group }}</span></div>
       <div v-if="activeGuest.notes" class="gms-detail-row"><span class="gms-detail-label">Notes</span><span class="gms-detail-value">{{ activeGuest.notes }}</span></div>
+      <div v-if="activeGuest.personal_photo || activeGuest.passport_front" class="gms-detail-row">
+        <span class="gms-detail-label">Documents</span>
+        <span class="gms-detail-value" style="display:flex;gap:6px;">
+          <a v-if="activeGuest.personal_photo" :href="`/gms/api/document/${activeGuest.personal_photo}`" target="_blank" class="inv-doc-badge">📷 Photo</a>
+          <a v-if="activeGuest.passport_front" :href="`/gms/api/document/${activeGuest.passport_front}`" target="_blank" class="inv-doc-badge">🪪 Passport</a>
+        </span>
+      </div>
+
+      <!-- Companions -->
+      <div v-if="activeGuest.companions?.length" style="margin-top: 32px;">
+        <div class="gms-section-title" style="margin-bottom: 12px;">Companions ({{ activeGuest.companions.length }})</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div v-for="(comp, ci) in activeGuest.companions" :key="ci" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--gms-border); border-radius: 8px;">
+            <img v-if="comp.personal_photo" :src="`/gms/api/document/${comp.personal_photo}`" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;" />
+            <GmsAvatar v-else :name="comp.name" size="sm" />
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 13px; font-weight: 600;">{{ comp.name }}</div>
+              <div style="font-size: 11px; color: var(--gms-text-3);">{{ comp.relation || 'Companion' }}<span v-if="comp.passport_no"> · {{ comp.passport_no }}</span></div>
+              <div v-if="comp.personal_photo || comp.passport_front" style="display: flex; gap: 6px; margin-top: 4px;">
+                <a v-if="comp.personal_photo" :href="`/gms/api/document/${comp.personal_photo}`" target="_blank" class="inv-doc-badge">📷 Photo</a>
+                <a v-if="comp.passport_front" :href="`/gms/api/document/${comp.passport_front}`" target="_blank" class="inv-doc-badge">🪪 Passport</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Services Status -->
       <div class="gms-section-title" style="margin-top: 32px; margin-bottom: 16px;">Services</div>
@@ -693,7 +720,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     <template #footer>
       <GmsBtn variant="ghost" @click="guestDrawerOpen = false; activeGuest = null">Close</GmsBtn>
       <GmsBtn v-if="activeGuest?.status !== 'not_invited'" variant="ghost" icon="globe" @click="sendPortalLink(activeGuest)">Send portal link</GmsBtn>
-      <GmsBtn v-if="activeGuest?.status === 'not_invited' || activeGuest?.invitation" variant="ghost" icon="badge" @click="markConfirmed(activeGuest)">Mark confirmed</GmsBtn>
+      <GmsBtn v-if="activeGuest?.status !== 'confirmed' && (activeGuest?.status === 'not_invited' || activeGuest?.invitation)" variant="ghost" icon="badge" @click="markConfirmed(activeGuest)">Mark confirmed</GmsBtn>
       <GmsBtn variant="primary" icon="arrow-right" @click="router.visit(route('gms.guests.index'))">View Full Profile</GmsBtn>
     </template>
   </GmsDrawer>
@@ -824,7 +851,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       <button class="gms-menu-item" @click="openGuestDrawer(filtered.find(g => g.id === actionsMenuOpen)); actionsMenuOpen = null"><GmsIcon name="eye" :size="16" /> View profile</button>
       <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="acceptOnBehalf(filtered.find(g => g.id === actionsMenuOpen)); actionsMenuOpen = null"><GmsIcon name="check-circle" :size="16" /> Accept on behalf</button>
       <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.status !== 'not_invited'" class="gms-menu-item" @click="sendPortalLink(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="globe" :size="16" /> Send portal link</button>
-      <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.status === 'not_invited' || filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="markConfirmed(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="badge" :size="16" /> Mark confirmed</button>
+      <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.status !== 'confirmed' && (filtered.find(g => g.id === actionsMenuOpen)?.status === 'not_invited' || filtered.find(g => g.id === actionsMenuOpen)?.invitation)" class="gms-menu-item" @click="markConfirmed(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="badge" :size="16" /> Mark confirmed</button>
       <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="markDeclined(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="x" :size="16" /> Mark declined</button>
       <button v-if="filtered.find(g => g.id === actionsMenuOpen)?.invitation" class="gms-menu-item" @click="resetToPending(filtered.find(g => g.id === actionsMenuOpen))"><GmsIcon name="refresh-cw" :size="16" /> Reset to not invited</button>
       <div class="gms-menu-sep"></div>
@@ -844,4 +871,13 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     @close="wizardOpen = false; wizardGuest = null"
   />
 </template>
+
+<style scoped>
+.inv-doc-badge {
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 5px;
+  background: var(--gms-bg); border: 1px solid var(--gms-border);
+  text-decoration: none; color: var(--gms-text-2); transition: .1s;
+}
+.inv-doc-badge:hover { border-color: var(--gms-maroon); color: var(--gms-maroon); }
+</style>
 

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, inject, computed, watch } from 'vue'
-import { useForm } from '@inertiajs/vue3'
+import { useForm, router } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
 import GmsBtn from '@/Components/Gms/GmsBtn.vue'
@@ -40,19 +40,39 @@ const activeTemplate = ref(localEmailTemplates.value.find(t => t.active) || loca
 const templateName = ref(activeTemplate.value?.name || '')
 const templateSubject = ref(activeTemplate.value?.subject || '')
 const templateBody = ref(activeTemplate.value?.body || '')
-const templateTags = ['guest_name', 'guest_title', 'event_name', 'event_date', 'venue', 'tier_name', 'rsvp_deadline', 'flight_details', 'accommodation_details', 'transport_details']
+const templateType = ref(activeTemplate.value?.type || 'invitation')
+const templateCc = ref(activeTemplate.value?.cc || '')
+const templateBcc = ref(activeTemplate.value?.bcc || '')
+const templateEnabled = ref(activeTemplate.value?.enabled ?? true)
+const templateTags = ['guest_name', 'guest_title', 'guest_email', 'event_name', 'event_date', 'event_location', 'tier_name', 'match_list', 'portal_url', 'service_details']
+const templateTypes = {
+    invitation: 'Invitation',
+    confirmation: 'Invitation Confirmed',
+    portal_access: 'Portal Access',
+    flight_confirmed: 'Flight Confirmed',
+    accommodation_confirmed: 'Accommodation Confirmed',
+    transport_confirmed: 'Transport Confirmed',
+}
 const bodyTextarea = ref(null)
 
 // Forms for template operations
 const saveForm = useForm({
     name: '',
     subject: '',
-    body: ''
+    body: '',
+    type: 'invitation',
+    cc: '',
+    bcc: '',
+    enabled: true,
 })
 const createForm = useForm({
     name: 'New Template',
     subject: 'Welcome to {{ event_name }}',
-    body: 'Dear {{ guest_name }},\n\nWe are pleased to invite you to {{ event_name }}.\n\nBest regards'
+    body: 'Dear {{ guest_name }},\n\nWe are pleased to invite you to {{ event_name }}.\n\nBest regards',
+    type: 'invitation',
+    cc: '',
+    bcc: '',
+    enabled: true,
 })
 const deleteForm = useForm({})
 const isSendingTest = ref(false)
@@ -68,6 +88,10 @@ watch(() => props.emailTemplates, (newTemplates) => {
         templateName.value = activeTemplate.value.name
         templateSubject.value = activeTemplate.value.subject
         templateBody.value = activeTemplate.value.body
+        templateType.value = activeTemplate.value.type || 'invitation'
+        templateCc.value = activeTemplate.value.cc || ''
+        templateBcc.value = activeTemplate.value.bcc || ''
+        templateEnabled.value = activeTemplate.value.enabled ?? true
     }
 }, { deep: true })
 
@@ -146,6 +170,10 @@ function selectTemplate(template) {
     templateName.value = template.name
     templateSubject.value = template.subject
     templateBody.value = template.body
+    templateType.value = template.type || 'invitation'
+    templateCc.value = template.cc || ''
+    templateBcc.value = template.bcc || ''
+    templateEnabled.value = template.enabled ?? true
 }
 
 function insertTag(tag) {
@@ -205,10 +233,13 @@ function saveTemplate() {
         return
     }
     
-    // Update form data
     saveForm.name = templateName.value
     saveForm.subject = templateSubject.value
     saveForm.body = templateBody.value
+    saveForm.type = templateType.value
+    saveForm.cc = templateCc.value
+    saveForm.bcc = templateBcc.value
+    saveForm.enabled = templateEnabled.value
     
     saveForm.put(route('gms.email-templates.update', activeTemplate.value.id), {
         preserveScroll: true,
@@ -229,13 +260,15 @@ function saveTemplate() {
 }
 
 function sendTestEmail() {
+    if (!activeTemplate.value?.id) return
+    const email = prompt('Send test email to:', props.user?.email || '')
+    if (!email) return
     isSendingTest.value = true
-    
-    // Simulate async send operation
-    setTimeout(() => {
-        isSendingTest.value = false
-        toast('Test email sent', 'info')
-    }, 1000)
+    router.post(route('gms.email-templates.test', activeTemplate.value.id), { email }, {
+        preserveScroll: true,
+        onSuccess: () => { isSendingTest.value = false; toast('Test email sent to ' + email) },
+        onError: () => { isSendingTest.value = false; toast('Failed to send test email', 'error') },
+    })
 }
 </script>
 
@@ -564,11 +597,14 @@ function sendTestEmail() {
                 v-for="template in localEmailTemplates"
                 :key="template.id"
                 class="etpl-item"
-                :class="{ on: template.active }"
+                :class="{ on: template.active, disabled: !template.enabled }"
                 @click="selectTemplate(template)"
               >
                 <GmsIcon name="mail" :size="15" />
-                <span class="etpl-name">{{ template.name }}</span>
+                <div style="flex:1;min-width:0;">
+                  <span class="etpl-name">{{ template.name }}</span>
+                  <span class="etpl-type">{{ templateTypes[template.type] || template.type }}</span>
+                </div>
                 <GmsIcon v-if="template.active" name="chevron-right" :size="14" class="etpl-chev" />
               </button>
             </div>
@@ -585,9 +621,17 @@ function sendTestEmail() {
               <div class="email-editor-d">Used by the invitation wizard. Merge tags resolve per-recipient when the invitation is sent.</div>
             </div>
             <div class="email-editor-b">
-              <div class="gms-field">
-                <label class="gms-label">Template name</label>
-                <input v-model="templateName" type="text" class="gms-input" />
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="gms-field">
+                  <label class="gms-label">Template name</label>
+                  <input v-model="templateName" type="text" class="gms-input" />
+                </div>
+                <div class="gms-field">
+                  <label class="gms-label">Type</label>
+                  <select v-model="templateType" class="gms-select">
+                    <option v-for="(label, key) in templateTypes" :key="key" :value="key">{{ label }}</option>
+                  </select>
+                </div>
               </div>
               <div class="gms-field">
                 <label class="gms-label">Subject</label>
@@ -602,6 +646,23 @@ function sendTestEmail() {
                 <button v-for="tag in templateTags" :key="tag" class="mtag" @click="insertTag(tag)">
                   {{ tag.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }}
                 </button>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+                <div class="gms-field">
+                  <label class="gms-label">CC <span style="font-weight:400;color:var(--gms-text-3);">(comma-separated)</span></label>
+                  <input v-model="templateCc" type="text" class="gms-input" placeholder="e.g. coordinator@event.qa" />
+                </div>
+                <div class="gms-field">
+                  <label class="gms-label">BCC <span style="font-weight:400;color:var(--gms-text-3);">(comma-separated)</span></label>
+                  <input v-model="templateBcc" type="text" class="gms-input" placeholder="e.g. archive@event.qa" />
+                </div>
+              </div>
+              <div class="gms-field" style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+                <label class="set-toggle">
+                  <input type="checkbox" v-model="templateEnabled" />
+                  <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+                </label>
+                <span style="font-size:13px;color:var(--gms-text);">Enabled <span style="color:var(--gms-text-3);font-size:12px;">— disabled templates won't send</span></span>
               </div>
             </div>
             <div class="email-footer">

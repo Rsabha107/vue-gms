@@ -114,7 +114,9 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/flights',                 [GmsFlightController::class, 'store'])->name('flights.store');
     Route::post('/flights/{guestRequestCode}/book', [GmsFlightController::class, 'bookGuestRequest'])->name('flights.book-guest-request');
     Route::put('/flights/{id}',             [GmsFlightController::class, 'update'])->name('flights.update');
+    Route::put('/flights/{id}/full',        [GmsFlightController::class, 'updateFull'])->name('flights.update-full');
     Route::patch('/flights/{id}/status',    [GmsFlightController::class, 'updateStatus'])->name('flights.status');
+    Route::post('/flights/{id}/boarding',   [GmsFlightController::class, 'confirmBoarding'])->name('flights.boarding');
     Route::patch('/flights/{id}/legs/{legId}', [GmsFlightController::class, 'updateLeg'])->name('flights.legs.update');
     Route::delete('/flights/{id}',          [GmsFlightController::class, 'destroy'])->name('flights.destroy');
 
@@ -122,8 +124,10 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::get('/accommodation',                [GmsAccommodationController::class, 'index'])->name('accommodation.index');
     Route::post('/accommodation',              [GmsAccommodationController::class, 'store'])->name('accommodation.store');
     Route::patch('/accommodation/{id}',        [GmsAccommodationController::class, 'update'])->name('accommodation.update');
-    Route::patch('/accommodation/{id}/status', [GmsAccommodationController::class, 'updateStatus'])->name('accommodation.status');
-    Route::delete('/accommodation/{id}',       [GmsAccommodationController::class, 'destroy'])->name('accommodation.destroy');
+    Route::patch('/accommodation/{id}/status',    [GmsAccommodationController::class, 'updateStatus'])->name('accommodation.status');
+    Route::post('/accommodation/{id}/check-in',  [GmsAccommodationController::class, 'checkIn'])->name('accommodation.checkin');
+    Route::post('/accommodation/{id}/check-out', [GmsAccommodationController::class, 'checkOut'])->name('accommodation.checkout');
+    Route::delete('/accommodation/{id}',         [GmsAccommodationController::class, 'destroy'])->name('accommodation.destroy');
 
     // Accommodation guest request booking
     Route::post('/accommodation/{guestRequestCode}/book', [GmsAccommodationController::class, 'bookGuestRequest'])->name('accommodation.book-guest-request');
@@ -140,8 +144,9 @@ Route::prefix('gms')->name('gms.')->group(function () {
     // Transport
     Route::get('/transport',                [GmsTransportController::class, 'index'])->name('transport.index');
     Route::post('/transport',              [GmsTransportController::class, 'store'])->name('transport.store');
-    Route::patch('/transport/{id}/status', [GmsTransportController::class, 'updateStatus'])->name('transport.status');
-    Route::delete('/transport/{id}',       [GmsTransportController::class, 'destroy'])->name('transport.destroy');
+    Route::patch('/transport/{id}/status',      [GmsTransportController::class, 'updateStatus'])->name('transport.status');
+    Route::post('/transport/{id}/completed',   [GmsTransportController::class, 'confirmCompletion'])->name('transport.completed');
+    Route::delete('/transport/{id}',           [GmsTransportController::class, 'destroy'])->name('transport.destroy');
 
     // Transport guest request booking
     Route::post('/transport/{guestRequestCode}/book', [GmsTransportController::class, 'bookGuestRequest'])->name('transport.book-guest-request');
@@ -181,6 +186,7 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::post('/email-templates',        [GmsEmailTemplateController::class, 'store'])->name('email-templates.store');
     Route::put('/email-templates/{id}',    [GmsEmailTemplateController::class, 'update'])->name('email-templates.update');
     Route::delete('/email-templates/{id}', [GmsEmailTemplateController::class, 'destroy'])->name('email-templates.destroy');
+    Route::post('/email-templates/{id}/test', [GmsEmailTemplateController::class, 'sendTest'])->name('email-templates.test');
 
     // Groups (Setup)
     Route::get('/groups',          [GmsGroupsController::class, 'index'])->name('groups.index');

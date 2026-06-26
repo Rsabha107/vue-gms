@@ -144,10 +144,30 @@ class GmsTransportController extends Controller
         $request->validate(['status' => 'required|in:pending,confirmed,cancelled']);
 
         $statusId = \App\Models\InvitationStatus::where('name', $request->status)->value('id');
-        $transportRequest = TransportRequest::where('code', $id)->firstOrFail();
+        $transportRequest = TransportRequest::with('guest')->where('code', $id)->firstOrFail();
         $transportRequest->update(['status_id' => $statusId]);
 
+        if ($request->status === 'confirmed' && $transportRequest->guest?->email) {
+            $event = GmsMockData::getEvent();
+            \App\Services\Gms\ServiceConfirmationService::sendTransportConfirmation($transportRequest->guest, $event['name'] ?? '', [
+                'code'     => $transportRequest->code,
+                'type'     => $transportRequest->type,
+                'vehicle'  => $transportRequest->vehicle,
+                'pickup'   => $transportRequest->pickup_location,
+                'dropoff'  => $transportRequest->dropoff_location,
+                'datetime' => $transportRequest->datetime,
+                'driver'   => $transportRequest->driver,
+            ]);
+        }
+
         return back()->with('success', 'Status updated.');
+    }
+
+    public function confirmCompletion(string $id)
+    {
+        $req = TransportRequest::where('code', $id)->firstOrFail();
+        $req->update(['completed_at' => now()]);
+        return back()->with('success', 'Service completion confirmed.');
     }
 
     public function destroy(string $id)

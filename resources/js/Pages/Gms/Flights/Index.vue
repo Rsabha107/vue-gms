@@ -87,6 +87,7 @@ const filtered = computed(() => {
 // ── Display helpers ───────────────────────────────────────────────
 function displayStatus(r) {
     if (r.changeRequest)        return { label: 'Change',    bg: '#dbeafe', fg: '#2563eb' }
+    if (r.status === 'requested') return { label: 'Requested', bg: '#ede9fe', fg: '#7c3aed' }
     if (r.status === 'new')     return { label: 'New',       bg: '#fef3c7', fg: '#a16207' }
     if (r.status === 'confirmed') return { label: 'Confirmed', bg: '#dcfce7', fg: '#15803d' }
     if (r.status === 'cancelled') return { label: 'Cancelled', bg: '#f3f4f6', fg: '#6b7280' }
@@ -417,8 +418,24 @@ const newModal = ref(false)
 const selectedGuestId = ref(null)
 
 const form = useForm({
-    guestId: '', origin: 'DOH', destination: '',
-    class: 'Business', pax: 1,
+    guestId: '', origin: 'DOH', destination: '', destinationCity: '',
+    class: 'Business', pax: 1, pnr: '',
+    // Inbound leg
+    inboundFlightNo: '', date: '', inboundDepTime: '', inboundArrTime: '', inboundDuration: '',
+    // Outbound leg
+    outboundFlightNo: '', outboundDate: '', outboundDepTime: '', outboundArrTime: '', outboundDuration: '',
+    isChange: false,
+})
+
+// ── Edit request modal ────────────────────────────────────────────
+const editModal = ref(false)
+const editingRequest = ref(null)
+const editOriginLabel = ref('')
+const editDestinationLabel = ref('')
+
+const editForm = useForm({
+    guestId: '', origin: 'DOH', destination: '', destinationCity: '',
+    class: 'Business', pax: 1, pnr: '',
     // Inbound leg
     inboundFlightNo: '', date: '', inboundDepTime: '', inboundArrTime: '', inboundDuration: '',
     // Outbound leg
@@ -456,6 +473,16 @@ watch(() => [form.inboundDepTime, form.inboundArrTime], ([depTime, arrTime]) => 
 // Auto-calculate outbound duration
 watch(() => [form.outboundDepTime, form.outboundArrTime], ([depTime, arrTime]) => {
     form.outboundDuration = calculateDuration(depTime, arrTime)
+})
+
+// Auto-calculate inbound duration for edit form
+watch(() => [editForm.inboundDepTime, editForm.inboundArrTime], ([depTime, arrTime]) => {
+    editForm.inboundDuration = calculateDuration(depTime, arrTime)
+})
+
+// Auto-calculate outbound duration for edit form
+watch(() => [editForm.outboundDepTime, editForm.outboundArrTime], ([depTime, arrTime]) => {
+    editForm.outboundDuration = calculateDuration(depTime, arrTime)
 })
 
 // Auto-calculate duration for edit leg modal
@@ -539,8 +566,12 @@ const guestPref = computed(() => {
     if (!r) return null
     const outbound = r.legs?.find(l => l.dir === 'Outbound')
     const inbound = r.legs?.find(l => l.dir === 'Inbound')
+    
+    // Guest's home city can be in Inbound.fromCity (new requests) or Outbound.toCity (old requests)
+    const guestCity = inbound?.fromCity || outbound?.toCity || inbound?.fromCode || outbound?.toCode || '—'
+    
     return {
-        origin: outbound?.fromCity || outbound?.fromCode || '—',
+        origin: guestCity,
         class: outbound?.cls || inbound?.cls || '—',
         pax: r.pax || '—',
         inboundDate: inbound?.date || '—',
@@ -561,7 +592,13 @@ function bookFromRequest(r) {
     const inboundLeg = r.legs?.find(l => l.dir === 'Inbound')
 
     form.origin = 'DOH'
-    form.destination = outboundLeg?.fromCode !== 'XXX' ? outboundLeg?.fromCode : ''
+    
+    // For portal requests, extract the guest's city (fromCity of Inbound leg or toCity of Outbound leg)
+    const guestCity = inboundLeg?.fromCity || outboundLeg?.toCity || ''
+    const guestCode = inboundLeg?.fromCode !== 'XXX' ? inboundLeg?.fromCode : (outboundLeg?.toCode !== 'XXX' ? outboundLeg?.toCode : '')
+    
+    form.destination = guestCode
+    form.destinationCity = guestCity
     form.class = outboundLeg?.cls || inboundLeg?.cls || 'Business'
     form.pax = r.pax || 1
     form.date = inboundLeg?.date || ''
@@ -582,6 +619,16 @@ function formatDateForBackend(dateStr) {
     const parts = dateStr.split('/')
     if (parts.length === 3) {
         return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    }
+    return dateStr
+}
+
+function formatDateForFrontend(dateStr) {
+    if (!dateStr) return ''
+    if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) return dateStr
+    const parts = dateStr.split('-')
+    if (parts.length === 3) {
+        return `${parseInt(parts[2])}/${parseInt(parts[1])}/${parts[0]}`
     }
     return dateStr
 }
@@ -625,6 +672,93 @@ function saveNew() {
         onError: (errors) => {
             const firstError = Object.keys(errors)[0]
             const errorMessage = firstError ? `${firstError}: ${errors[firstError]}` : 'Failed to create flight request.'
+            toast(errorMessage, 'error')
+        },
+    })
+}
+
+function openEditModal(request) {
+    editingRequest.value = request
+    const inboundLeg = request.legs?.find(l => l.dir === 'Inbound')
+    const outboundLeg = request.legs?.find(l => l.dir === 'Outbound')
+    
+    editForm.guestId = request.guestId
+    editForm.origin = outboundLeg?.fromCode || 'DOH'  // Event city (where outbound starts)
+    editForm.destination = outboundLeg?.toCode || ''  // Guest city (where outbound ends)
+    editForm.destinationCity = outboundLeg?.toCity || ''  // Guest city name
+    editForm.class = inboundLeg?.cls || outboundLeg?.cls || 'Business'
+    editForm.pax = request.pax
+    editForm.pnr = request.pnr || ''
+    editForm.inboundFlightNo = inboundLeg?.flightNo || ''
+    editForm.date = formatDateForFrontend(inboundLeg?.date || '')
+    editForm.inboundDepTime = inboundLeg?.dep || ''
+    editForm.inboundArrTime = inboundLeg?.arr || ''
+    editForm.inboundDuration = inboundLeg?.dur || ''
+    editForm.outboundFlightNo = outboundLeg?.flightNo || ''
+    editForm.outboundDate = formatDateForFrontend(outboundLeg?.date || '')
+    editForm.outboundDepTime = outboundLeg?.dep || ''
+    editForm.outboundArrTime = outboundLeg?.arr || ''
+    editForm.outboundDuration = outboundLeg?.dur || ''
+    editForm.isChange = request.status === 'change'
+    
+    // Set display labels for airport pickers
+    // Origin is event city (where guest will arrive)
+    if (outboundLeg?.fromCode && outboundLeg?.fromCity) {
+        // Only show city if it's different from the code (avoid "DOH — DOH")
+        if (outboundLeg.fromCity.toUpperCase() !== outboundLeg.fromCode.toUpperCase()) {
+            editOriginLabel.value = `${outboundLeg.fromCode} — ${outboundLeg.fromCity}`
+        } else {
+            editOriginLabel.value = outboundLeg.fromCode
+        }
+    } else if (outboundLeg?.fromCode) {
+        editOriginLabel.value = outboundLeg.fromCode
+    } else {
+        editOriginLabel.value = 'DOH — Doha'
+    }
+    
+    // Destination is guest city (where guest is from)
+    if (outboundLeg?.toCode && outboundLeg?.toCity) {
+        // Only show city if it's different from the code (avoid "CGH — CGH")
+        if (outboundLeg.toCity.toUpperCase() !== outboundLeg.toCode.toUpperCase()) {
+            editDestinationLabel.value = `${outboundLeg.toCode} — ${outboundLeg.toCity}`
+        } else {
+            editDestinationLabel.value = outboundLeg.toCode
+        }
+    } else if (outboundLeg?.toCode) {
+        editDestinationLabel.value = outboundLeg.toCode
+    } else {
+        editDestinationLabel.value = ''
+    }
+    
+    editModal.value = true
+    drawerOpen.value = false
+}
+
+function saveEdit() {
+    const formData = {
+        ...editForm.data(),
+        date: formatDateForBackend(editForm.date),
+        outboundDate: formatDateForBackend(editForm.outboundDate),
+    }
+
+    editForm.transform(() => formData).put(route('gms.flights.update-full', editingRequest.value.id), {
+        onSuccess: () => {
+            editModal.value = false
+            editingRequest.value = null
+            toast('Flight request updated.')
+            
+            router.reload({
+                only: ['requests', 'guestRequests'],
+                preserveScroll: true,
+                onSuccess: () => {
+                    localReqs.value = props.requests.map(r => ({ ...r }))
+                    localGuestReqs.value = props.guestRequests.map(r => ({ ...r }))
+                },
+            })
+        },
+        onError: (errors) => {
+            const firstError = Object.keys(errors)[0]
+            const errorMessage = firstError ? `${firstError}: ${errors[firstError]}` : 'Failed to update flight request.'
             toast(errorMessage, 'error')
         },
     })
@@ -736,7 +870,7 @@ function saveNew() {
                 <!-- Itinerary -->
                 <td>
                   <span class="gms-small" style="font-family:var(--gms-font-mono);font-weight:600;letter-spacing:.3px;">
-                    {{ r.origin }} ⇄ {{ r.destination }}
+                    {{ r.destination }} ⇄ {{ r.origin }}
                   </span>
                 </td>
                 <!-- Inbound -->
@@ -820,7 +954,7 @@ function saveNew() {
               <div class="gr-pref">
                 <span class="gr-pref-label">Route</span>
                 <span class="gr-pref-value">
-                  {{ r.legs?.find(l => l.dir === 'Outbound')?.fromCity || '—' }} → Doha
+                  {{ r.legs?.find(l => l.dir === 'Inbound')?.fromCity || r.legs?.find(l => l.dir === 'Outbound')?.toCity || '—' }} → Doha
                 </span>
               </div>
               <div class="gr-pref" v-if="r.legs?.find(l => l.dir === 'Inbound')?.date">
@@ -862,7 +996,7 @@ function saveNew() {
                 <div class="gr-pref">
                   <span class="gr-pref-label">Route</span>
                   <span class="gr-pref-value">
-                    {{ r.legs?.find(l => l.dir === 'Outbound')?.fromCity || '—' }} → Doha
+                    {{ r.legs?.find(l => l.dir === 'Inbound')?.fromCity || r.legs?.find(l => l.dir === 'Outbound')?.toCity || '—' }} → Doha
                   </span>
                 </div>
                 <div class="gr-pref">
@@ -1017,8 +1151,8 @@ function saveNew() {
         </div>
         <div class="flt-leg-route">
           <div class="flt-leg-end">
-            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.fromCode ?? activeReq.origin }}</div>
-            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.fromCity ?? activeReq.originCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.fromCode ?? activeReq.destination }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.fromCity ?? activeReq.destCity }}</div>
             <div class="flt-leg-time">{{ activeReq.time }}</div>
           </div>
           <div class="flt-leg-mid">
@@ -1031,8 +1165,8 @@ function saveNew() {
             <span class="flt-leg-carrier">{{ activeReq.airline }}</span>
           </div>
           <div class="flt-leg-end right">
-            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.toCode ?? activeReq.destination }}</div>
-            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.toCity ?? activeReq.destCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.toCode ?? activeReq.origin }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Inbound')?.toCity ?? activeReq.originCity }}</div>
             <div class="flt-leg-time">{{ activeReq.arrivalTime }}</div>
           </div>
         </div>
@@ -1059,8 +1193,8 @@ function saveNew() {
         </div>
         <div class="flt-leg-route">
           <div class="flt-leg-end">
-            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.fromCode ?? activeReq.destination }}</div>
-            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.fromCity ?? activeReq.destCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.fromCode ?? activeReq.origin }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.fromCity ?? activeReq.originCity }}</div>
             <div class="flt-leg-time">{{ activeReq.outboundTime }}</div>
           </div>
           <div class="flt-leg-mid">
@@ -1073,8 +1207,8 @@ function saveNew() {
             <span class="flt-leg-carrier">{{ activeReq.airline }}</span>
           </div>
           <div class="flt-leg-end right">
-            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.toCode ?? activeReq.origin }}</div>
-            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.toCity ?? activeReq.originCity }}</div>
+            <div class="flt-leg-iata">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.toCode ?? activeReq.destination }}</div>
+            <div class="flt-leg-city">{{ activeReq.legs?.find(l => l.dir === 'Outbound')?.toCity ?? activeReq.destCity }}</div>
             <div class="flt-leg-time">{{ activeReq.outboundArrivalTime }}</div>
           </div>
         </div>
@@ -1110,6 +1244,7 @@ function saveNew() {
 
     <template #footer>
       <GmsBtn variant="ghost" icon="user" :iconSize="13">Guest profile</GmsBtn>
+      <GmsBtn variant="ghost" icon="edit" :iconSize="13" @click="openEditModal(activeReq)">Edit</GmsBtn>
       <div style="margin-left:auto;display:flex;gap:8px;">
         <GmsBtn 
           variant="danger" 
@@ -1199,12 +1334,13 @@ function saveNew() {
               <GmsAirportPicker
                 v-model="form.destination"
                 placeholder="Search city or airport code…"
+                @select="airport => form.destinationCity = airport.city || airport.name"
               />
               <div v-if="guestPref" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Guest requested: <strong>{{ guestPref.origin }}</strong></div>
             </div>
             <div class="gms-field">
               <label class="gms-label">Destination</label>
-              <GmsAirportPicker v-model="form.origin" :readonly="true" />
+              <GmsAirportPicker v-model="form.origin" :readonly="true" display-label="DOH — Doha" />
               <div class="gms-hint" style="margin-top:4px;font-size:11px;">Doha (event venue)</div>
             </div>
           </div>
@@ -1253,6 +1389,13 @@ function saveNew() {
               <div v-if="guestPref" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Guest requested: <strong>{{ guestPref.pax }} pax</strong></div>
             </div>
 
+          </div>
+
+          <!-- PNR field -->
+          <div class="gms-field" style="margin-top:14px;">
+            <label class="gms-label">PNR / Booking Reference <span class="gms-muted" style="font-weight:400;">(optional)</span></label>
+            <input v-model="form.pnr" class="gms-input" placeholder="e.g. ABC123" maxlength="12" style="font-family:var(--gms-font-mono);text-transform:uppercase;" />
+            <div class="gms-hint" style="margin-top:4px;font-size:11px;">Leave blank to auto-generate</div>
           </div>
 
           <!-- Inbound Flight Details -->
@@ -1350,6 +1493,198 @@ function saveNew() {
         <GmsBtn variant="primary" :disabled="!selectedGuest || form.processing" @click="saveNew">
           <GmsIcon name="plus" :size="13" />
           Create request
+        </GmsBtn>
+      </div>
+    </template>
+  </GmsModal>
+
+  <!-- ── Edit request modal ── -->
+  <GmsModal :open="editModal" title="Edit Flight Request" size="lg" @close="editModal = false; editingRequest = null">
+    <div style="padding:0;">
+
+      <!-- Guest display (read-only) -->
+      <div class="nf-step">Guest</div>
+      <div v-if="editingRequest" style="margin:2px 0 10px;">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--gms-bg);border-radius:8px;border:1px solid var(--gms-border);">
+          <GmsAvatar :name="editingRequest.guestName" size="sm" />
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:13px;">{{ editingRequest.guestName }}</div>
+            <div style="font-size:11px;color:var(--gms-text-3);">Guest cannot be changed</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flight details -->
+      <div class="nf-details">
+        <div class="nf-step" style="margin-top:20px;">Flight details</div>
+        
+        <!-- Change request toggle -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input 
+              type="checkbox" 
+              v-model="editForm.isChange" 
+              style="width:16px;height:16px;cursor:pointer;accent-color:var(--gms-maroon);"
+            >
+            <span style="font-size:13px;font-weight:500;">This is a change request</span>
+          </label>
+          <span 
+            v-if="editForm.isChange" 
+            class="gms-pill" 
+            style="background:var(--warn);color:white;font-size:10.5px;font-weight:600;"
+          >CHANGE</span>
+        </div>
+
+        <!-- Origin & Destination fields -->
+        <div class="gms-form-grid" style="margin-bottom:14px;">
+          <div class="gms-field">
+            <label class="gms-label">Origin</label>
+            <GmsAirportPicker
+              v-model="editForm.destination"
+              :display-label="editOriginLabel"
+              placeholder="Search city or airport code…"
+              @select="airport => { editForm.destinationCity = airport.city || airport.name; editOriginLabel = `${airport.code} — ${airport.city || airport.name}` }"
+            />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Destination</label>
+            <GmsAirportPicker v-model="editForm.origin" :readonly="true" :display-label="editDestinationLabel" />
+            <div class="gms-hint" style="margin-top:4px;font-size:11px;">Doha (event venue)</div>
+          </div>
+        </div>
+
+        <!-- Route display -->
+        <div class="nf-od" style="margin-top:4px;">
+          <span class="fl-od" style="font-size:15px;">
+            <b>{{ editForm.destination || 'INT' }}</b>
+            <span class="fl-swap">⇄</span>
+            <b>{{ editForm.origin }}</b>
+          </span>
+          <span class="gms-muted" style="font-size:12.5px;">Qatar Airways</span>
+        </div>
+
+        <!-- Form fields -->
+        <div class="gms-form-grid" style="margin-top:14px;">
+          <!-- Cabin class -->
+          <div class="gms-field">
+            <label class="gms-label">Cabin class</label>
+            <div class="gms-seg">
+              <button
+                v-for="cls in ['Economy', 'Business', 'First']"
+                :key="cls"
+                type="button"
+                :class="{ on: editForm.class === cls }"
+                @click="editForm.class = cls"
+              >{{ cls }}</button>
+            </div>
+          </div>
+
+          <!-- Passengers -->
+          <div class="gms-field">
+            <label class="gms-label">Passengers</label>
+            <div class="nf-stepper">
+              <button type="button" @click="editForm.pax > 1 ? editForm.pax-- : null">−</button>
+              <span class="tnum">{{ editForm.pax }}</span>
+              <button type="button" @click="editForm.pax < 9 ? editForm.pax++ : null">+</button>
+              <span class="gms-muted" style="font-size:11.5px;margin-left:8px;">
+                {{ editForm.pax > 1 ? `guest + ${editForm.pax - 1}` : 'guest only' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- PNR field -->
+        <div class="gms-field" style="margin-top:14px;">
+          <label class="gms-label">PNR / Booking Reference</label>
+          <input v-model="editForm.pnr" class="gms-input" placeholder="e.g. ABC123" maxlength="12" style="font-family:var(--gms-font-mono);text-transform:uppercase;" />
+        </div>
+
+        <!-- Inbound Flight Details -->
+        <div class="gms-section-title" style="margin-top:20px;margin-bottom:10px;font-size:13px;">
+          Inbound Flight (to Doha)
+        </div>
+        <div class="gms-form-grid">
+          <div class="gms-field">
+            <label class="gms-label">Flight Number</label>
+            <input v-model="editForm.inboundFlightNo" class="gms-input" placeholder="QR 123" style="font-family:var(--gms-font-mono);" />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Date</label>
+            <GmsDatePicker
+              v-model="editForm.date"
+              placeholder="Select date"
+              date-format="d/m/Y"
+            />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Departure Time</label>
+            <GmsTimePicker
+              v-model="editForm.inboundDepTime"
+              placeholder="08:00"
+            />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Arrival Time</label>
+            <GmsTimePicker
+              v-model="editForm.inboundArrTime"
+              placeholder="12:00"
+            />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Duration</label>
+            <input v-model="editForm.inboundDuration" class="gms-input" placeholder="4h 00m" readonly style="font-family:var(--gms-font-mono);background:var(--gms-surface-2);cursor:not-allowed;" />
+          </div>
+        </div>
+
+        <!-- Outbound Flight Details -->
+        <div class="gms-section-title" style="margin-top:20px;margin-bottom:10px;font-size:13px;">
+          Outbound Flight (from Doha)
+        </div>
+        <div class="gms-form-grid">
+          <div class="gms-field">
+            <label class="gms-label">Flight Number</label>
+            <input v-model="editForm.outboundFlightNo" class="gms-input" placeholder="QR 456" style="font-family:var(--gms-font-mono);" />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Date</label>
+            <GmsDatePicker
+              v-model="editForm.outboundDate"
+              placeholder="Select date"
+              date-format="d/m/Y"
+            />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Departure Time</label>
+            <GmsTimePicker
+              v-model="editForm.outboundDepTime"
+              placeholder="14:00"
+            />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Arrival Time</label>
+            <GmsTimePicker
+              v-model="editForm.outboundArrTime"
+              placeholder="18:00"
+            />
+          </div>
+          <div class="gms-field">
+            <label class="gms-label">Duration</label>
+            <input v-model="editForm.outboundDuration" class="gms-input" placeholder="4h 00m" readonly style="font-family:var(--gms-font-mono);background:var(--gms-surface-2);cursor:not-allowed;" />
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <template #footer>
+      <span class="gms-muted" style="font-size:12.5px;">
+        {{ editingRequest ? `${editingRequest.guestName} · ${editForm.class} · ${editForm.pax} pax` : '' }}
+      </span>
+      <div style="margin-left:auto;display:flex;gap:10px;">
+        <GmsBtn variant="ghost" @click="editModal = false; editingRequest = null">Cancel</GmsBtn>
+        <GmsBtn variant="primary" :disabled="editForm.processing" @click="saveEdit">
+          <GmsIcon v-if="editForm.processing" name="loader" :size="13" />
+          <GmsIcon v-else name="check" :size="13" />
+          Update request
         </GmsBtn>
       </div>
     </template>
