@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Guest;
 use App\Models\Event;
+use App\Models\Hotel;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -134,11 +135,14 @@ class AccommodationSeeder extends Seeder
                 continue;
             }
 
+            $hotel = Hotel::where('code', $acc['hotel_code'])->first();
+
             DB::table('accommodation_requests')->insert([
                 'event_id' => $event->id,
                 'guest_id' => $guest->id,
                 'code' => $acc['code'],
                 'status_id' => $acc['status_id'],
+                'hotel_id' => $hotel?->id,
                 'hotel_code' => $acc['hotel_code'],
                 'hotel_name' => $acc['hotel_name'],
                 'room_type' => $acc['room_type'],

@@ -17,6 +17,8 @@ class FlightRequest extends Model
         'pax',
         'requested_at',
         'note',
+        'fulfilled_by_id',
+        'fulfills_request_id',
         'initiated_by',
         'source',
         'assigned_officer_id',
@@ -48,6 +50,26 @@ class FlightRequest extends Model
     public function legs(): HasMany
     {
         return $this->hasMany(FlightLeg::class)->orderBy('sort');
+    }
+
+    public function fulfilledBy(): BelongsTo
+    {
+        return $this->belongsTo(FlightRequest::class, 'fulfilled_by_id');
+    }
+
+    public function fulfillsRequest(): BelongsTo
+    {
+        return $this->belongsTo(FlightRequest::class, 'fulfills_request_id');
+    }
+
+    public function scopeGuestRequests($query)
+    {
+        return $query->where('source', 'portal')->where('initiated_by', 'guest');
+    }
+
+    public function scopePendingGuestRequests($query)
+    {
+        return $query->guestRequests()->whereNull('fulfilled_by_id');
     }
 
     /**

@@ -19,6 +19,8 @@ class TransportRequest extends Model
         'datetime',
         'driver',
         'notes',
+        'fulfilled_by_id',
+        'fulfills_request_id',
         'initiated_by',
         'source',
         'assigned_officer_id',
@@ -50,6 +52,21 @@ class TransportRequest extends Model
     public function assignedOfficer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_officer_id');
+    }
+
+    public function fulfilledBy(): BelongsTo
+    {
+        return $this->belongsTo(TransportRequest::class, 'fulfilled_by_id');
+    }
+
+    public function fulfillsRequest(): BelongsTo
+    {
+        return $this->belongsTo(TransportRequest::class, 'fulfills_request_id');
+    }
+
+    public function scopeGuestRequests($query)
+    {
+        return $query->where('source', 'portal')->where('initiated_by', 'guest');
     }
 
     /**

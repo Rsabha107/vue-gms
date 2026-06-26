@@ -185,11 +185,11 @@ function submitTransportRequest() {
           <div class="portal-label">Status</div>
           <div class="portal-value">
             <span class="portal-badge" :class="{
-              success: invitation.status?.id === 'confirmed' || invitation.status?.id === 'accepted',
-              warning: invitation.status?.id === 'invited',
-              info: invitation.status?.id === 'not_invited'
+              success: invitation.status?.name === 'confirmed' || invitation.status?.name === 'accepted',
+              warning: invitation.status?.name === 'invited',
+              info: invitation.status?.name === 'not_invited'
             }">
-              {{ statusLabels[invitation.status?.id] || invitation.status?.name }}
+              {{ statusLabels[invitation.status?.name] || invitation.status?.name }}
             </span>
           </div>
         </div>

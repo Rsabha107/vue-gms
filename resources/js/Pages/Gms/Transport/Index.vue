@@ -15,10 +15,12 @@ import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
 defineOptions({ layout: GmsLayout })
 
 const props = defineProps({
-    requests: { type: Array,  default: () => [] },
-    guests:   { type: Array,  default: () => [] },
-    tiers:    { type: Array,  default: () => [] },
-    event:    { type: Object, default: () => ({}) },
+    requests:      { type: Array,  default: () => [] },
+    guestRequests: { type: Array,  default: () => [] },
+    vehicleBlocks: { type: Array,  default: () => [] },
+    guests:        { type: Array,  default: () => [] },
+    tiers:         { type: Array,  default: () => [] },
+    event:         { type: Object, default: () => ({}) },
 })
 
 const toast = inject('toast')
@@ -141,28 +143,68 @@ const isRefreshing = ref(false)
 function refreshRequests() {
     isRefreshing.value = true
     router.reload({
-        only: ['requests'],
+        only: ['requests', 'guestRequests'],
         onFinish: () => {
             setTimeout(() => {
                 isRefreshing.value = false
                 localReqs.value = props.requests.map(r => ({ ...r }))
+                localGuestReqs.value = props.guestRequests.map(r => ({ ...r }))
                 toast('Requests refreshed')
             }, 500)
         }
     })
 }
 
+// ── Guest request inbox ──────────────────────────────────────────
+const localGuestReqs = ref(props.guestRequests.map(r => ({ ...r })))
+const pendingGuestRequests = computed(() => localGuestReqs.value.filter(r => !r.fulfilledById))
+const fulfilledGuestRequests = computed(() => localGuestReqs.value.filter(r => r.fulfilledById))
+const showFulfilled = ref(false)
+const bookingFromGuestRequest = ref(null)
+
+function bookFromRequest(r) {
+    bookingFromGuestRequest.value = r
+    selectedGuestId.value = r.guestId
+    form.guestId = r.guestId
+    form.type = r.type || 'VIP Transfer'
+    form.pickupLocation = r.pickupLocation || ''
+    form.dropoffLocation = r.dropoffLocation || ''
+    form.datetime = r.datetime || ''
+    form.notes = r.notes || ''
+    form.vehicle = ''
+    newModal.value = true
+}
+
 function saveNew() {
     const guest = props.guests.find(g => g.id === form.guestId)
-    form.post(route('gms.transport.store'), {
+
+    const targetRoute = bookingFromGuestRequest.value
+        ? route('gms.transport.book-guest-request', bookingFromGuestRequest.value.id)
+        : route('gms.transport.store')
+
+    form.post(targetRoute, {
         onSuccess: () => {
-            localReqs.value.unshift({ id:'TRN-'+Date.now(), ...form.data(), guestName: guest?.name ?? '', driver:'TBD', status:'pending' })
+            if (bookingFromGuestRequest.value) {
+                const idx = localGuestReqs.value.findIndex(x => x.id === bookingFromGuestRequest.value.id)
+                if (idx !== -1) localGuestReqs.value[idx] = { ...localGuestReqs.value[idx], fulfilledById: 'pending' }
+                bookingFromGuestRequest.value = null
+            }
+            localReqs.value.unshift({ id:'TRN-'+Date.now(), ...form.data(), guestName: guest?.name ?? bookingFromGuestRequest?.value?.guestName ?? '', driver:'TBD', status:'pending' })
             newModal.value = false
             selectedGuestId.value = null
             form.reset()
             form.type = 'VIP Transfer'
             form.clearErrors()
             toast('Transport request created.')
+
+            router.reload({
+                only: ['requests', 'guestRequests'],
+                preserveScroll: true,
+                onSuccess: () => {
+                    localReqs.value = props.requests.map(r => ({ ...r }))
+                    localGuestReqs.value = props.guestRequests.map(r => ({ ...r }))
+                },
+            })
         },
         onError: (errors) => {
             toast('Please check the form for errors.', 'error')
@@ -297,6 +339,194 @@ function tierForGuest(guestId) {
     const g = props.guests.find(x => x.id === guestId)
     return g?.tier || ''
 }
+
+// ══════════════════════════════════════════════
+// VEHICLE BLOCKS TAB
+// ══════════════════════════════════════════════
+const localBlocks = ref(props.vehicleBlocks.map(b => ({ ...b })))
+const providerFilter = ref('all')
+
+function daysBetween(a, b) {
+    if (!a || !b) return 0
+    return Math.round((new Date(b) - new Date(a)) / 86400000)
+}
+
+const blockProviders = computed(() => {
+    const seen = new Set()
+    return localBlocks.value.filter(b => {
+        if (seen.has(b.provider)) return false
+        seen.add(b.provider)
+        return true
+    }).map(b => b.provider)
+})
+
+const filteredBlocks = computed(() => {
+    if (providerFilter.value === 'all') return localBlocks.value
+    return localBlocks.value.filter(b => b.provider === providerFilter.value)
+})
+
+const blockStats = computed(() => {
+    const blocks = localBlocks.value
+    const fleet = blocks.reduce((s, b) => s + b.fleetSize, 0)
+    const assigned = blocks.reduce((s, b) => s + b.assigned, 0)
+    const available = fleet - assigned
+    const today = new Date()
+    today.setHours(0,0,0,0)
+    const nearCutoff = blocks.filter(b => {
+        if (!b.cutoffDate) return false
+        const diff = Math.ceil((new Date(b.cutoffDate) - today) / 86400000)
+        return diff <= 7 && diff >= 0 && b.assigned < b.fleetSize
+    }).length
+    return { fleet, assigned, available, nearCutoff }
+})
+
+const vbContractSummary = computed(() => {
+    const blocks = filteredBlocks.value
+    let totalValue = 0
+    let totalVehicleDays = 0
+    blocks.forEach(b => {
+        const days = daysBetween(b.startDate, b.endDate)
+        const vd = b.fleetSize * days
+        totalVehicleDays += vd
+        totalValue += vd * b.dailyRate
+    })
+    const currency = blocks[0]?.currency ?? 'QAR'
+    return { totalValue, totalVehicleDays, currency }
+})
+
+function blockDays(b) { return daysBetween(b.startDate, b.endDate) }
+function blockRemaining(b) { return b.fleetSize - b.assigned }
+function blockPct(b) { return b.fleetSize > 0 ? Math.round((b.assigned / b.fleetSize) * 100) : 0 }
+
+function cutoffDays(b) {
+    if (!b.cutoffDate) return 999
+    const today = new Date()
+    today.setHours(0,0,0,0)
+    return Math.ceil((new Date(b.cutoffDate) - today) / 86400000)
+}
+
+function fmtCurrency(val, currency) {
+    return `${currency} ${val.toLocaleString()}`
+}
+
+function adjustAssign(block, delta) {
+    const idx = localBlocks.value.findIndex(b => b.id === block.id)
+    if (idx === -1) return
+    const newVal = Math.max(0, Math.min(block.fleetSize, block.assigned + delta))
+    localBlocks.value[idx] = { ...localBlocks.value[idx], assigned: newVal }
+    router.patch(route('gms.transport.blocks.assign', block.id), { assigned: newVal }, {
+        preserveScroll: true,
+        onError: () => {
+            localBlocks.value[idx] = { ...localBlocks.value[idx], assigned: block.assigned }
+            toast('Failed to update.', 'error')
+        },
+    })
+}
+
+const blockModal = ref(false)
+const editingBlock = ref(null)
+const blockForm = useForm({
+    provider: '', vehicleType: '', vehicleClass: '', dailyRate: '', currency: 'QAR',
+    startDate: '', endDate: '', fleetSize: '', assigned: 0, cutoffDate: '', notes: ''
+})
+
+function openNewBlock() {
+    editingBlock.value = null
+    blockForm.reset()
+    blockForm.currency = 'QAR'
+    blockForm.assigned = 0
+    blockModal.value = true
+}
+
+function openEditBlock(b) {
+    editingBlock.value = b
+    blockForm.provider = b.provider
+    blockForm.vehicleType = b.vehicleType
+    blockForm.vehicleClass = b.vehicleClass
+    blockForm.dailyRate = b.dailyRate
+    blockForm.currency = b.currency
+    blockForm.startDate = b.startDate
+    blockForm.endDate = b.endDate
+    blockForm.fleetSize = b.fleetSize
+    blockForm.assigned = b.assigned
+    blockForm.cutoffDate = b.cutoffDate
+    blockForm.notes = b.notes || ''
+    blockModal.value = true
+}
+
+const vbFormDays = computed(() => daysBetween(blockForm.startDate, blockForm.endDate))
+const vbFormVehicleDays = computed(() => (parseInt(blockForm.fleetSize) || 0) * vbFormDays.value)
+const vbFormContractValue = computed(() => vbFormVehicleDays.value * (parseFloat(blockForm.dailyRate) || 0))
+
+function saveBlock() {
+    if (editingBlock.value) {
+        const editId = editingBlock.value.id
+        const idx = localBlocks.value.findIndex(b => b.id === editId)
+        if (idx !== -1) {
+            localBlocks.value[idx] = {
+                ...localBlocks.value[idx],
+                provider: blockForm.provider,
+                vehicleType: blockForm.vehicleType,
+                vehicleClass: blockForm.vehicleClass,
+                dailyRate: parseFloat(blockForm.dailyRate) || 0,
+                currency: blockForm.currency,
+                startDate: blockForm.startDate,
+                endDate: blockForm.endDate,
+                fleetSize: parseInt(blockForm.fleetSize) || 0,
+                assigned: parseInt(blockForm.assigned) || 0,
+                cutoffDate: blockForm.cutoffDate,
+                notes: blockForm.notes,
+            }
+        }
+        blockForm.put(route('gms.transport.blocks.update', editId), {
+            preserveScroll: true,
+            onSuccess: () => toast('Vehicle block updated.'),
+            onError: () => toast('Failed to update.', 'error'),
+        })
+    } else {
+        localBlocks.value.push({
+            id: 'tmp-' + Date.now(),
+            provider: blockForm.provider,
+            vehicleType: blockForm.vehicleType,
+            vehicleClass: blockForm.vehicleClass,
+            dailyRate: parseFloat(blockForm.dailyRate) || 0,
+            currency: blockForm.currency,
+            startDate: blockForm.startDate,
+            endDate: blockForm.endDate,
+            fleetSize: parseInt(blockForm.fleetSize) || 0,
+            assigned: parseInt(blockForm.assigned) || 0,
+            cutoffDate: blockForm.cutoffDate,
+            notes: blockForm.notes,
+        })
+        blockForm.post(route('gms.transport.blocks.store'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                localBlocks.value = props.vehicleBlocks.map(b => ({ ...b }))
+                toast('Vehicle block created.')
+            },
+            onError: () => toast('Failed to create.', 'error'),
+        })
+    }
+    blockModal.value = false
+    editingBlock.value = null
+}
+
+const deleteBlockConfirm = ref(null)
+
+function deleteBlock(b) {
+    if (deleteBlockConfirm.value !== b.id) {
+        deleteBlockConfirm.value = b.id
+        setTimeout(() => { deleteBlockConfirm.value = null }, 3000)
+        return
+    }
+    localBlocks.value = localBlocks.value.filter(x => x.id !== b.id)
+    router.delete(route('gms.transport.blocks.destroy', b.id), {
+        preserveScroll: true,
+        onSuccess: () => toast('Vehicle block deleted.'),
+        onError: () => toast('Failed to delete.', 'error'),
+    })
+    deleteBlockConfirm.value = null
+}
 </script>
 
 <template>
@@ -305,7 +535,8 @@ function tierForGuest(guestId) {
     <div class="gms-view-header">
       <div>
         <h1 class="gms-view-title">Transport</h1>
-        <p class="gms-view-subtitle">Ground transport &amp; chauffeur assignments for {{ props.event?.name || 'event' }}.</p>
+        <p class="gms-view-subtitle" v-if="currentTab === 'blocks'">Contracted vehicle fleets and assignment across providers for <strong>{{ props.event?.name || 'event' }}</strong>.</p>
+        <p class="gms-view-subtitle" v-else>Ground transport &amp; chauffeur assignments for {{ props.event?.name || 'event' }}.</p>
       </div>
       <div class="gms-view-actions">
         <button
@@ -314,6 +545,7 @@ function tierForGuest(guestId) {
           :disabled="isRefreshing"
           title="Refresh requests"
           style="margin-right: 8px;"
+          v-if="currentTab !== 'blocks'"
         >
           <GmsIcon name="refresh-cw" :size="14" :class="{ 'gms-spin': isRefreshing }" />
         </button>
@@ -325,6 +557,11 @@ function tierForGuest(guestId) {
             <GmsIcon name="plus" :size="14" /> Add movement
           </button>
         </template>
+        <template v-else-if="currentTab === 'blocks'">
+          <button class="gms-btn gms-btn-primary" @click="openNewBlock">
+            <GmsIcon name="plus" :size="14" /> New vehicle block
+          </button>
+        </template>
         <template v-else>
           <button class="gms-btn gms-btn-primary" @click="newModal = true">
             <GmsIcon name="plus" :size="14" /> New Request
@@ -333,21 +570,22 @@ function tierForGuest(guestId) {
       </div>
     </div>
 
-    <!-- Stats -->
-    <div class="gms-stats" style="margin-bottom:24px;">
+    <!-- Tab selector -->
+    <div class="gms-tabs" style="margin-bottom: 20px;">
+      <button class="gms-tab" :class="{ active: currentTab === 'requests' }" @click="currentTab = 'requests'">Requests</button>
+      <button class="gms-tab" :class="{ active: currentTab === 'inbox' }" @click="currentTab = 'inbox'">
+        Guest requests
+        <span v-if="pendingGuestRequests.length" class="gms-tab-badge">{{ pendingGuestRequests.length }}</span>
+      </button>
+      <button class="gms-tab" :class="{ active: currentTab === 'movements' }" @click="currentTab = 'movements'">Movements plan</button>
+      <button class="gms-tab" :class="{ active: currentTab === 'blocks' }" @click="currentTab = 'blocks'">Vehicle blocks</button>
+    </div>
+
+    <!-- Stats (requests/movements tabs) -->
+    <div v-if="currentTab !== 'blocks'" class="gms-stats" style="margin-bottom:24px;">
       <GmsMiniStat :value="countFor('confirmed')" label="Confirmed" color="#3f7d52" />
       <GmsMiniStat :value="countFor('pending')" label="Pending" color="#a16207" />
       <GmsMiniStat :value="countFor('cancelled')" label="Cancelled" />
-    </div>
-
-    <!-- Tab selector -->
-    <div class="gms-seg" style="width: fit-content; margin-bottom: 20px;">
-      <button :class="{ on: currentTab === 'requests' }" @click="currentTab = 'requests'">
-        <GmsIcon name="list" :size="14" style="margin-right: 6px;" /> Requests
-      </button>
-      <button :class="{ on: currentTab === 'movements' }" @click="currentTab = 'movements'">
-        <GmsIcon name="calendar" :size="14" style="margin-right: 6px;" /> Movements plan
-      </button>
     </div>
 
     <!-- Requests view -->
@@ -413,6 +651,90 @@ function tierForGuest(guestId) {
       </div>
     </div>
     </div>
+
+    <!-- ═══════════ GUEST REQUESTS INBOX ═══════════ -->
+    <template v-if="currentTab === 'inbox'">
+      <div class="gms-stats" style="margin-bottom:24px;">
+        <GmsMiniStat :value="pendingGuestRequests.length" label="Pending requests" color="#a16207" />
+        <GmsMiniStat :value="fulfilledGuestRequests.length" label="Booked" color="#3f7d52" />
+      </div>
+
+      <div v-if="fulfilledGuestRequests.length > 0" style="margin-bottom:16px;">
+        <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="showFulfilled = !showFulfilled">
+          <GmsIcon name="eye" :size="13" />
+          {{ showFulfilled ? 'Hide' : 'Show' }} booked ({{ fulfilledGuestRequests.length }})
+        </button>
+      </div>
+
+      <div class="gr-list">
+        <div v-for="r in pendingGuestRequests" :key="r.id" class="gr-card">
+          <div class="gr-main">
+            <div style="display:flex;align-items:center;gap:9px;">
+              <GmsAvatar :name="r.guestName" size="sm" />
+              <div>
+                <div class="gr-guest-name">{{ r.guestName }}</div>
+                <div class="gr-code">{{ r.id }} · submitted {{ formatDateTime(r.submitted) }}</div>
+              </div>
+            </div>
+            <div class="gr-prefs">
+              <div class="gr-pref">
+                <span class="gr-pref-label">Type</span>
+                <span class="gr-pref-value">{{ r.type }}</span>
+              </div>
+              <div class="gr-pref">
+                <span class="gr-pref-label">Pick-up</span>
+                <span class="gr-pref-value">{{ r.pickupLocation || '—' }}</span>
+              </div>
+              <div class="gr-pref">
+                <span class="gr-pref-label">Drop-off</span>
+                <span class="gr-pref-value">{{ r.dropoffLocation || '—' }}</span>
+              </div>
+              <div class="gr-pref">
+                <span class="gr-pref-label">Date & time</span>
+                <span class="gr-pref-value">{{ formatDateTime(r.datetime) }}</span>
+              </div>
+            </div>
+            <div v-if="r.notes" class="gr-notes">"{{ r.notes }}"</div>
+          </div>
+          <div class="gr-actions">
+            <GmsBtn variant="primary" icon="car" :iconSize="13" @click="bookFromRequest(r)">Book transport</GmsBtn>
+          </div>
+        </div>
+
+        <template v-if="showFulfilled">
+          <div v-for="r in fulfilledGuestRequests" :key="r.id" class="gr-card fulfilled">
+            <div class="gr-main">
+              <div style="display:flex;align-items:center;gap:9px;">
+                <GmsAvatar :name="r.guestName" size="sm" />
+                <div>
+                  <div class="gr-guest-name">{{ r.guestName }}</div>
+                  <div class="gr-code">{{ r.id }}</div>
+                </div>
+              </div>
+              <div class="gr-prefs">
+                <div class="gr-pref">
+                  <span class="gr-pref-label">Type</span>
+                  <span class="gr-pref-value">{{ r.type }}</span>
+                </div>
+                <div class="gr-pref">
+                  <span class="gr-pref-label">Route</span>
+                  <span class="gr-pref-value">{{ r.pickupLocation }} → {{ r.dropoffLocation }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="gr-actions">
+              <span class="gr-fulfilled-tag"><GmsIcon name="check" :size="12" /> Booked</span>
+            </div>
+          </div>
+        </template>
+
+        <div v-if="!pendingGuestRequests.length && !showFulfilled" class="gms-empty" style="padding:40px 20px;">
+          <GmsIcon name="car" :size="32" style="opacity:.3;margin-bottom:12px;" />
+          <div class="gms-empty-title">No pending guest requests</div>
+          <div class="gms-empty-sub">Guest transport preferences submitted via the portal will appear here.</div>
+        </div>
+      </div>
+    </template>
 
     <!-- Movements plan view -->
     <div v-if="currentTab === 'movements'">
@@ -582,7 +904,159 @@ function tierForGuest(guestId) {
         </template>
       </GmsModal>
     </div>
+
+    <!-- ═══════════ VEHICLE BLOCKS TAB ═══════════ -->
+    <template v-if="currentTab === 'blocks'">
+      <div class="gms-stats" style="margin-bottom:24px;">
+        <GmsMiniStat :value="blockStats.fleet"     label="Fleet size"      color="var(--gms-maroon)" />
+        <GmsMiniStat :value="blockStats.assigned"  label="Assigned"        color="#2d5f3a" />
+        <GmsMiniStat :value="blockStats.available" label="Available"       color="#3a6a8a" />
+        <GmsMiniStat :value="blockStats.nearCutoff" label="Near cut-off"  :color="blockStats.nearCutoff > 0 ? '#c53030' : 'var(--gms-text-3)'" />
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div class="gms-seg">
+          <button :class="{ on: providerFilter === 'all' }" @click="providerFilter = 'all'">All providers</button>
+          <button v-for="p in blockProviders" :key="p" :class="{ on: providerFilter === p }" @click="providerFilter = p">{{ p }}</button>
+        </div>
+        <span class="rb-summary" v-if="vbContractSummary.totalVehicleDays > 0">
+          {{ fmtCurrency(vbContractSummary.totalValue, vbContractSummary.currency) }} contract · {{ vbContractSummary.totalVehicleDays.toLocaleString() }} vehicle-days
+        </span>
+      </div>
+
+      <div class="rb-list">
+        <div v-for="b in filteredBlocks" :key="b.id" class="rb-card" style="cursor:pointer;" @click="openEditBlock(b)">
+          <div class="rb-main">
+            <div class="rb-room-type">{{ b.vehicleType }}</div>
+            <div class="rb-hotel-info">{{ b.provider }} · {{ b.vehicleClass }} · {{ b.currency }} {{ b.dailyRate.toLocaleString() }}/day · {{ blockDays(b) }} days</div>
+            <div class="rb-dates">{{ b.startDate }} → {{ b.endDate }}</div>
+          </div>
+
+          <div class="rb-pickup">
+            <div class="rb-bar"><span class="rb-bar-fill" :class="{ full: blockRemaining(b) === 0 }" :style="{ width: blockPct(b) + '%' }" /></div>
+            <div class="rb-pickup-meta">
+              <span class="rb-pickup-count">{{ b.assigned }} / {{ b.fleetSize }} assigned</span>
+              <span class="rb-rem" :class="{ full: blockRemaining(b) === 0 }">
+                {{ blockRemaining(b) === 0 ? 'Fully assigned' : blockRemaining(b) + ' available' }}
+              </span>
+              <span v-if="b.cutoffDate" class="rb-cutoff" :class="{ urgent: cutoffDays(b) <= 7 }">
+                Cut-off in {{ cutoffDays(b) }}d
+              </span>
+            </div>
+          </div>
+
+          <div class="rb-actions" @click.stop>
+            <div class="rb-step">
+              <button @click="adjustAssign(b, -1)" :disabled="b.assigned <= 0"><GmsIcon name="minus" :size="12" /></button>
+              <span class="rb-step-label">assign</span>
+              <button @click="adjustAssign(b, 1)" :disabled="b.assigned >= b.fleetSize"><GmsIcon name="plus" :size="12" /></button>
+            </div>
+            <button class="rb-action-btn" title="Edit" @click="openEditBlock(b)"><GmsIcon name="edit" :size="14" /></button>
+            <button class="rb-action-btn" title="Delete" @click="deleteBlock(b)" :style="deleteBlockConfirm === b.id ? 'color:#c53030;' : ''">
+              <GmsIcon name="trash" :size="14" />
+            </button>
+          </div>
+        </div>
+
+        <div v-if="!filteredBlocks.length" class="gms-empty" style="padding:40px 20px;">
+          <GmsIcon name="car" :size="32" style="opacity:.3;margin-bottom:12px;" />
+          <div class="gms-empty-title">No vehicle blocks</div>
+          <div class="gms-empty-sub">Create a vehicle block to track contracted fleet inventory.</div>
+        </div>
+      </div>
+    </template>
   </div>
+
+  <!-- ═══════════ VEHICLE BLOCK MODAL ═══════════ -->
+  <GmsModal :open="blockModal" :title="editingBlock ? 'Edit vehicle block' : 'New vehicle block'" @close="blockModal = false; blockForm.reset(); editingBlock = null">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="gms-form-grid">
+        <div class="gms-field">
+          <label class="gms-label">Provider *</label>
+          <input v-model="blockForm.provider" class="gms-input" placeholder="Al Maha Limousines" />
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">Vehicle type *</label>
+          <input v-model="blockForm.vehicleType" class="gms-input" placeholder="Mercedes S-Class" />
+        </div>
+      </div>
+      <div class="gms-form-grid">
+        <div class="gms-field">
+          <label class="gms-label">Vehicle class</label>
+          <input v-model="blockForm.vehicleClass" class="gms-input" placeholder="VIP Sedan" />
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">Currency</label>
+          <select v-model="blockForm.currency" class="gms-input gms-select">
+            <option value="QAR">QAR</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+          </select>
+        </div>
+      </div>
+      <div class="gms-form-grid">
+        <div class="gms-field">
+          <label class="gms-label">Daily rate *</label>
+          <input v-model="blockForm.dailyRate" type="number" class="gms-input" placeholder="1200" min="0" />
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">Fleet size *</label>
+          <input v-model="blockForm.fleetSize" type="number" class="gms-input" placeholder="20" min="1" />
+        </div>
+      </div>
+      <div class="gms-form-grid">
+        <div class="gms-field">
+          <label class="gms-label">Start date *</label>
+          <GmsDatePicker v-model="blockForm.startDate" placeholder="Select date" dateFormat="Y-m-d" />
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">End date *</label>
+          <GmsDatePicker v-model="blockForm.endDate" placeholder="Select date" dateFormat="Y-m-d" />
+        </div>
+      </div>
+      <div class="gms-form-grid">
+        <div class="gms-field">
+          <label class="gms-label">Assigned</label>
+          <input v-model="blockForm.assigned" type="number" class="gms-input" placeholder="0" min="0" />
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">Cut-off date</label>
+          <GmsDatePicker v-model="blockForm.cutoffDate" placeholder="Select cut-off date" dateFormat="Y-m-d" />
+        </div>
+      </div>
+
+      <div class="rb-calc-strip" v-if="vbFormDays > 0 && blockForm.fleetSize > 0">
+        <div class="rb-calc-item">
+          <span class="rb-calc-label">Vehicle-days</span>
+          <span class="rb-calc-value">{{ vbFormVehicleDays.toLocaleString() }}</span>
+        </div>
+        <div class="rb-calc-item">
+          <span class="rb-calc-label">Days</span>
+          <span class="rb-calc-value">{{ vbFormDays }}</span>
+        </div>
+        <div class="rb-calc-item">
+          <span class="rb-calc-label">Contract value</span>
+          <span class="rb-calc-value">{{ blockForm.currency }} {{ vbFormContractValue.toLocaleString() }}</span>
+        </div>
+      </div>
+
+      <div class="gms-field">
+        <label class="gms-label">Notes</label>
+        <textarea v-model="blockForm.notes" class="gms-input gms-textarea" rows="2" placeholder="Block notes…" />
+      </div>
+    </div>
+    <template #footer>
+      <button class="gms-btn gms-btn-ghost" @click="blockModal = false; blockForm.reset(); editingBlock = null">Cancel</button>
+      <button
+        class="gms-btn gms-btn-primary"
+        :disabled="!blockForm.provider || !blockForm.vehicleType || !blockForm.dailyRate || !blockForm.startDate || !blockForm.endDate || !blockForm.fleetSize"
+        @click="saveBlock"
+      >
+        {{ editingBlock ? 'Save changes' : 'Create block' }}
+      </button>
+    </template>
+  </GmsModal>
 
   <GmsDrawer :open="drawerOpen" :title="activeReq?.type ?? ''" :subtitle="activeReq?.guestName" @close="drawerOpen = false">
     <template v-if="activeReq">
@@ -646,27 +1120,40 @@ function tierForGuest(guestId) {
     </template>
   </GmsDrawer>
 
-  <GmsModal :open="newModal" title="New Transport Request" @close="newModal = false; selectedGuestId = null; form.reset(); form.clearErrors()">
+  <GmsModal :open="newModal" :title="bookingFromGuestRequest ? 'Book transport' : 'New Transport Request'" @close="newModal = false; selectedGuestId = null; bookingFromGuestRequest = null; form.reset(); form.clearErrors()">
     <div style="display:flex;flex-direction:column;gap:14px;">
+      <div v-if="bookingFromGuestRequest" class="gr-booking-banner">
+        <GmsIcon name="globe" :size="14" />
+        <span>Booking from guest request {{ bookingFromGuestRequest.id }} — assign vehicle and confirm details</span>
+      </div>
       <div class="gms-field">
         <label class="gms-label">Guest</label>
-        <div v-if="confirmedGuests.length === 0" class="gms-empty" style="padding: 40px 20px; background: var(--gms-surface-2); border-radius: 8px; margin-top: 10px;">
-          <GmsIcon name="users" :size="32" style="opacity: 0.3; margin-bottom: 12px;" />
-          <div class="gms-empty-title">No guests with confirmed invitations</div>
-          <div class="gms-empty-sub" style="max-width: 400px; margin: 8px auto 0;">
-            Only guests who have confirmed their invitations can request transport. Confirm guest invitations first.
+        <div v-if="bookingFromGuestRequest" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--gms-bg);border-radius:8px;border:1px solid var(--gms-border);">
+          <GmsAvatar :name="bookingFromGuestRequest.guestName" size="sm" />
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:13px;">{{ bookingFromGuestRequest.guestName }}</div>
+            <div style="font-size:11px;color:var(--gms-text-3);">Guest pre-selected from request {{ bookingFromGuestRequest.id }}</div>
           </div>
         </div>
-        <GmsGuestPicker
-          v-else
-          :guests="confirmedGuests"
-          :selected-guest-id="selectedGuestId"
-          :tiers="props.tiers"
-          :show-existing-indicator="true"
-          :existing-guest-ids="existingTransportGuestIds"
-          existing-label="has transport"
-          @select="pickGuest"
-        />
+        <template v-else>
+          <div v-if="confirmedGuests.length === 0" class="gms-empty" style="padding: 40px 20px; background: var(--gms-surface-2); border-radius: 8px; margin-top: 10px;">
+            <GmsIcon name="users" :size="32" style="opacity: 0.3; margin-bottom: 12px;" />
+            <div class="gms-empty-title">No guests with confirmed invitations</div>
+            <div class="gms-empty-sub" style="max-width: 400px; margin: 8px auto 0;">
+              Only guests who have confirmed their invitations can request transport. Confirm guest invitations first.
+            </div>
+          </div>
+          <GmsGuestPicker
+            v-else
+            :guests="confirmedGuests"
+            :selected-guest-id="selectedGuestId"
+            :tiers="props.tiers"
+            :show-existing-indicator="true"
+            :existing-guest-ids="existingTransportGuestIds"
+            existing-label="has transport"
+            @select="pickGuest"
+          />
+        </template>
         <span v-if="form.errors.guestId" class="gms-error" style="display: block; margin-top: 6px; font-size: 12px; color: #dc2626;">{{ form.errors.guestId }}</span>
       </div>
       <div class="gms-form-grid">

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($c = [System.IO.File]::ReadAllText\\(\"C:\\\\Users\\\\r.sabha\\\\Downloads\\\\gms \\(5\\)\\\\GMS - Standalone \\(11\\).html\"\\); $idx = $c.IndexOf\\('Accommodation'\\); \"Accommodation: $idx\"; if\\($idx -gt 0\\) { $c.Substring\\($idx, [Math]::Min\\(500, $c.Length-$idx\\)\\) })"
+    ]
+  }
+}

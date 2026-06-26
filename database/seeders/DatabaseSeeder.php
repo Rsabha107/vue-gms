@@ -29,7 +29,10 @@ class DatabaseSeeder extends Seeder
             InvitationStatusSeeder::class,
             GuestSeeder::class,
             MatchSeeder::class,
+            HotelSeeder::class,
             AccommodationSeeder::class,
+            RoomBlockSeeder::class,
+            VehicleBlockSeeder::class,
             SeatingSeeder::class,
         ]);
     }

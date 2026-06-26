@@ -128,15 +128,17 @@ class GmsMockData
 
     public static function getHotels(): array
     {
-        return [
-            ['id' => 'HOT-01', 'name' => 'Four Seasons Doha',         'area' => 'West Bay',   'stars' => 5],
-            ['id' => 'HOT-02', 'name' => 'Mandarin Oriental Doha',    'area' => 'Msheireb',   'stars' => 5],
-            ['id' => 'HOT-03', 'name' => 'St. Regis Doha',            'area' => 'West Bay',   'stars' => 5],
-            ['id' => 'HOT-04', 'name' => 'Banyan Tree Doha',          'area' => 'Lusail',     'stars' => 5],
-            ['id' => 'HOT-05', 'name' => 'Marsa Malaz Kempinski',     'area' => 'Pearl Island','stars' => 5],
-            ['id' => 'HOT-06', 'name' => 'InterContinental Doha',     'area' => 'West Bay',   'stars' => 5],
-            ['id' => 'HOT-07', 'name' => 'Waldorf Astoria Lusail',    'area' => 'Lusail',     'stars' => 5],
-        ];
+        return \App\Models\Hotel::active()
+            ->orderBy('name')
+            ->get()
+            ->map(fn($h) => [
+                'id'    => $h->id,
+                'code'  => $h->code,
+                'name'  => $h->name,
+                'area'  => $h->area,
+                'stars' => $h->stars,
+            ])
+            ->toArray();
     }
 
     public static function getVenues(): array

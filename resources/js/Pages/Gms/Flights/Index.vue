@@ -17,16 +17,18 @@ import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
 defineOptions({ layout: GmsLayout })
 
 const props = defineProps({
-    requests: { type: Array,  default: () => [] },
-    guests:   { type: Array,  default: () => [] },
-    tiers:    { type: Array,  default: () => [] },
-    event:    { type: Object, default: () => ({}) },
+    requests:      { type: Array,  default: () => [] },
+    guestRequests: { type: Array,  default: () => [] },
+    guests:        { type: Array,  default: () => [] },
+    tiers:         { type: Array,  default: () => [] },
+    event:         { type: Object, default: () => ({}) },
 })
 
 const toast = inject('toast')
 
 const localReqs = ref(props.requests.map(r => ({ ...r })))
-const viewMode = ref('queue') // queue | schedule
+const localGuestReqs = ref(props.guestRequests.map(r => ({ ...r })))
+const viewMode = ref('queue') // queue | inbox | schedule
 
 // ── Filters ───────────────────────────────────────────────────────
 const search       = ref('')
@@ -119,12 +121,13 @@ const isRefreshing = ref(false)
 
 function refreshFlights() {
     isRefreshing.value = true
-    router.reload({ 
-        only: ['requests'],
+    router.reload({
+        only: ['requests', 'guestRequests'],
         onFinish: () => {
             setTimeout(() => {
                 isRefreshing.value = false
                 localReqs.value = props.requests.map(r => ({ ...r }))
+                localGuestReqs.value = props.guestRequests.map(r => ({ ...r }))
                 toast('Flights refreshed')
             }, 500)
         }
@@ -483,6 +486,9 @@ const existingFlightGuestIds = computed(() => {
 })
 
 const selectedGuest = computed(() => {
+    if (bookingFromGuestRequest.value) {
+        return { id: bookingFromGuestRequest.value.guestId, name: bookingFromGuestRequest.value.guestName, guestType: 'international', nationality: '' }
+    }
     return selectedGuestId.value ? props.guests.find(g => g.id === selectedGuestId.value) : null
 })
 
@@ -516,53 +522,92 @@ function decrementPax() {
     if (form.pax > 1) form.pax--
 }
 
-function saveNew() {
-    // Convert dates from d/m/Y to Y-m-d format for Laravel
-    const formatDateForBackend = (dateStr) => {
-        if (!dateStr) return ''
-        // If already in Y-m-d format, return as is
-        if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return dateStr
-        // Convert d/m/Y to Y-m-d
-        const parts = dateStr.split('/')
-        if (parts.length === 3) {
-            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
-        }
-        return dateStr
-    }
+// ── Guest request inbox ──────────────────────────────────────────
+const pendingGuestRequests = computed(() =>
+    localGuestReqs.value.filter(r => !r.fulfilledById)
+)
+const fulfilledGuestRequests = computed(() =>
+    localGuestReqs.value.filter(r => r.fulfilledById)
+)
+const showFulfilled = ref(false)
 
-    const guest = props.guests.find(g => g.id === form.guestId)
-    
-    // Create a copy of form data with converted dates
+const bookingFromGuestRequest = ref(null)
+
+function bookFromRequest(r) {
+    bookingFromGuestRequest.value = r
+
+    selectedGuestId.value = r.guestId
+    form.guestId = r.guestId
+
+    const outboundLeg = r.legs?.find(l => l.dir === 'Outbound')
+    const inboundLeg = r.legs?.find(l => l.dir === 'Inbound')
+
+    form.origin = 'DOH'
+    form.destination = outboundLeg?.fromCode !== 'XXX' ? outboundLeg?.fromCode : ''
+    form.class = outboundLeg?.cls || inboundLeg?.cls || 'Business'
+    form.pax = r.pax || 1
+    form.date = inboundLeg?.date || ''
+    form.outboundDate = outboundLeg?.date || ''
+    form.inboundFlightNo = ''
+    form.outboundFlightNo = ''
+    form.inboundDepTime = ''
+    form.inboundArrTime = ''
+    form.outboundDepTime = ''
+    form.outboundArrTime = ''
+
+    newModal.value = true
+}
+
+function formatDateForBackend(dateStr) {
+    if (!dateStr) return ''
+    if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return dateStr
+    const parts = dateStr.split('/')
+    if (parts.length === 3) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    }
+    return dateStr
+}
+
+function saveNew() {
     const formData = {
         ...form.data(),
         date: formatDateForBackend(form.date),
         outboundDate: formatDateForBackend(form.outboundDate),
     }
-    
-    form.transform(() => formData).post(route('gms.flights.store'), {
+
+    const targetRoute = bookingFromGuestRequest.value
+        ? route('gms.flights.book-guest-request', bookingFromGuestRequest.value.id)
+        : route('gms.flights.store')
+
+    form.transform(() => formData).post(targetRoute, {
         onSuccess: () => {
+            if (bookingFromGuestRequest.value) {
+                const idx = localGuestReqs.value.findIndex(x => x.id === bookingFromGuestRequest.value.id)
+                if (idx !== -1) {
+                    localGuestReqs.value[idx] = { ...localGuestReqs.value[idx], fulfilledById: 'pending' }
+                }
+                bookingFromGuestRequest.value = null
+            }
             newModal.value = false
             selectedGuestId.value = null
             toast('Flight request created.')
             form.reset()
             form.origin = 'DOH'
             form.isChange = false
-            
-            // Reload flights data and update local copy
+
             router.reload({
-                only: ['requests'],
+                only: ['requests', 'guestRequests'],
                 preserveScroll: true,
                 onSuccess: () => {
                     localReqs.value = props.requests.map(r => ({ ...r }))
+                    localGuestReqs.value = props.guestRequests.map(r => ({ ...r }))
                 },
             })
         },
         onError: (errors) => {
-            // Show first validation error with field name
             const firstError = Object.keys(errors)[0]
             const errorMessage = firstError ? `${firstError}: ${errors[firstError]}` : 'Failed to create flight request.'
             toast(errorMessage, 'error')
-            console.error('Flight request validation errors:', errors)
         },
     })
 }
@@ -593,19 +638,13 @@ function saveNew() {
     </div>
 
     <!-- View toggle -->
-    <div class="gms-seg" style="width: fit-content; margin-bottom: 20px;">
-      <button
-        :class="{ on: viewMode === 'queue' }"
-        @click="viewMode = 'queue'"
-      >
-        Request queue
+    <div class="gms-tabs" style="margin-bottom: 20px;">
+      <button class="gms-tab" :class="{ active: viewMode === 'queue' }" @click="viewMode = 'queue'">Request queue</button>
+      <button class="gms-tab" :class="{ active: viewMode === 'inbox' }" @click="viewMode = 'inbox'">
+        Guest requests
+        <span v-if="pendingGuestRequests.length" class="gms-tab-badge">{{ pendingGuestRequests.length }}</span>
       </button>
-      <button
-        :class="{ on: viewMode === 'schedule' }"
-        @click="viewMode = 'schedule'"
-      >
-        Schedule
-      </button>
+      <button class="gms-tab" :class="{ active: viewMode === 'schedule' }" @click="viewMode = 'schedule'">Schedule</button>
     </div>
 
     <!-- Request queue view -->
@@ -733,6 +772,103 @@ function saveNew() {
       </div>
     </div>
 
+    </template>
+
+    <!-- ═══════════ GUEST REQUESTS INBOX ═══════════ -->
+    <template v-if="viewMode === 'inbox'">
+      <div class="gms-stats" style="margin-bottom:24px;">
+        <GmsMiniStat :value="pendingGuestRequests.length" label="Pending requests" color="#a16207" />
+        <GmsMiniStat :value="fulfilledGuestRequests.length" label="Booked" color="#15803d" />
+      </div>
+
+      <div v-if="fulfilledGuestRequests.length > 0" style="margin-bottom:16px;">
+        <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="showFulfilled = !showFulfilled">
+          <GmsIcon :name="showFulfilled ? 'eye' : 'eye'" :size="13" />
+          {{ showFulfilled ? 'Hide' : 'Show' }} booked ({{ fulfilledGuestRequests.length }})
+        </button>
+      </div>
+
+      <div class="gr-list">
+        <div v-for="r in pendingGuestRequests" :key="r.id" class="gr-card">
+          <div class="gr-main">
+            <div style="display:flex;align-items:center;gap:9px;">
+              <GmsAvatar :name="r.guestName" size="sm" />
+              <div>
+                <div class="gr-guest-name">{{ r.guestName }}</div>
+                <div class="gr-code">{{ r.id }} · submitted {{ fmtDateShort(r.submitted?.split(' ')[0]) }}</div>
+              </div>
+            </div>
+            <div class="gr-prefs">
+              <div class="gr-pref">
+                <span class="gr-pref-label">Route</span>
+                <span class="gr-pref-value">
+                  {{ r.legs?.find(l => l.dir === 'Outbound')?.fromCity || '—' }} → Doha
+                </span>
+              </div>
+              <div class="gr-pref" v-if="r.legs?.find(l => l.dir === 'Inbound')?.date">
+                <span class="gr-pref-label">Inbound</span>
+                <span class="gr-pref-value">{{ fmtDateShort(r.legs.find(l => l.dir === 'Inbound')?.date) }}</span>
+              </div>
+              <div class="gr-pref" v-if="r.legs?.find(l => l.dir === 'Outbound')?.date">
+                <span class="gr-pref-label">Return</span>
+                <span class="gr-pref-value">{{ fmtDateShort(r.legs.find(l => l.dir === 'Outbound')?.date) }}</span>
+              </div>
+              <div class="gr-pref">
+                <span class="gr-pref-label">Class</span>
+                <span :class="classPillClass(r.class)">{{ r.class }}</span>
+              </div>
+              <div class="gr-pref">
+                <span class="gr-pref-label">Pax</span>
+                <span class="gr-pref-value">{{ r.pax }}</span>
+              </div>
+            </div>
+            <div v-if="r.notes" class="gr-notes">"{{ r.notes }}"</div>
+          </div>
+          <div class="gr-actions">
+            <GmsBtn variant="primary" icon="plane" :iconSize="13" @click="bookFromRequest(r)">Book flight</GmsBtn>
+          </div>
+        </div>
+
+        <!-- Fulfilled requests (toggle) -->
+        <template v-if="showFulfilled">
+          <div v-for="r in fulfilledGuestRequests" :key="r.id" class="gr-card fulfilled">
+            <div class="gr-main">
+              <div style="display:flex;align-items:center;gap:9px;">
+                <GmsAvatar :name="r.guestName" size="sm" />
+                <div>
+                  <div class="gr-guest-name">{{ r.guestName }}</div>
+                  <div class="gr-code">{{ r.id }}</div>
+                </div>
+              </div>
+              <div class="gr-prefs">
+                <div class="gr-pref">
+                  <span class="gr-pref-label">Route</span>
+                  <span class="gr-pref-value">
+                    {{ r.legs?.find(l => l.dir === 'Outbound')?.fromCity || '—' }} → Doha
+                  </span>
+                </div>
+                <div class="gr-pref">
+                  <span class="gr-pref-label">Class</span>
+                  <span :class="classPillClass(r.class)">{{ r.class }}</span>
+                </div>
+                <div class="gr-pref">
+                  <span class="gr-pref-label">Pax</span>
+                  <span class="gr-pref-value">{{ r.pax }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="gr-actions">
+              <span class="gr-fulfilled-tag"><GmsIcon name="check" :size="12" /> Booked</span>
+            </div>
+          </div>
+        </template>
+
+        <div v-if="!pendingGuestRequests.length && !showFulfilled" class="gms-empty" style="padding:40px 20px;">
+          <GmsIcon name="plane" :size="32" style="opacity:.3;margin-bottom:12px;" />
+          <div class="gms-empty-title">No pending guest requests</div>
+          <div class="gms-empty-sub">Guest flight preferences submitted via the portal will appear here.</div>
+        </div>
+      </div>
     </template>
 
     <!-- Schedule view -->
@@ -973,29 +1109,45 @@ function saveNew() {
   </GmsDrawer>
 
   <!-- ── New request modal ── -->
-  <GmsModal :open="newModal" title="New Flight Request" size="lg" @close="newModal = false; selectedGuestId = null">
+  <GmsModal :open="newModal" :title="bookingFromGuestRequest ? 'Book flight' : 'New Flight Request'" size="lg" @close="newModal = false; selectedGuestId = null; bookingFromGuestRequest = null">
     <div style="padding:0;">
-      
+
+      <!-- Booking-from-guest-request banner -->
+      <div v-if="bookingFromGuestRequest" class="gr-booking-banner">
+        <GmsIcon name="globe" :size="14" />
+        <span>Booking from guest request {{ bookingFromGuestRequest.id }} — fill in flight details below</span>
+      </div>
+
       <!-- Step 1: Guest selection -->
       <div class="nf-step">1 · Guest</div>
       <div style="margin:2px 0 10px;">
-        <div v-if="confirmedGuests.length === 0" class="gms-empty" style="padding: 40px 20px; background: var(--gms-surface-2); border-radius: 8px; margin-top: 10px;">
-          <GmsIcon name="users" :size="32" style="opacity: 0.3; margin-bottom: 12px;" />
-          <div class="gms-empty-title">No guests with confirmed invitations</div>
-          <div class="gms-empty-sub" style="max-width: 400px; margin: 8px auto 0;">
-            Only guests who have confirmed their invitations can request flights. Confirm guest invitations first.
+        <!-- Locked guest when booking from guest request -->
+        <div v-if="bookingFromGuestRequest" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--gms-bg);border-radius:8px;border:1px solid var(--gms-border);">
+          <GmsAvatar :name="bookingFromGuestRequest.guestName" size="sm" />
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:13px;">{{ bookingFromGuestRequest.guestName }}</div>
+            <div style="font-size:11px;color:var(--gms-text-3);">Guest pre-selected from request {{ bookingFromGuestRequest.id }}</div>
           </div>
         </div>
-        <GmsGuestPicker
-          v-else
-          :guests="confirmedGuests"
-          :selected-guest-id="selectedGuestId"
-          :tiers="props.tiers"
-          :show-existing-indicator="true"
-          :existing-guest-ids="existingFlightGuestIds"
-          existing-label="has flight"
-          @select="pickGuest"
-        />
+        <template v-else>
+          <div v-if="confirmedGuests.length === 0" class="gms-empty" style="padding: 40px 20px; background: var(--gms-surface-2); border-radius: 8px; margin-top: 10px;">
+            <GmsIcon name="users" :size="32" style="opacity: 0.3; margin-bottom: 12px;" />
+            <div class="gms-empty-title">No guests with confirmed invitations</div>
+            <div class="gms-empty-sub" style="max-width: 400px; margin: 8px auto 0;">
+              Only guests who have confirmed their invitations can request flights. Confirm guest invitations first.
+            </div>
+          </div>
+          <GmsGuestPicker
+            v-else
+            :guests="confirmedGuests"
+            :selected-guest-id="selectedGuestId"
+            :tiers="props.tiers"
+            :show-existing-indicator="true"
+            :existing-guest-ids="existingFlightGuestIds"
+            existing-label="has flight"
+            @select="pickGuest"
+          />
+        </template>
       </div>
 
       <!-- Step 2: Flight details (only shown when guest selected) -->

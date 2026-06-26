@@ -12,6 +12,7 @@ class AccommodationRequest extends Model
         'guest_id',
         'code',
         'status_id',
+        'hotel_id',
         'hotel_code',
         'hotel_name',
         'room_type',
@@ -19,6 +20,8 @@ class AccommodationRequest extends Model
         'check_out',
         'nights',
         'notes',
+        'fulfilled_by_id',
+        'fulfills_request_id',
         'initiated_by',
         'source',
         'assigned_officer_id',
@@ -49,9 +52,29 @@ class AccommodationRequest extends Model
         return $this->belongsTo(AccommodationStatus::class, 'status_id');
     }
 
+    public function hotel(): BelongsTo
+    {
+        return $this->belongsTo(Hotel::class);
+    }
+
     public function assignedOfficer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_officer_id');
+    }
+
+    public function fulfilledBy(): BelongsTo
+    {
+        return $this->belongsTo(AccommodationRequest::class, 'fulfilled_by_id');
+    }
+
+    public function fulfillsRequest(): BelongsTo
+    {
+        return $this->belongsTo(AccommodationRequest::class, 'fulfills_request_id');
+    }
+
+    public function scopeGuestRequests($query)
+    {
+        return $query->where('source', 'portal')->where('initiated_by', 'guest');
     }
 
     /**

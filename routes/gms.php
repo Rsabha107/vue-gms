@@ -70,6 +70,7 @@ Route::prefix('gms')->name('gms.')->group(function () {
     // Flights
     Route::get('/flights',                  [GmsFlightController::class, 'index'])->name('flights.index');
     Route::post('/flights',                 [GmsFlightController::class, 'store'])->name('flights.store');
+    Route::post('/flights/{guestRequestCode}/book', [GmsFlightController::class, 'bookGuestRequest'])->name('flights.book-guest-request');
     Route::put('/flights/{id}',             [GmsFlightController::class, 'update'])->name('flights.update');
     Route::patch('/flights/{id}/status',    [GmsFlightController::class, 'updateStatus'])->name('flights.status');
     Route::patch('/flights/{id}/legs/{legId}', [GmsFlightController::class, 'updateLeg'])->name('flights.legs.update');
@@ -82,11 +83,32 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::patch('/accommodation/{id}/status', [GmsAccommodationController::class, 'updateStatus'])->name('accommodation.status');
     Route::delete('/accommodation/{id}',       [GmsAccommodationController::class, 'destroy'])->name('accommodation.destroy');
 
+    // Accommodation guest request booking
+    Route::post('/accommodation/{guestRequestCode}/book', [GmsAccommodationController::class, 'bookGuestRequest'])->name('accommodation.book-guest-request');
+
+    // Hotels
+    Route::post('/accommodation/hotels',              [GmsAccommodationController::class, 'storeHotel'])->name('accommodation.hotels.store');
+
+    // Room Blocks
+    Route::post('/accommodation/blocks',              [GmsAccommodationController::class, 'storeBlock'])->name('accommodation.blocks.store');
+    Route::put('/accommodation/blocks/{id}',          [GmsAccommodationController::class, 'updateBlock'])->name('accommodation.blocks.update');
+    Route::patch('/accommodation/blocks/{id}/pickup', [GmsAccommodationController::class, 'updateBlockPickup'])->name('accommodation.blocks.pickup');
+    Route::delete('/accommodation/blocks/{id}',       [GmsAccommodationController::class, 'destroyBlock'])->name('accommodation.blocks.destroy');
+
     // Transport
     Route::get('/transport',                [GmsTransportController::class, 'index'])->name('transport.index');
     Route::post('/transport',              [GmsTransportController::class, 'store'])->name('transport.store');
     Route::patch('/transport/{id}/status', [GmsTransportController::class, 'updateStatus'])->name('transport.status');
     Route::delete('/transport/{id}',       [GmsTransportController::class, 'destroy'])->name('transport.destroy');
+
+    // Transport guest request booking
+    Route::post('/transport/{guestRequestCode}/book', [GmsTransportController::class, 'bookGuestRequest'])->name('transport.book-guest-request');
+
+    // Vehicle Blocks
+    Route::post('/transport/blocks',              [GmsTransportController::class, 'storeBlock'])->name('transport.blocks.store');
+    Route::put('/transport/blocks/{id}',          [GmsTransportController::class, 'updateBlock'])->name('transport.blocks.update');
+    Route::patch('/transport/blocks/{id}/assign', [GmsTransportController::class, 'updateBlockAssign'])->name('transport.blocks.assign');
+    Route::delete('/transport/blocks/{id}',       [GmsTransportController::class, 'destroyBlock'])->name('transport.blocks.destroy');
 
     // Arrival & Departure
     Route::get('/arrival-departure',                [GmsArrivalDepartureController::class, 'index'])->name('ad.index');
