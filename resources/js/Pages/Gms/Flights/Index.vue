@@ -13,6 +13,7 @@ import GmsGuestPicker from '@/Components/Gms/GmsGuestPicker.vue'
 import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
 import GmsTimePicker from '@/Components/Gms/GmsTimePicker.vue'
 import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
+import GmsAirportPicker from '@/Components/Gms/GmsAirportPicker.vue'
 
 defineOptions({ layout: GmsLayout })
 
@@ -532,6 +533,23 @@ const fulfilledGuestRequests = computed(() =>
 const showFulfilled = ref(false)
 
 const bookingFromGuestRequest = ref(null)
+
+const guestPref = computed(() => {
+    const r = bookingFromGuestRequest.value
+    if (!r) return null
+    const outbound = r.legs?.find(l => l.dir === 'Outbound')
+    const inbound = r.legs?.find(l => l.dir === 'Inbound')
+    return {
+        origin: outbound?.fromCity || outbound?.fromCode || '—',
+        class: outbound?.cls || inbound?.cls || '—',
+        pax: r.pax || '—',
+        inboundDate: inbound?.date || '—',
+        inboundTime: inbound?.dep || '—',
+        outboundDate: outbound?.date || '—',
+        outboundTime: outbound?.dep || '—',
+        notes: r.notes || null,
+    }
+})
 
 function bookFromRequest(r) {
     bookingFromGuestRequest.value = r
@@ -1178,25 +1196,15 @@ function saveNew() {
           <div class="gms-form-grid" style="margin-bottom:14px;">
             <div class="gms-field">
               <label class="gms-label">Origin</label>
-              <input 
-                type="text" 
-                v-model="form.destination" 
-                class="gms-input" 
-                placeholder="e.g. LHR, JFK, SYD" 
-                style="text-transform:uppercase;font-family:var(--gms-font-mono);" 
-                maxlength="3"
-              >
-              <div class="gms-hint" style="margin-top:4px;font-size:11px;">Guest's home airport (3-letter code)</div>
+              <GmsAirportPicker
+                v-model="form.destination"
+                placeholder="Search city or airport code…"
+              />
+              <div v-if="guestPref" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Guest requested: <strong>{{ guestPref.origin }}</strong></div>
             </div>
             <div class="gms-field">
               <label class="gms-label">Destination</label>
-              <input 
-                type="text" 
-                v-model="form.origin" 
-                class="gms-input" 
-                readonly 
-                style="background:var(--gms-surface-2);cursor:not-allowed;font-family:var(--gms-font-mono);"
-              >
+              <GmsAirportPicker v-model="form.origin" :readonly="true" />
               <div class="gms-hint" style="margin-top:4px;font-size:11px;">Doha (event venue)</div>
             </div>
           </div>
@@ -1228,6 +1236,7 @@ function saveNew() {
                   @click="form.class = cls"
                 >{{ cls }}</button>
               </div>
+              <div v-if="guestPref" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Guest requested: <strong>{{ guestPref.class }}</strong></div>
             </div>
 
             <!-- Passengers -->
@@ -1241,6 +1250,7 @@ function saveNew() {
                   {{ form.pax > 1 ? `guest + ${form.pax - 1}` : 'guest only' }}
                 </span>
               </div>
+              <div v-if="guestPref" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Guest requested: <strong>{{ guestPref.pax }} pax</strong></div>
             </div>
 
           </div>
@@ -1261,6 +1271,7 @@ function saveNew() {
                 placeholder="Select date"
                 date-format="d/m/Y"
               />
+              <div v-if="guestPref" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Preferred: <strong>{{ guestPref.inboundDate }}</strong></div>
             </div>
             <div class="gms-field">
               <label class="gms-label">Departure Time</label>
@@ -1268,6 +1279,7 @@ function saveNew() {
                 v-model="form.inboundDepTime"
                 placeholder="08:00"
               />
+              <div v-if="guestPref && guestPref.inboundTime !== '—'" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Preferred: <strong>{{ guestPref.inboundTime }}</strong></div>
             </div>
             <div class="gms-field">
               <label class="gms-label">Arrival Time</label>
@@ -1280,6 +1292,11 @@ function saveNew() {
               <label class="gms-label">Duration</label>
               <input v-model="form.inboundDuration" class="gms-input" placeholder="4h 00m" readonly style="font-family:var(--gms-font-mono);background:var(--gms-surface-2);cursor:not-allowed;" />
             </div>
+          </div>
+
+          <!-- Guest notes -->
+          <div v-if="guestPref?.notes" class="nf-pref-notes" style="margin-top:12px;">
+            <GmsIcon name="mail" :size="12" /> <strong>Guest note:</strong> "{{ guestPref.notes }}"
           </div>
 
           <!-- Outbound Flight Details -->
@@ -1298,6 +1315,7 @@ function saveNew() {
                 placeholder="Select date"
                 date-format="d/m/Y"
               />
+              <div v-if="guestPref" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Preferred: <strong>{{ guestPref.outboundDate }}</strong></div>
             </div>
             <div class="gms-field">
               <label class="gms-label">Departure Time</label>
@@ -1305,6 +1323,7 @@ function saveNew() {
                 v-model="form.outboundDepTime"
                 placeholder="14:00"
               />
+              <div v-if="guestPref && guestPref.outboundTime !== '—'" class="nf-pref-hint"><GmsIcon name="globe" :size="10" /> Preferred: <strong>{{ guestPref.outboundTime }}</strong></div>
             </div>
             <div class="gms-field">
               <label class="gms-label">Arrival Time</label>
@@ -1457,6 +1476,19 @@ function saveNew() {
 </template>
 
 <style scoped>
+.nf-pref-hint {
+    display: flex; align-items: center; gap: 5px;
+    margin-top: 5px; font-size: 11px; color: #4a6a8a;
+    padding: 3px 8px; border-radius: 5px;
+    background: rgba(58,106,138,.06);
+}
+.nf-pref-hint strong { font-weight: 700; color: #34567a; }
+.nf-pref-notes {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 12px; color: #4a6a8a; font-style: italic;
+    padding: 8px 12px; border-radius: 8px;
+    background: rgba(58,106,138,.04); border: 1px solid rgba(58,106,138,.12);
+}
 .portal-badge {
     display: inline-flex;
     align-items: center;

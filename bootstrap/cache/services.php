@@ -34,11 +34,12 @@
     30 => 'Carbon\\Laravel\\ServiceProvider',
     31 => 'NunoMaduro\\Collision\\Adapters\\Laravel\\CollisionServiceProvider',
     32 => 'Termwind\\Laravel\\TermwindServiceProvider',
-    33 => 'SocialiteProviders\\Manager\\ServiceProvider',
-    34 => 'Spatie\\OneTimePasswords\\OneTimePasswordsServiceProvider',
-    35 => 'Spatie\\Permission\\PermissionServiceProvider',
-    36 => 'Tighten\\Ziggy\\ZiggyServiceProvider',
-    37 => 'App\\Providers\\AppServiceProvider',
+    33 => 'PragmaRX\\Google2FALaravel\\ServiceProvider',
+    34 => 'SocialiteProviders\\Manager\\ServiceProvider',
+    35 => 'Spatie\\OneTimePasswords\\OneTimePasswordsServiceProvider',
+    36 => 'Spatie\\Permission\\PermissionServiceProvider',
+    37 => 'Tighten\\Ziggy\\ZiggyServiceProvider',
+    38 => 'App\\Providers\\AppServiceProvider',
   ),
   'eager' => 
   array (
@@ -59,10 +60,11 @@
     14 => 'Carbon\\Laravel\\ServiceProvider',
     15 => 'NunoMaduro\\Collision\\Adapters\\Laravel\\CollisionServiceProvider',
     16 => 'Termwind\\Laravel\\TermwindServiceProvider',
-    17 => 'Spatie\\OneTimePasswords\\OneTimePasswordsServiceProvider',
-    18 => 'Spatie\\Permission\\PermissionServiceProvider',
-    19 => 'Tighten\\Ziggy\\ZiggyServiceProvider',
-    20 => 'App\\Providers\\AppServiceProvider',
+    17 => 'PragmaRX\\Google2FALaravel\\ServiceProvider',
+    18 => 'Spatie\\OneTimePasswords\\OneTimePasswordsServiceProvider',
+    19 => 'Spatie\\Permission\\PermissionServiceProvider',
+    20 => 'Tighten\\Ziggy\\ZiggyServiceProvider',
+    21 => 'App\\Providers\\AppServiceProvider',
   ),
   'deferred' => 
   array (

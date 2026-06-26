@@ -46,7 +46,7 @@ class TransportRequest extends Model
 
     public function status(): BelongsTo
     {
-        return $this->belongsTo(TransportStatus::class, 'status_id');
+        return $this->belongsTo(InvitationStatus::class, 'status_id');
     }
 
     public function assignedOfficer(): BelongsTo

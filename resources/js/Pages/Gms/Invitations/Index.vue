@@ -178,6 +178,7 @@ const isAccepting        = ref(false)
 const confirmModal       = ref(false)
 const confirmingGuest    = ref(null)
 const isConfirming       = ref(false)
+const confirmMatchIds    = ref([])
 
 const portalLinkModal    = ref(false)
 const portalLinkGuest    = ref(null)
@@ -199,31 +200,54 @@ function confirmAcceptOnBehalf() {
     })
 }
 
+const confirmTransformedMatches = computed(() =>
+    props.matches.map(m => ({
+        id: m.id,
+        stage: m.stage,
+        name: m.name,
+        homeTeam: m.homeTeam,
+        homeFlag: m.homeCode,
+        awayTeam: m.awayTeam,
+        awayFlag: m.awayCode,
+        date: m.date,
+        kickoff: m.kickoff,
+        venue: m.venueName,
+    }))
+)
+
 function markConfirmed(guest) {
     confirmingGuest.value = guest
+    confirmMatchIds.value = confirmTransformedMatches.value.map(m => m.id)
     confirmModal.value = true
+}
+
+function toggleConfirmMatch(matchId) {
+    const idx = confirmMatchIds.value.indexOf(matchId)
+    if (idx === -1) confirmMatchIds.value.push(matchId)
+    else confirmMatchIds.value.splice(idx, 1)
 }
 
 function confirmMarkConfirmed() {
     if (!confirmingGuest.value) return
-    // For not_invited guests: pass guest ID, backend handles pivot update
-    // For guests with invitations: pass invitation ID, backend updates invitation record
     const id = confirmingGuest.value.invitation?.id || confirmingGuest.value.id
     isConfirming.value = true
-    
-    router.post(route('gms.invitations.markConfirmed', id), {}, {
+
+    const intIds = confirmMatchIds.value.map(mid => parseInt(String(mid).replace('M', '')))
+
+    router.post(route('gms.invitations.markConfirmed', id), { matchIds: intIds }, {
         preserveScroll: true,
-        onSuccess: () => { 
+        onSuccess: () => {
             isConfirming.value = false
             confirmModal.value = false
             actionsMenuOpen.value = null
             guestDrawerOpen.value = false
             confirmingGuest.value = null
-            toast('Marked as confirmed') 
+            confirmMatchIds.value = []
+            toast('Marked as confirmed')
         },
-        onError: (errors) => { 
+        onError: (errors) => {
             isConfirming.value = false
-            toast(Object.values(errors)[0] || 'Failed.', 'error') 
+            toast(Object.values(errors)[0] || 'Failed.', 'error')
         },
     })
 }
@@ -299,21 +323,31 @@ function toggleActionsMenu(guestId, event) {
     actionsMenuOpen.value = guestId
 }
 
-function getServiceStatusIcon(status) {
-  // console.log('getServiceStatusIcon called with status:', status)
-    if (!status) return 'minus'
-    if (status === 'confirmed' || status === 'assigned') return 'check-circle'
-    if (status === 'pending' || status === 'new') return 'clock'
-    if (status === 'cancelled') return 'x-circle'
+function svcStatus(svc) {
+    if (!svc) return null
+    return typeof svc === 'object' ? svc.status : svc
+}
+
+function svcIsGuestRequest(svc) {
+    if (!svc || typeof svc !== 'object') return false
+    return svc.source === 'portal' && svc.fulfilled !== true
+}
+
+function getServiceStatusIcon(svc) {
+    const s = svcStatus(svc)
+    if (!s) return 'minus'
+    if (s === 'confirmed' || s === 'assigned') return 'check-circle'
+    if (s === 'pending' || s === 'new') return 'clock'
+    if (s === 'cancelled') return 'x-circle'
     return 'minus'
 }
 
-function getServiceStatusColor(status) {
-  // console.log('getServiceStatusIcon called with status:', status)
-    if (!status) return 'var(--gms-text-3)'
-    if (status === 'confirmed' || status === 'assigned') return 'var(--good)'
-    if (status === 'pending' || status === 'new') return 'var(--warn)'
-    if (status === 'cancelled') return 'var(--bad)'
+function getServiceStatusColor(svc) {
+    const s = svcStatus(svc)
+    if (!s) return 'var(--gms-text-3)'
+    if (s === 'confirmed' || s === 'assigned') return 'var(--good)'
+    if (s === 'pending' || s === 'new') return 'var(--warn)'
+    if (s === 'cancelled') return 'var(--bad)'
     return 'var(--gms-text-3)'
 }
 
@@ -524,38 +558,11 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                 </td>
                 <td><span class="gms-muted gms-small">{{ g.group }}</span></td>
                 <td><span class="inv-status-pill" :style="{ '--status-color': statusColor(g.status) }"><span class="inv-status-dot"></span>{{ statusLabel(g.status) }}</span></td>
-                <td>
-                  <span v-if="g.services?.flight" class="inv-status-pill" :class="g.services.flight">
-                    <span class="inv-status-dot"></span>
-                    {{ g.services.flight.charAt(0).toUpperCase() + g.services.flight.slice(1) }}
-                  </span>
-                  <span v-else class="gms-muted">—</span>
-                </td>
-                <td>
-                  <span v-if="g.services?.accommodation" class="inv-status-pill" :class="g.services.accommodation">
-                    <span class="inv-status-dot"></span>
-                    {{ g.services.accommodation.charAt(0).toUpperCase() + g.services.accommodation.slice(1) }}
-                  </span>
-                  <span v-else class="gms-muted">—</span>
-                </td>
-                <td>
-                  <span v-if="g.services?.seat" class="inv-status-pill" :class="g.services.seat">
-                    <span class="inv-status-dot"></span>
-                    {{ g.services.seat.charAt(0).toUpperCase() + g.services.seat.slice(1) }}
-                  </span>
-                  <span v-else class="gms-muted">—</span>
-                </td>
-                <td>
-                  <span v-if="g.services?.transport" class="inv-status-pill" :class="g.services.transport">
-                    <span class="inv-status-dot"></span>
-                    {{ g.services.transport.charAt(0).toUpperCase() + g.services.transport.slice(1) }}
-                  </span>
-                  <span v-else class="gms-muted">—</span>
-                </td>
-                <td>
-                  <span v-if="g.services?.ad" class="inv-status-pill" :class="g.services.ad">
-                    <span class="inv-status-dot"></span>
-                    {{ g.services.ad.charAt(0).toUpperCase() + g.services.ad.slice(1) }}
+                <td v-for="sKey in ['flight','accommodation','seat','transport','ad']" :key="sKey">
+                  <span v-if="svcStatus(g.services?.[sKey])" class="inv-status-pill" :class="svcStatus(g.services[sKey])">
+                    <GmsIcon v-if="svcIsGuestRequest(g.services[sKey])" name="globe" :size="10" style="opacity:.7;" />
+                    <span v-else class="inv-status-dot"></span>
+                    {{ svcStatus(g.services[sKey]).charAt(0).toUpperCase() + svcStatus(g.services[sKey]).slice(1) }}
                   </span>
                   <span v-else class="gms-muted">—</span>
                 </td>
@@ -650,11 +657,14 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 
       <!-- Services Status -->
       <div class="gms-section-title" style="margin-top: 32px; margin-bottom: 16px;">Services</div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Flight</span><span class="gms-detail-value" style="display:flex;align-items:center;gap:8px;"><GmsIcon :name="getServiceStatusIcon(activeGuest.services?.flight)" :size="16" :style="{ color: getServiceStatusColor(activeGuest.services?.flight) }" /><span style="text-transform:capitalize;">{{ activeGuest.services?.flight || 'Not requested' }}</span></span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Accommodation</span><span class="gms-detail-value" style="display:flex;align-items:center;gap:8px;"><GmsIcon :name="getServiceStatusIcon(activeGuest.services?.accommodation)" :size="16" :style="{ color: getServiceStatusColor(activeGuest.services?.accommodation) }" /><span style="text-transform:capitalize;">{{ activeGuest.services?.accommodation || 'Not requested' }}</span></span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Seating</span><span class="gms-detail-value" style="display:flex;align-items:center;gap:8px;"><GmsIcon :name="getServiceStatusIcon(activeGuest.services?.seat)" :size="16" :style="{ color: getServiceStatusColor(activeGuest.services?.seat) }" /><span style="text-transform:capitalize;">{{ activeGuest.services?.seat || 'Not assigned' }}</span></span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Transport</span><span class="gms-detail-value" style="display:flex;align-items:center;gap:8px;"><GmsIcon :name="getServiceStatusIcon(activeGuest.services?.transport)" :size="16" :style="{ color: getServiceStatusColor(activeGuest.services?.transport) }" /><span style="text-transform:capitalize;">{{ activeGuest.services?.transport || 'Not requested' }}</span></span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Arrival & Departure</span><span class="gms-detail-value" style="display:flex;align-items:center;gap:8px;"><GmsIcon :name="getServiceStatusIcon(activeGuest.services?.ad)" :size="16" :style="{ color: getServiceStatusColor(activeGuest.services?.ad) }" /><span style="text-transform:capitalize;">{{ activeGuest.services?.ad || 'Not requested' }}</span></span></div>
+      <div v-for="[key, label, fallback] in [['flight','Flight','Not requested'],['accommodation','Accommodation','Not requested'],['seat','Seating','Not assigned'],['transport','Transport','Not requested'],['ad','Arrival & Departure','Not requested']]" :key="key" class="gms-detail-row">
+        <span class="gms-detail-label">{{ label }}</span>
+        <span class="gms-detail-value" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <GmsIcon :name="getServiceStatusIcon(activeGuest.services?.[key])" :size="16" :style="{ color: getServiceStatusColor(activeGuest.services?.[key]) }" />
+          <span style="text-transform:capitalize;">{{ svcStatus(activeGuest.services?.[key]) || fallback }}</span>
+          <span v-if="svcIsGuestRequest(activeGuest.services?.[key])" class="inv-svc-gr"><GmsIcon name="globe" :size="10" /> Guest request</span>
+        </span>
+      </div>
 
       <!-- Invitation Details -->
       <div v-if="activeGuest.invitation">
@@ -710,28 +720,71 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     </p>
   </GmsConfirmModal>
 
-  <!-- Mark confirmed confirmation modal -->
-  <GmsConfirmModal
-    :open="confirmModal"
-    :loading="isConfirming"
-    title="Mark as Confirmed"
-    :message="confirmingGuest ? `Are you sure you want to mark <strong style='color: var(--gms-text);'>${confirmingGuest.name}</strong> as confirmed?` : ''"
-    description="This action will:"
-    :details="[
-      'Update the guest status to <strong style=\'color: var(--good);\'>confirmed</strong>',
-      'Skip the invitation workflow and RSVP process',
-      'Mark the guest as attending <strong>all offered matches</strong>',
-      'Enable service planning (flights, accommodation, transport)'
-    ]"
-    confirm-text="Mark as Confirmed"
-    confirm-icon="badge"
-    @confirm="confirmMarkConfirmed"
-    @close="confirmModal = false; confirmingGuest = null"
-  >
-    <p style="font-size: 13px; color: var(--gms-text-3); margin: 0;">
-      Use this when a guest has confirmed attendance through an external channel (phone, email, etc.) and you want to bypass the invitation process.
-    </p>
-  </GmsConfirmModal>
+  <!-- Mark confirmed — match selection modal -->
+  <GmsModal :open="confirmModal" title="Confirm guest" size="xl" @close="confirmModal = false; confirmingGuest = null; confirmMatchIds = []">
+    <template v-if="confirmingGuest">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+        <GmsAvatar :name="confirmingGuest.name" size="md" />
+        <div>
+          <div style="font-weight:700;font-size:15px;">{{ confirmingGuest.name }}</div>
+          <div style="font-size:12px;color:var(--gms-text-3);">{{ confirmingGuest.title || confirmingGuest.tier }}</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
+        <div style="font-size: 13px; color: var(--gms-text-2);">Select the matches this guest will attend.</div>
+        <div style="margin-left: auto; display: flex; gap: 6px;">
+          <button class="gms-chip" @click="confirmMatchIds = confirmTransformedMatches.map(m => m.id)">Select all</button>
+          <button class="gms-chip" @click="confirmMatchIds = []">Clear</button>
+        </div>
+      </div>
+
+      <div class="gms-wizard-match-grid">
+        <div
+          v-for="m in confirmTransformedMatches"
+          :key="m.id"
+          class="gms-wizard-match-card"
+          :class="{ sel: confirmMatchIds.includes(m.id) }"
+          @click="toggleConfirmMatch(m.id)"
+        >
+          <div class="gms-wizard-match-top">
+            <span class="gms-wizard-match-stage" :class="{ final: m.stage === 'Final' }">{{ m.stage }}</span>
+            <span style="font-size: 11.5px; color: var(--gms-text-3);">{{ m.name }}</span>
+            <span class="gms-wizard-match-check">
+              <GmsIcon v-if="confirmMatchIds.includes(m.id)" name="check" :size="12" />
+            </span>
+          </div>
+          <div class="gms-wizard-match-teams">
+            <span class="team">
+              <span v-if="m.homeFlag" class="fl">{{ m.homeFlag }}</span>
+              {{ m.homeTeam }}
+            </span>
+            <span class="vs">v</span>
+            <span class="team r">
+              {{ m.awayTeam }}
+              <span v-if="m.awayFlag" class="fl">{{ m.awayFlag }}</span>
+            </span>
+          </div>
+          <div class="gms-wizard-match-meta">
+            <span>{{ m.date }}</span>
+            <span class="dot"></span>
+            <span>{{ m.kickoff }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;font-size:12px;color:var(--gms-text-3);text-align:right;">
+        {{ confirmMatchIds.length }} of {{ confirmTransformedMatches.length }} selected
+      </div>
+    </template>
+    <template #footer>
+      <button class="gms-btn gms-btn-ghost" @click="confirmModal = false; confirmingGuest = null; confirmMatchIds = []">Cancel</button>
+      <button class="gms-btn gms-btn-primary" :disabled="isConfirming || confirmMatchIds.length === 0" @click="confirmMarkConfirmed">
+        <GmsIcon v-if="isConfirming" name="loader" :size="14" style="margin-right:6px;" />
+        Confirm with {{ confirmMatchIds.length }} match{{ confirmMatchIds.length !== 1 ? 'es' : '' }}
+      </button>
+    </template>
+  </GmsModal>
 
   <!-- Send portal link confirmation modal -->
   <GmsConfirmModal
@@ -791,3 +844,4 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     @close="wizardOpen = false; wizardGuest = null"
   />
 </template>
+

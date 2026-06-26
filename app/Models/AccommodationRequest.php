@@ -49,7 +49,7 @@ class AccommodationRequest extends Model
 
     public function status(): BelongsTo
     {
-        return $this->belongsTo(AccommodationStatus::class, 'status_id');
+        return $this->belongsTo(InvitationStatus::class, 'status_id');
     }
 
     public function hotel(): BelongsTo

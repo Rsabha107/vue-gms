@@ -38,7 +38,6 @@ class PortalServiceController extends Controller
             'return_date' => 'required_if:trip_type,round_trip|nullable|date|after:departure_date',
             'return_time' => 'nullable|date_format:H:i',
             'class' => 'required|in:economy,business,first',
-            'passengers' => 'required|integer|min:1|max:9',
             'special_requests' => 'nullable|string|max:1000',
         ]);
 
@@ -75,8 +74,8 @@ class PortalServiceController extends Controller
             'guest_id' => $guest->id,
             'event_id' => $event->id,
             'code' => $code,
-            'status' => 'new',
-            'pax' => $validated['passengers'],
+            'status_id' => \App\Models\InvitationStatus::where('name', 'new')->value('id'),
+            'pax' => 1,
             'note' => $validated['special_requests'],
             'initiated_by' => 'guest',
             'source' => 'portal',
@@ -177,7 +176,7 @@ class PortalServiceController extends Controller
             'guest_id' => $guest->id,
             'event_id' => $event->id,
             'code' => $code,
-            'status_id' => 'new',
+            'status_id' => \App\Models\InvitationStatus::where('name', 'new')->value('id'),
             'hotel_name' => $validated['hotel_preferences'] ?: 'Guest preference',
             'room_type' => ucfirst($validated['room_type']),
             'check_in' => $validated['check_in'],
@@ -196,17 +195,7 @@ class PortalServiceController extends Controller
      */
     public function storeTransport(Request $request, Guest $guest)
     {
-        // Guest already validated access by loading the portal dashboard
-        // No signature check needed for POST routes
-        
-        // Validate transport request data
         $validator = Validator::make($request->all(), [
-            'transport_type' => 'required|in:airport_transfer,point_to_point,daily_driver',
-            'pickup_location' => 'required|string|max:255',
-            'dropoff_location' => 'required|string|max:255',
-            'date' => 'required|date|after_or_equal:today',
-            'time' => 'required|date_format:H:i',
-            'passengers' => 'required|integer|min:1|max:15',
             'special_requests' => 'nullable|string|max:1000',
         ]);
 
@@ -216,7 +205,6 @@ class PortalServiceController extends Controller
 
         $validated = $validator->validated();
 
-        // Get current event from guest's invitation
         $event = Event::where('active_flag', true)->first();
         if (!$event) {
             return back()->withErrors(['event' => 'No active event found']);
@@ -227,39 +215,197 @@ class PortalServiceController extends Controller
             return back()->withErrors(['event' => 'No invitation found for this event']);
         }
 
-        // Generate unique transport request code
         $latestCode = \App\Models\TransportRequest::where('code', 'like', 'TRN-%')
             ->orderByRaw('CAST(SUBSTRING(code, 5) AS UNSIGNED) DESC')
             ->value('code');
-        
+
         $nextNumber = 1;
         if ($latestCode) {
             $nextNumber = intval(substr($latestCode, 4)) + 1;
         }
         $code = 'TRN-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
 
-        // Map transport type to readable label
-        $typeLabels = [
-            'airport_transfer' => 'Airport Transfer',
-            'point_to_point' => 'Point-to-Point',
-            'daily_driver' => 'Daily Driver',
-        ];
-
-        // Create transport request
         \App\Models\TransportRequest::create([
             'guest_id' => $guest->id,
             'event_id' => $event->id,
             'code' => $code,
-            'status_id' => 'pending',
-            'type' => $typeLabels[$validated['transport_type']],
-            'pickup_location' => $validated['pickup_location'],
-            'dropoff_location' => $validated['dropoff_location'],
-            'datetime' => $validated['date'] . ' ' . $validated['time'],
+            'status_id' => \App\Models\InvitationStatus::where('name', 'pending')->value('id'),
             'notes' => $validated['special_requests'],
             'initiated_by' => 'guest',
             'source' => 'portal',
         ]);
 
         return back()->with('success', 'Transport request submitted successfully');
+    }
+
+    // ── Flight update/delete ──
+
+    public function updateFlight(Request $request, Guest $guest, int $id)
+    {
+        $flight = \App\Models\FlightRequest::where('id', $id)
+            ->where('guest_id', $guest->id)
+            ->where('source', 'portal')
+            ->whereNull('fulfilled_by_id')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'departure_city' => 'required|string|max:100',
+            'arrival_city'   => 'required|string|max:100',
+            'departure_date' => 'required|date',
+            'departure_time' => 'nullable|string|max:10',
+            'return_date'    => 'nullable|date',
+            'return_time'    => 'nullable|string|max:10',
+            'class'          => 'required|in:economy,business,first',
+            'special_requests' => 'nullable|string|max:1000',
+        ]);
+
+        $flight->update(['note' => $validated['special_requests']]);
+
+        $outbound = $flight->legs()->where('dir', 'Outbound')->first();
+        if ($outbound) {
+            $outbound->update([
+                'from_city' => $validated['departure_city'],
+                'to_city'   => $validated['arrival_city'],
+                'date'      => $validated['departure_date'],
+                'dep'       => $validated['departure_time'] ?? '',
+                'cls'       => ucfirst($validated['class']),
+            ]);
+        }
+
+        $inbound = $flight->legs()->where('dir', 'Inbound')->first();
+        if ($inbound && $validated['return_date']) {
+            $inbound->update([
+                'from_city' => $validated['arrival_city'],
+                'to_city'   => $validated['departure_city'],
+                'date'      => $validated['return_date'],
+                'dep'       => $validated['return_time'] ?? '',
+                'cls'       => ucfirst($validated['class']),
+            ]);
+        }
+
+        return back()->with('success', 'Flight request updated');
+    }
+
+    public function destroyFlight(Request $request, Guest $guest, int $id)
+    {
+        $flight = \App\Models\FlightRequest::where('id', $id)
+            ->where('guest_id', $guest->id)
+            ->where('source', 'portal')
+            ->whereNull('fulfilled_by_id')
+            ->firstOrFail();
+
+        $flight->legs()->delete();
+        $flight->delete();
+
+        return back()->with('success', 'Flight request deleted');
+    }
+
+    // ── Accommodation update/delete ──
+
+    public function updateAccommodation(Request $request, Guest $guest, int $id)
+    {
+        $acc = \App\Models\AccommodationRequest::where('id', $id)
+            ->where('guest_id', $guest->id)
+            ->where('source', 'portal')
+            ->whereNull('fulfilled_by_id')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'hotel_preferences' => 'nullable|string|max:500',
+            'check_in'  => 'required|date',
+            'check_out' => 'required|date|after:check_in',
+            'room_type' => 'required|in:single,double,suite',
+            'special_requests' => 'nullable|string|max:1000',
+        ]);
+
+        $checkIn = new \DateTime($validated['check_in']);
+        $checkOut = new \DateTime($validated['check_out']);
+
+        $acc->update([
+            'hotel_name' => $validated['hotel_preferences'] ?: 'Guest preference',
+            'room_type'  => ucfirst($validated['room_type']),
+            'check_in'   => $validated['check_in'],
+            'check_out'  => $validated['check_out'],
+            'nights'     => $checkIn->diff($checkOut)->days,
+            'notes'      => $validated['special_requests'],
+        ]);
+
+        return back()->with('success', 'Accommodation request updated');
+    }
+
+    public function destroyAccommodation(Request $request, Guest $guest, int $id)
+    {
+        $acc = \App\Models\AccommodationRequest::where('id', $id)
+            ->where('guest_id', $guest->id)
+            ->where('source', 'portal')
+            ->whereNull('fulfilled_by_id')
+            ->firstOrFail();
+
+        $acc->delete();
+
+        return back()->with('success', 'Accommodation request deleted');
+    }
+
+    // ── Transport update/delete ──
+
+    public function updateTransport(Request $request, Guest $guest, int $id)
+    {
+        $trans = \App\Models\TransportRequest::where('id', $id)
+            ->where('guest_id', $guest->id)
+            ->where('source', 'portal')
+            ->whereNull('fulfilled_by_id')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'special_requests' => 'nullable|string|max:1000',
+        ]);
+
+        $trans->update(['notes' => $validated['special_requests']]);
+
+        return back()->with('success', 'Transport request updated');
+    }
+
+    public function destroyTransport(Request $request, Guest $guest, int $id)
+    {
+        $trans = \App\Models\TransportRequest::where('id', $id)
+            ->where('guest_id', $guest->id)
+            ->where('source', 'portal')
+            ->whereNull('fulfilled_by_id')
+            ->firstOrFail();
+
+        $trans->delete();
+
+        return back()->with('success', 'Transport request deleted');
+    }
+
+    public function saveCompanions(Request $request, Guest $guest)
+    {
+        $validated = $request->validate([
+            'companions'              => ['required', 'array'],
+            'companions.*.name'           => ['required', 'string', 'max:120'],
+            'companions.*.relation'       => ['nullable', 'string', 'max:60'],
+            'companions.*.passport_no'    => ['nullable', 'string', 'max:40'],
+            'companions.*.personal_photo' => ['nullable', 'string', 'max:255'],
+            'companions.*.passport_front' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $event = Event::where('active_flag', true)->first();
+        if (!$event) return back()->withErrors(['event' => 'No active event found']);
+
+        $companions = collect($validated['companions'])
+            ->filter(fn($c) => !empty($c['name']))
+            ->map(fn($c) => [
+                'name'           => trim($c['name']),
+                'relation'       => $c['relation'] ?? 'Companion',
+                'passport_no'    => $c['passport_no'] ?? '',
+                'personal_photo' => $c['personal_photo'] ?? '',
+                'passport_front' => $c['passport_front'] ?? '',
+            ])->values()->toArray();
+
+        $guest->events()->updateExistingPivot($event->id, [
+            'companions' => $companions,
+        ]);
+
+        return back()->with('success', 'Companions updated successfully');
     }
 }

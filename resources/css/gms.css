@@ -1929,6 +1929,14 @@
 .gd-svc-icon { flex-shrink: 0; color: var(--gms-maroon); opacity: 0.75; }
 .gd-svc-name { font-size: 12.5px; font-weight: 600; color: var(--gms-text); line-height: 1.2; }
 .gd-svc-sub  { font-size: 11px; color: var(--gms-text-3); }
+.gd-service-card.gd-guest-req { border-color: rgba(58,106,138,.25); background: rgba(58,106,138,.03); }
+.gd-svc-src {
+  margin-left: auto; display: flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; color: #4a6a8a;
+  padding: 2px 7px; border-radius: 4px; background: rgba(58,106,138,.08);
+  white-space: nowrap;
+}
+.gd-svc-awaiting { font-size: 10.5px; font-weight: 600; color: #4a6a8a; }
 
 /* Service note */
 .gd-service-note {
@@ -1956,14 +1964,15 @@
 }
 
 /* Companion rows */
+.gd-comp-card {
+  border: 1px solid var(--gms-border); border-radius: var(--gms-radius);
+  background: var(--gms-surface-2); overflow: hidden;
+}
 .gd-comp-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: var(--gms-surface-2);
-  border: 1px solid var(--gms-border);
-  border-radius: var(--gms-radius);
 }
 
 .gd-comp-name {
@@ -1979,6 +1988,46 @@
   background: var(--gms-border);
   border-radius: 12px;
 }
+
+.gd-comp-docs {
+  display: flex; gap: 6px; padding: 6px 12px 8px; flex-wrap: wrap;
+  border-top: 1px solid var(--gms-border);
+}
+
+.gd-doc-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 600; color: var(--gms-text-2);
+  padding: 3px 8px; border-radius: 4px; background: var(--gms-surface);
+  border: 1px solid var(--gms-border); font-family: var(--gms-font-mono);
+}
+.gd-doc-link { text-decoration: none; cursor: pointer; transition: .1s; }
+.gd-doc-link:hover { border-color: var(--gms-maroon); color: var(--gms-maroon); }
+
+/* Guest documents grid (drawer) */
+.gd-docs-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+.gd-doc-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border: 1px solid var(--gms-border); border-radius: 8px;
+  background: var(--gms-surface-2); font-size: 12.5px;
+}
+.gd-doc-clickable { text-decoration: none; color: var(--gms-text); cursor: pointer; transition: .1s; }
+.gd-doc-clickable:hover { border-color: var(--gms-maroon); }
+.gd-doc-label { font-size: 10px; font-weight: 600; color: var(--gms-text-3); text-transform: uppercase; letter-spacing: .3px; }
+.gd-doc-value { font-size: 13px; font-weight: 600; }
+.gd-doc-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.gd-doc-view { font-size: 11px; color: var(--gms-maroon); font-weight: 600; display: flex; align-items: center; gap: 2px; margin-top: 2px; }
+
+/* Companion card in modal */
+.comp-card {
+  border: 1px solid var(--gms-border); border-radius: 10px; overflow: hidden;
+  background: var(--gms-surface);
+}
+.comp-card .comp-row { padding: 8px 10px; }
+.comp-card .comp-docs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  padding: 8px 10px 10px; border-top: 1px solid var(--gms-border); background: var(--gms-bg);
+}
+.comp-card .comp-docs > :first-child { grid-column: 1 / -1; }
 
 /* Travel preference items */
 .gd-pref-item {
@@ -7363,6 +7412,13 @@
 
 .inv-status-pill.new { background: #fef3c7; color: #f59e0b; }
 .inv-status-pill.new .inv-status-dot { background: #f59e0b; }
+
+.inv-svc-gr {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; color: #4a6a8a;
+  padding: 2px 7px; border-radius: 4px; background: rgba(58,106,138,.08);
+  white-space: nowrap;
+}
 
 /* ================================================================
    Add-guests picker (modal)

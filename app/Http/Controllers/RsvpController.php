@@ -35,6 +35,11 @@ class RsvpController extends Controller
             ->where('rsvp_token', $token)
             ->firstOrFail();
 
+        // Load existing companions from guest_event pivot
+        $guest = $invitation->guest;
+        $pivot = $guest->events()->where('event_id', $invitation->event_id)->first()?->pivot;
+        $existingCompanions = $pivot?->companions ?? [];
+
         return Inertia::render('Rsvp/Show', [
             'token' => $token,
             'event' => [
@@ -42,9 +47,10 @@ class RsvpController extends Controller
                 'venue' => $invitation->event->venue ?? '',
                 'dates' => $invitation->event->formatted_dates ?? '',
             ],
-            'guest'    => ['name' => $invitation->guest->name],
+            'guest'    => ['name' => $guest->name],
             'subject'  => $invitation->subject,
             'body'     => $invitation->body,
+            'companions' => $existingCompanions,
             'matches'  => $invitation->matches->map(fn ($m) => [
                 'id'       => $m->id,
                 'stage'    => $m->stage_code ?? $m->stage ?? '',
@@ -68,8 +74,18 @@ class RsvpController extends Controller
         $invitation = Invitation::where('rsvp_token', $token)->firstOrFail();
 
         $data = $request->validate([
-            'responses'   => ['required', 'array', 'min:1'],
-            'responses.*' => ['nullable', 'in:yes,no'],
+            'responses'      => ['required', 'array', 'min:1'],
+            'responses.*'    => ['nullable', 'in:yes,no'],
+            'passport_no'    => ['nullable', 'string', 'max:40'],
+            'personal_photo' => ['nullable', 'string', 'max:255'],
+            'passport_front' => ['nullable', 'string', 'max:255'],
+            'photo_consent'  => ['nullable', 'boolean'],
+            'companions'              => ['nullable', 'array'],
+            'companions.*.name'           => ['required_with:companions', 'string', 'max:120'],
+            'companions.*.relation'       => ['nullable', 'string', 'max:60'],
+            'companions.*.passport_no'    => ['nullable', 'string', 'max:40'],
+            'companions.*.personal_photo' => ['nullable', 'string', 'max:255'],
+            'companions.*.passport_front' => ['nullable', 'string', 'max:255'],
         ]);
 
         // Update match responses
@@ -77,6 +93,31 @@ class RsvpController extends Controller
             $invitation->matches()->updateExistingPivot((int) $matchId, [
                 'response' => $response,
             ]);
+        }
+
+        // Save guest documents and companions to guest_event pivot
+        if ($invitation->guest && $invitation->event_id) {
+            $pivotUpdates = array_filter([
+                'passport_no'    => $data['passport_no'] ?? null,
+                'personal_photo' => $data['personal_photo'] ?? null,
+                'passport_front' => $data['passport_front'] ?? null,
+            ], fn($v) => $v !== null);
+
+            if (!empty($data['companions'])) {
+                $pivotUpdates['companions'] = collect($data['companions'])
+                    ->filter(fn($c) => !empty($c['name']))
+                    ->map(fn($c) => [
+                        'name'           => $c['name'],
+                        'relation'       => $c['relation'] ?? 'Companion',
+                        'passport_no'    => $c['passport_no'] ?? '',
+                        'personal_photo' => $c['personal_photo'] ?? '',
+                        'passport_front' => $c['passport_front'] ?? '',
+                    ])->values()->toArray();
+            }
+
+            if (!empty($pivotUpdates)) {
+                $invitation->guest->events()->updateExistingPivot($invitation->event_id, $pivotUpdates);
+            }
         }
 
         // Update invitation status based on responses and set responded_at timestamp

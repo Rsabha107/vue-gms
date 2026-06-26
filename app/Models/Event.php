@@ -74,6 +74,8 @@ class Event extends Model
      */
     public function getFormattedDatesAttribute(): string
     {
-        return $this->date_start->format('M j') . ' – ' . $this->date_end->format('M j, Y');
+        $sameYear = $this->date_start->year === $this->date_end->year;
+        $startFmt = $sameYear ? 'M j' : 'M j, Y';
+        return $this->date_start->format($startFmt) . ' – ' . $this->date_end->format('M j, Y');
     }
 }

@@ -15,6 +15,10 @@ class GuestEvent extends Pivot
         'added_at',
         'invited_at',
         'companions',
+        'passport_no',
+        'personal_photo',
+        'passport_front',
+        'totp_secret',
         'preference_overrides',
     ];
 

@@ -29,7 +29,7 @@ class GmsAccommodationController extends Controller
                 'id'                  => $ar->code,
                 'guestId'             => $ar->guest_id,
                 'guestName'           => $ar->guest->name ?? '',
-                'status'              => $ar->status_id,
+                'status'              => $ar->status->name ?? 'new',
                 'hotel'               => $ar->hotel_id,
                 'hotelName'           => $ar->hotel->name ?? $ar->hotel_name,
                 'roomType'            => $ar->room_type,
@@ -135,7 +135,7 @@ class GmsAccommodationController extends Controller
             'event_id'   => $eventId,
             'guest_id'   => $validated['guestId'],
             'code'       => $code,
-            'status_id'  => 'new',
+            'status_id'  => \App\Models\InvitationStatus::where('name', 'new')->value('id'),
             'hotel_id'   => $hotel->id,
             'hotel_code' => $hotel->code,
             'hotel_name' => $hotel->name,
@@ -187,8 +187,9 @@ class GmsAccommodationController extends Controller
     {
         $validated = $request->validate(['status' => 'required|in:new,change,confirmed,cancelled']);
 
+        $statusId = \App\Models\InvitationStatus::where('name', $validated['status'])->value('id');
         $accommodationRequest = AccommodationRequest::where('code', $id)->firstOrFail();
-        $accommodationRequest->update(['status_id' => $validated['status']]);
+        $accommodationRequest->update(['status_id' => $statusId]);
 
         return back()->with('success', 'Status updated.');
     }

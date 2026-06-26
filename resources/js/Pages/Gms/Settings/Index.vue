@@ -502,11 +502,13 @@ function sendTestEmail() {
                   <div class="set-row-t" style="font-size: 13px;">Portal Authentication</div>
                   <select v-model="portalAuthMode" class="gms-input gms-select" style="margin-top: 8px; max-width: 280px;" :disabled="portalForm.processing" @change="savePortalSettings">
                     <option value="signed_url">Signed URL (Basic)</option>
+                    <option value="totp">Google Authenticator (TOTP)</option>
                     <option value="magic_link">Magic Link (Enhanced Security)</option>
                     <option value="full_auth">Full Authentication</option>
                   </select>
                   <div style="font-size: 11px; color: var(--gms-text-3); margin-top: 6px;">
                     <span v-if="portalAuthMode === 'signed_url'">Time-limited, cryptographically signed URLs</span>
+                    <span v-else-if="portalAuthMode === 'totp'">Signed URL + Google Authenticator verification on every visit</span>
                     <span v-else-if="portalAuthMode === 'magic_link'">Email verification required for each session</span>
                     <span v-else>Password-based authentication with session management</span>
                   </div>

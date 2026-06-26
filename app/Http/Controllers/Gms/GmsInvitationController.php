@@ -66,33 +66,50 @@ class GmsInvitationController extends Controller
                         ? $invitationStatuses[$pivot->status_id] 
                         : 'not_invited';
 
-                    // Service statuses
-                    $flightRequest = FlightRequest::where('guest_id', $guest->id)
+                    // Service statuses with source tracking
+                    $flightRequest = FlightRequest::with('status')->where('guest_id', $guest->id)
                         ->orderBy('created_at', 'desc')->first();
                     $accommodationRequest = AccommodationRequest::with('status')
                         ->where('guest_id', $guest->id)
                         ->orderBy('created_at', 'desc')->first();
 
-                    // Seat status - check if guest has any seat assignments
                     $seatStatus = null;
                     if ($guest->seats->isNotEmpty()) {
                         $seatStatus = 'assigned';
                     }
 
-                    // Transport status
                     $transportStatus = null;
+                    $transportSource = null;
+                    $transportFulfilled = null;
                     if ($guest->transportRequests->isNotEmpty()) {
                         $latestTransport = $guest->transportRequests->sortByDesc('created_at')->first();
-                        $transportStatus = $latestTransport->status?->name 
+                        $transportStatus = $latestTransport->status?->name
                             ? strtolower($latestTransport->status->name)
-                            : 'pending';
+                            : ($latestTransport->status_id ?? 'pending');
+                        $transportSource = ($latestTransport->source === 'portal' && $latestTransport->initiated_by === 'guest') ? 'portal' : 'team';
+                        $transportFulfilled = $transportSource === 'portal' ? ($latestTransport->fulfilled_by_id !== null) : null;
                     }
 
-                    // Arrival & Departure status
                     $adStatus = null;
+                    $adSource = null;
                     if ($guest->arrivalDepartureRequests->isNotEmpty()) {
                         $latestAD = $guest->arrivalDepartureRequests->sortByDesc('created_at')->first();
                         $adStatus = $latestAD->status ?? 'pending';
+                        $adSource = ($latestAD->source ?? null) === 'portal' ? 'portal' : 'team';
+                    }
+
+                    $flightSource = null;
+                    $flightFulfilled = null;
+                    if ($flightRequest) {
+                        $flightSource = ($flightRequest->source === 'portal' && $flightRequest->initiated_by === 'guest') ? 'portal' : 'team';
+                        $flightFulfilled = $flightSource === 'portal' ? ($flightRequest->fulfilled_by_id !== null) : null;
+                    }
+
+                    $accommSource = null;
+                    $accommFulfilled = null;
+                    if ($accommodationRequest) {
+                        $accommSource = ($accommodationRequest->source === 'portal' && $accommodationRequest->initiated_by === 'guest') ? 'portal' : 'team';
+                        $accommFulfilled = $accommSource === 'portal' ? ($accommodationRequest->fulfilled_by_id !== null) : null;
                     }
 
                     $sessions = 0;
@@ -136,13 +153,11 @@ class GmsInvitationController extends Controller
                             ])->toArray(),
                         ] : null,
                         'services' => [
-                            'flight' => $flightRequest?->status,
-                            'accommodation' => $accommodationRequest?->status?->name
-                                ? strtolower($accommodationRequest->status->name)
-                                : null,
-                            'seat' => $seatStatus,
-                            'transport' => $transportStatus,
-                            'ad' => $adStatus,
+                            'flight' => $flightRequest ? ['status' => $flightRequest->status->name ?? $flightRequest->status_id ?? 'pending', 'source' => $flightSource, 'fulfilled' => $flightFulfilled] : null,
+                            'accommodation' => $accommodationRequest ? ['status' => $accommodationRequest->status?->name ? strtolower($accommodationRequest->status->name) : ($accommodationRequest->status_id ?? 'pending'), 'source' => $accommSource, 'fulfilled' => $accommFulfilled] : null,
+                            'seat' => $seatStatus ? ['status' => $seatStatus, 'source' => 'team'] : null,
+                            'transport' => $transportStatus ? ['status' => $transportStatus, 'source' => $transportSource, 'fulfilled' => $transportFulfilled] : null,
+                            'ad' => $adStatus ? ['status' => $adStatus, 'source' => $adSource] : null,
                         ],
                     ];
                 })
@@ -390,27 +405,33 @@ class GmsInvitationController extends Controller
 
     public function markConfirmed(Request $request, $id)
     {
-        // Handle two cases:
-        // 1. $id is an invitation ID (has invitation record)
-        // 2. $id is a guest ID (no invitation, just update pivot - white glove service)
-        
-        $invitation = Invitation::with(['guest'])->find($id);
-        
-        if ($invitation) {
-            // Case 1: Invitation exists
-            $confirmedStatus = InvitationStatus::where('name', 'confirmed')->first();
+        $validated = $request->validate([
+            'matchIds'   => 'sometimes|array',
+            'matchIds.*' => 'integer|exists:game_matches,id',
+        ]);
 
+        $matchIds = $validated['matchIds'] ?? [];
+
+        $invitation = Invitation::with(['guest'])->find($id);
+        $confirmedInvStatus = InvitationStatus::where('name', 'confirmed')->first();
+        $confirmedGuestStatus = \App\Models\GuestStatus::where('name', 'confirmed')->first();
+
+        if ($invitation) {
+            // Case 1: Invitation exists — update it
             $invitation->update([
-                'status_id' => $confirmedStatus?->id,
+                'status_id' => $confirmedInvStatus?->id,
                 'responded_at' => $invitation->responded_at ?? now(),
             ]);
 
+            // Sync matches with 'yes' response
+            $invitation->matches()->detach();
+            foreach ($matchIds as $matchId) {
+                $invitation->matches()->attach($matchId, ['response' => 'yes']);
+            }
+
             if ($invitation->guest) {
-                $confirmedStatus = \App\Models\GuestStatus::where('name', 'confirmed')->first();
-                if ($confirmedStatus) {
-                    $invitation->guest->update([
-                        'status_id' => $confirmedStatus->id,
-                    ]);
+                if ($confirmedGuestStatus) {
+                    $invitation->guest->update(['status_id' => $confirmedGuestStatus->id]);
                 }
                 if ($invitation->event_id) {
                     $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
@@ -419,9 +440,9 @@ class GmsInvitationController extends Controller
                 }
             }
 
-            return back()->with('success', $invitation->guest->name . ' has been marked as confirmed.');
+            return back()->with('success', $invitation->guest->name . ' confirmed with ' . count($matchIds) . ' match(es).');
         } else {
-            // Case 2: No invitation (not_invited status) - treat $id as guest ID
+            // Case 2: No invitation — treat $id as guest ID, create invitation record
             $guest = Guest::findOrFail($id);
             $event = GmsMockData::getEvent();
             $eventId = $event['id'] ?? null;
@@ -430,20 +451,33 @@ class GmsInvitationController extends Controller
                 return back()->with('error', 'No active event selected.');
             }
 
-            // Update pivot status to confirmed (white glove service)
+            // Create invitation record
+            $invitation = Invitation::create([
+                'guest_id'  => $guest->id,
+                'event_id'  => $eventId,
+                'subject'   => 'Confirmed by protocol',
+                'body'      => 'Guest confirmed via white-glove service.',
+                'status_id' => $confirmedInvStatus?->id,
+                'sent_at'   => now(),
+                'responded_at' => now(),
+            ]);
+
+            // Attach selected matches
+            foreach ($matchIds as $matchId) {
+                $invitation->matches()->attach($matchId, ['response' => 'yes']);
+            }
+
+            // Update pivot status
             $guest->events()->updateExistingPivot($eventId, [
                 'status_id' => $this->getStatusId('confirmed'),
             ]);
 
             // Update guest status
-            $confirmedStatus = \App\Models\GuestStatus::where('name', 'confirmed')->first();
-            if ($confirmedStatus) {
-                $guest->update([
-                    'status_id' => $confirmedStatus->id,
-                ]);
+            if ($confirmedGuestStatus) {
+                $guest->update(['status_id' => $confirmedGuestStatus->id]);
             }
 
-            return back()->with('success', $guest->name . ' has been marked as confirmed (no invitation sent).');
+            return back()->with('success', $guest->name . ' confirmed with ' . count($matchIds) . ' match(es).');
         }
     }
 

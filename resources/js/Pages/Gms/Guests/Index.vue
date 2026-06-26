@@ -8,6 +8,7 @@ import GmsPill from '@/Components/Gms/GmsPill.vue'
 import GmsDrawer from '@/Components/Gms/GmsDrawer.vue'
 import GmsModal from '@/Components/Gms/GmsModal.vue'
 import GmsFilterDropdown from '@/Components/Gms/GmsFilterDropdown.vue'
+import GmsDocUploader from '@/Components/Gms/GmsDocUploader.vue'
 import GmsBtn from '@/Components/Gms/GmsBtn.vue'
 import GmsMiniStat from '@/Components/Gms/GmsMiniStat.vue'
 import GmsSearchableSelect from '@/Components/Gms/GmsSearchableSelect.vue'
@@ -416,7 +417,7 @@ const tierServices = {
 
 function guestServices(g) {
     const included = tierServices[g.tier] ?? []
-    const statusMap = {
+    const rawMap = {
         flights: g.serviceStatuses?.flights,
         accomm: g.serviceStatuses?.accommodation,
         seating: g.serviceStatuses?.seating,
@@ -424,15 +425,15 @@ function guestServices(g) {
         arrival: g.serviceStatuses?.arrival,
     }
     return serviceModules.filter(m => included.includes(m.id)).map(m => {
-        const service = { ...m, status: statusMap[m.id] || 'Not requested' }
-        // Add seat info for seating module
-        if (m.id === 'seating') {
-            service.seatInfo = getGuestSeats(g)
-        }
-        // Add flight info for flights module
-        if (m.id === 'flights') {
-            service.flightInfo = g.flightInfo || []
-        }
+        const raw = rawMap[m.id]
+        const isObj = raw && typeof raw === 'object'
+        const status = isObj ? raw.status : (raw || 'Not requested')
+        const source = isObj ? raw.source : null
+        const fulfilled = isObj ? raw.fulfilled : null
+        const isGuestRequest = source === 'portal' && fulfilled !== true
+        const service = { ...m, status, source, isGuestRequest }
+        if (m.id === 'seating') service.seatInfo = getGuestSeats(g)
+        if (m.id === 'flights') service.flightInfo = g.flightInfo || []
         return service
     })
 }
@@ -468,6 +469,9 @@ const editingGuest = ref(null)
 const companions = ref([])
 const GUEST_RELATIONS = ['Spouse', 'Family', 'Aide', 'Security', 'Delegate', 'Interpreter', 'Companion']
 
+// Guest documents (per event)
+const guestDocs = ref({ passport_no: '', personal_photo: '', passport_front: '' })
+
 // Preference override state
 const prefOverrideActive = ref({ flight: false, accommodation: false, transportation: false })
 const prefOverrideValues = ref({ flight: '', accommodation: '', transportation: '' })
@@ -483,6 +487,7 @@ function openNew() {
     editingGuest.value = null; form.reset()
     form.tier = props.tiers[0]?.id ?? ''
     companions.value = []
+    guestDocs.value = { passport_no: '', personal_photo: '', passport_front: '' }
     prefOverrideActive.value = { flight: false, accommodation: false, transportation: false }
     prefOverrideValues.value = { flight: '', accommodation: '', transportation: '' }
     guestModal.value = true
@@ -501,7 +506,10 @@ function openEdit(g, fromDrawer = false) {
     form.transportationPreferences = guest.transportationPreferences ?? ''
     // Load companions from current event's pivot data
     const eventCompanions = props.event?.id && guest.attendance?.[String(props.event.id)]?.companions || []
-    companions.value = eventCompanions.map(c => ({ name: c?.name ?? '', relation: c?.relation ?? 'Companion' }))
+    companions.value = eventCompanions.map(c => ({ name: c?.name ?? '', relation: c?.relation ?? 'Companion', passport_no: c?.passport_no ?? '', personal_photo: c?.personal_photo ?? '', passport_front: c?.passport_front ?? '' }))
+    // Load guest documents from pivot
+    const att = props.event?.id && guest.attendance?.[String(props.event.id)] || {}
+    guestDocs.value = { passport_no: att.passport_no ?? '', personal_photo: att.personal_photo ?? '', passport_front: att.passport_front ?? '' }
     // Load preference overrides from current event's pivot data
     const eventOverrides = props.event?.id && guest.attendance?.[String(props.event.id)]?.preference_overrides || {}
     prefOverrideActive.value = {
@@ -521,9 +529,15 @@ function openEdit(g, fromDrawer = false) {
 function saveGuest() {
     if (form.firstName || form.lastName) form.name = (form.firstName + ' ' + form.lastName).trim()
     const payload = { ...form.data() }
-    const companionList = companions.value.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), relation: c.relation || 'Companion' }))
+    const companionList = companions.value.filter(c => c.name.trim()).map(c => ({
+        name: c.name.trim(), relation: c.relation || 'Companion',
+        passport_no: c.passport_no || '', personal_photo: c.personal_photo || '', passport_front: c.passport_front || '',
+    }))
     payload.companions = companionList
     payload.event_id = props.event?.id
+    payload.passport_no = guestDocs.value.passport_no
+    payload.personal_photo = guestDocs.value.personal_photo
+    payload.passport_front = guestDocs.value.passport_front
 
     // Build preference_overrides object (only send if on an event and guest exists)
     if (props.event?.id && editingGuest.value) {
@@ -890,10 +904,42 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
             <GmsIcon :name="companionsExpanded ? 'chevron-up' : 'chevron-down'" :size="16" style="color:var(--gms-text-3);" />
           </div>
           <div v-show="companionsExpanded" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-            <div v-for="(comp, idx) in currentEventCompanions" :key="idx" class="gd-comp-row">
-              <span class="gd-comp-name">{{ comp.name }}</span>
-              <span class="gd-comp-rel" style="color: white; background: black;">{{ comp.relation }}</span>
+            <div v-for="(comp, idx) in currentEventCompanions" :key="idx" class="gd-comp-card">
+              <div class="gd-comp-row">
+                <span class="gd-comp-name">{{ comp.name }}</span>
+                <span class="gd-comp-rel" style="color: white; background: black;">{{ comp.relation }}</span>
+              </div>
+              <div v-if="comp.passport_no || comp.personal_photo || comp.passport_front" class="gd-comp-docs">
+                <span v-if="comp.passport_no" class="gd-doc-chip"><GmsIcon name="eye" :size="10" /> {{ comp.passport_no }}</span>
+                <a v-if="comp.personal_photo" :href="route('gms.api.document', { path: comp.personal_photo })" target="_blank" class="gd-doc-chip gd-doc-link"><GmsIcon name="user" :size="10" /> Photo</a>
+                <a v-if="comp.passport_front" :href="route('gms.api.document', { path: comp.passport_front })" target="_blank" class="gd-doc-chip gd-doc-link"><GmsIcon name="eye" :size="10" /> Passport</a>
+              </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Guest Documents -->
+        <div v-if="activeGuest.attendance?.[String(event?.id)]?.passport_no || activeGuest.attendance?.[String(event?.id)]?.personal_photo || activeGuest.attendance?.[String(event?.id)]?.passport_front" style="margin-top:20px;">
+          <div class="gd-section-head">Documents</div>
+          <div class="gd-docs-grid">
+            <div v-if="activeGuest.attendance[String(event.id)].passport_no" class="gd-doc-item">
+              <div class="gd-doc-label">Passport No.</div>
+              <div class="gd-doc-value" style="font-family:var(--gms-font-mono);">{{ activeGuest.attendance[String(event.id)].passport_no }}</div>
+            </div>
+            <a v-if="activeGuest.attendance[String(event.id)].personal_photo" :href="route('gms.api.document', { path: activeGuest.attendance[String(event.id)].personal_photo })" target="_blank" class="gd-doc-item gd-doc-clickable">
+              <img :src="route('gms.api.document', { path: activeGuest.attendance[String(event.id)].personal_photo })" class="gd-doc-thumb" />
+              <div>
+                <div class="gd-doc-label">Personal Photo</div>
+                <div class="gd-doc-view">View <GmsIcon name="chevron-right" :size="10" /></div>
+              </div>
+            </a>
+            <a v-if="activeGuest.attendance[String(event.id)].passport_front" :href="route('gms.api.document', { path: activeGuest.attendance[String(event.id)].passport_front })" target="_blank" class="gd-doc-item gd-doc-clickable">
+              <img :src="route('gms.api.document', { path: activeGuest.attendance[String(event.id)].passport_front })" class="gd-doc-thumb" />
+              <div>
+                <div class="gd-doc-label">Passport Front</div>
+                <div class="gd-doc-view">View <GmsIcon name="chevron-right" :size="10" /></div>
+              </div>
+            </a>
           </div>
         </div>
 
@@ -913,11 +959,18 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         </div>
 
         <div class="gd-service-grid">
-          <div v-for="svc in guestServices(activeGuest)" :key="svc.id" class="gd-service-card" :class="{ 'gd-full': svc.full }">
-            <div class="gd-svc-top"><div class="gd-svc-icon"><GmsIcon :name="svc.icon" :size="16" /></div><div class="gd-svc-name">{{ svc.label }}</div></div>
+          <div v-for="svc in guestServices(activeGuest)" :key="svc.id" class="gd-service-card" :class="{ 'gd-full': svc.full, 'gd-guest-req': svc.isGuestRequest }">
+            <div class="gd-svc-top">
+              <div class="gd-svc-icon"><GmsIcon :name="svc.icon" :size="16" /></div>
+              <div class="gd-svc-name">{{ svc.label }}</div>
+              <span v-if="svc.isGuestRequest" class="gd-svc-src"><GmsIcon name="globe" :size="10" /> Guest request</span>
+            </div>
             <div class="gd-svc-bot">
               <div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%;">
-                <GmsPill :value="svc.status" />
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <GmsPill :value="svc.status" />
+                  <span v-if="svc.isGuestRequest" class="gd-svc-awaiting">Awaiting booking</span>
+                </div>
                 <div v-if="svc.id === 'seating' && svc.seatInfo && svc.seatInfo.length > 0" style="display:flex;flex-wrap:wrap;gap:4px;">
                   <span v-for="seat in svc.seatInfo" :key="seat.id" class="gms-pill" style="background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;font-family:var(--gms-font-mono);">
                     <span v-if="seat.block" style="opacity:0.7;">{{ seat.block }}</span><span v-if="seat.block && seat.block_label" style="opacity:0.5;margin:0 2px;">·</span><span v-if="seat.block_label" style="opacity:0.7;">{{ seat.block_label }}</span><span v-if="seat.block || seat.block_label" style="margin:0 4px;">•</span>{{ seat.seat_code }}
@@ -1075,13 +1128,51 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <span v-if="companions.length > 0" class="gms-pill">{{ companions.length }}</span>
       </div>
       <div v-if="companions.length > 0" class="comp-list">
-        <div v-for="(c, i) in companions" :key="i" class="comp-row">
-          <div style="flex:1;"><input v-model="c.name" class="gms-input" placeholder="Companion full name" /></div>
-          <div style="width:160px;flex:none;"><select v-model="c.relation" class="gms-input gms-select"><option value="">Relation</option><option v-for="rel in GUEST_RELATIONS" :key="rel" :value="rel">{{ rel }}</option></select></div>
-          <button class="gms-btn gms-btn-ghost gms-btn-icon gms-btn-sm" title="Remove" @click="companions.splice(i, 1)"><GmsIcon name="x" :size="14" /></button>
+        <div v-for="(c, i) in companions" :key="i" class="comp-card">
+          <div class="comp-row">
+            <div style="flex:1;"><input v-model="c.name" class="gms-input" placeholder="Companion full name" /></div>
+            <div style="width:160px;flex:none;"><select v-model="c.relation" class="gms-input gms-select"><option value="">Relation</option><option v-for="rel in GUEST_RELATIONS" :key="rel" :value="rel">{{ rel }}</option></select></div>
+            <button class="gms-btn gms-btn-ghost gms-btn-icon gms-btn-sm" title="Remove" @click="companions.splice(i, 1)"><GmsIcon name="x" :size="14" /></button>
+          </div>
+          <div class="comp-docs">
+            <div class="gms-field">
+              <label class="gms-label">Passport No.</label>
+              <input v-model="c.passport_no" class="gms-input" placeholder="e.g. AB1234567" style="font-family:var(--gms-font-mono);" />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Personal Photo</label>
+              <GmsDocUploader v-model="c.personal_photo" label="Upload photo" :folder="'guests/companions'" />
+            </div>
+            <div class="gms-field">
+              <label class="gms-label">Passport Front</label>
+              <GmsDocUploader v-model="c.passport_front" label="Upload passport" :folder="'guests/companions'" />
+            </div>
+          </div>
         </div>
       </div>
-      <button class="gms-btn gms-btn-sm" :style="{ marginTop: companions.length ? '10px' : '2px' }" @click="companions.push({ name: '', relation: 'Companion' })"><GmsIcon name="plus" :size="14" /> Add companion</button>
+      <button class="gms-btn gms-btn-sm" :style="{ marginTop: companions.length ? '10px' : '2px' }" @click="companions.push({ name: '', relation: 'Companion', passport_no: '', personal_photo: '', passport_front: '' })"><GmsIcon name="plus" :size="14" /> Add companion</button>
+
+      <hr class="gms-divider" style="margin:18px 0 14px;" />
+
+      <!-- Guest Documents -->
+      <div class="ng-sec-h">
+        <span class="ng-sec-ic"><GmsIcon name="eye" :size="16" /></span>
+        <div style="flex:1;"><div class="ng-sec-t">Documents</div><div class="ng-sec-s">Personal photo, passport copy and number for this event.</div></div>
+      </div>
+      <div class="gms-field" style="margin-bottom:12px;">
+        <label class="gms-label">Passport No.</label>
+        <input v-model="guestDocs.passport_no" class="gms-input" placeholder="e.g. AB1234567" style="font-family:var(--gms-font-mono);max-width:300px;" />
+      </div>
+      <div class="gms-form-grid">
+        <div class="gms-field">
+          <label class="gms-label">Personal Photo</label>
+          <GmsDocUploader v-model="guestDocs.personal_photo" label="Upload photo" :folder="'guests/photos'" />
+        </div>
+        <div class="gms-field">
+          <label class="gms-label">Passport Front Copy</label>
+          <GmsDocUploader v-model="guestDocs.passport_front" label="Upload passport" :folder="'guests/passports'" />
+        </div>
+      </div>
 
       <hr class="gms-divider" style="margin:18px 0 14px;" />
 

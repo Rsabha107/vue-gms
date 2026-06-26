@@ -18,7 +18,7 @@ class GmsFlightController extends Controller
         $event = GmsMockData::getEvent();
         $eventId = $event['id'] ?? null;
 
-        $allFlights = FlightRequest::with(['guest', 'legs', 'fulfillsRequest'])
+        $allFlights = FlightRequest::with(['guest', 'legs', 'fulfillsRequest', 'status'])
             ->when($eventId, fn($q) => $q->where('event_id', $eventId))
             ->orderBy('created_at', 'desc')
             ->get();
@@ -26,13 +26,14 @@ class GmsFlightController extends Controller
         $transform = function ($fr) {
             $inbound = $fr->legs->where('dir', 'Inbound')->first();
             $outbound = $fr->legs->where('dir', 'Outbound')->first();
+            $statusName = $fr->status->name ?? 'new';
 
             return [
                 'id' => $fr->code,
                 'guestId' => $fr->guest_id,
                 'guestName' => $fr->guest->name ?? '',
-                'status' => $fr->status,
-                'changeRequest' => $fr->status === 'change',
+                'status' => $statusName,
+                'changeRequest' => $statusName === 'change',
                 'pnr' => $fr->ref,
                 'pax' => $fr->pax,
                 'submitted' => $fr->requested_at ?? $fr->created_at->format('Y-m-d H:i'),
@@ -152,13 +153,14 @@ class GmsFlightController extends Controller
         $eventId = $event['id'] ?? null;
 
         $code = $this->nextCode($eventId);
-        $status = ($validated['isChange'] ?? false) ? 'change' : 'new';
+        $statusName = ($validated['isChange'] ?? false) ? 'change' : 'new';
+        $statusId = \App\Models\InvitationStatus::where('name', $statusName)->value('id');
 
         $flightRequest = FlightRequest::create([
             'event_id' => $eventId,
             'guest_id' => $validated['guestId'],
             'code' => $code,
-            'status' => $status,
+            'status_id' => $statusId,
             'pax' => $validated['pax'],
             'ref' => strtoupper(substr(md5(uniqid()), 0, 6)),
             'source' => 'manual',
@@ -198,11 +200,13 @@ class GmsFlightController extends Controller
 
         $code = $this->nextCode($guestRequest->event_id);
 
+        $newStatusId = \App\Models\InvitationStatus::where('name', 'new')->value('id');
+
         $booking = FlightRequest::create([
             'event_id' => $guestRequest->event_id,
             'guest_id' => $validated['guestId'],
             'code' => $code,
-            'status' => 'new',
+            'status_id' => $newStatusId,
             'pax' => $validated['pax'],
             'ref' => strtoupper(substr(md5(uniqid()), 0, 6)),
             'source' => 'manual',
@@ -238,8 +242,9 @@ class GmsFlightController extends Controller
             'status' => 'required|in:new,confirmed,change,cancelled'
         ]);
 
+        $statusId = \App\Models\InvitationStatus::where('name', $validated['status'])->value('id');
         $flightRequest = FlightRequest::where('code', $id)->firstOrFail();
-        $flightRequest->update(['status' => $validated['status']]);
+        $flightRequest->update(['status_id' => $statusId]);
 
         return back()->with('success', 'Status updated.');
     }

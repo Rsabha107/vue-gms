@@ -62,7 +62,7 @@ function hasExisting(guestId) {
         <div style="flex:1;min-width:0;text-align:left;">
           <div class="gms-guest-picker-name">{{ g.name }}</div>
           <div class="gms-muted" style="font-size:11px;">
-            {{ g.guestType === 'international' ? 'Int\'l' : 'Local' }} · {{ g.group || '—' }}
+            {{ g.guestType === 'international' ? 'Int\'l' : 'Local' }} · {{ g.group || '—' }}<span v-if="g.email"> · {{ g.email }}</span>
           </div>
         </div>
         <span v-if="hasExisting(g.id)" class="gms-pill" style="font-size:10px;" :title="existingLabel">{{ existingLabel }}</span>

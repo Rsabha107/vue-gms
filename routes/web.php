@@ -19,6 +19,11 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 // ---- PUBLIC guest-facing RSVP (token-guarded, no auth) ----
+Route::post('/rsvp/upload', function (\Illuminate\Http\Request $request) {
+    $request->validate(['file' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120']);
+    $path = $request->file('file')->store('gms/documents/rsvp');
+    return response()->json(['path' => $path]);
+})->name('rsvp.upload');
 Route::get('/rsvp/{token}', [RsvpController::class, 'show'])->name('rsvp.show');
 Route::post('/rsvp/{token}', [RsvpController::class, 'submit'])->name('rsvp.submit');
 

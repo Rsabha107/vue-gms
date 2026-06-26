@@ -32,9 +32,9 @@ class GmsGuestController extends Controller
                 'events',
                 'invitations.matches',
                 'invitations.status',
-                'flightRequests.legs',
+                'flightRequests.legs', 'flightRequests.status',
                 'accommodationRequests',
-                'transportRequests',
+                'transportRequests.status',
                 'arrivalDepartureRequests',
                 'seats.match',
                 'seats.block'
@@ -55,12 +55,15 @@ class GmsGuestController extends Controller
                             'added_at'   => $ev->pivot->added_at,
                             'invited_at' => $ev->pivot->invited_at,
                             'companions' => $ev->pivot->companions ?? [],
+                            'passport_no' => $ev->pivot->passport_no,
+                            'personal_photo' => $ev->pivot->personal_photo,
+                            'passport_front' => $ev->pivot->passport_front,
                             'preference_overrides' => $ev->pivot->preference_overrides ?? null,
                         ];
                     }
                     $guestArray['attendance'] = (object) $attendance;
 
-                    // Map service statuses
+                    // Map service statuses with source tracking
                     $serviceStatuses = [
                         'flights' => null,
                         'accommodation' => null,
@@ -71,26 +74,44 @@ class GmsGuestController extends Controller
 
                     if ($guest->flightRequests->isNotEmpty()) {
                         $latestFlight = $guest->flightRequests->sortByDesc('created_at')->first();
-                        $serviceStatuses['flights'] = $latestFlight->status ?? 'pending';
+                        $isPortal = $latestFlight->source === 'portal' && $latestFlight->initiated_by === 'guest';
+                        $serviceStatuses['flights'] = [
+                            'status' => $latestFlight->status->name ?? 'pending',
+                            'source' => $isPortal ? 'portal' : 'team',
+                            'fulfilled' => $isPortal ? ($latestFlight->fulfilled_by_id !== null) : null,
+                        ];
                     }
 
                     if ($guest->accommodationRequests->isNotEmpty()) {
                         $latestAccomm = $guest->accommodationRequests->sortByDesc('created_at')->first();
-                        $serviceStatuses['accommodation'] = $latestAccomm->status_id ?? 'pending';
+                        $isPortal = $latestAccomm->source === 'portal' && $latestAccomm->initiated_by === 'guest';
+                        $serviceStatuses['accommodation'] = [
+                            'status' => $latestAccomm->status->name ?? 'pending',
+                            'source' => $isPortal ? 'portal' : 'team',
+                            'fulfilled' => $isPortal ? ($latestAccomm->fulfilled_by_id !== null) : null,
+                        ];
                     }
 
                     if ($guest->seats->isNotEmpty()) {
-                        $serviceStatuses['seating'] = 'confirmed';
+                        $serviceStatuses['seating'] = ['status' => 'confirmed', 'source' => 'team'];
                     }
 
                     if ($guest->transportRequests->isNotEmpty()) {
                         $latestTransport = $guest->transportRequests->sortByDesc('created_at')->first();
-                        $serviceStatuses['transport'] = $latestTransport->status_id ?? 'pending';
+                        $isPortal = $latestTransport->source === 'portal' && $latestTransport->initiated_by === 'guest';
+                        $serviceStatuses['transport'] = [
+                            'status' => $latestTransport->status->name ?? 'pending',
+                            'source' => $isPortal ? 'portal' : 'team',
+                            'fulfilled' => $isPortal ? ($latestTransport->fulfilled_by_id !== null) : null,
+                        ];
                     }
 
                     if ($guest->arrivalDepartureRequests->isNotEmpty()) {
                         $latestAD = $guest->arrivalDepartureRequests->sortByDesc('created_at')->first();
-                        $serviceStatuses['arrival'] = $latestAD->status ?? 'pending';
+                        $serviceStatuses['arrival'] = [
+                            'status' => $latestAD->status ?? 'pending',
+                            'source' => $latestAD->source === 'portal' ? 'portal' : 'team',
+                        ];
                     }
 
                     $guestArray['serviceStatuses'] = $serviceStatuses;
@@ -136,14 +157,14 @@ class GmsGuestController extends Controller
 
                     // Map flight requests with leg info
                     $guestArray['flightInfo'] = $guest->flightRequests
-                        ->filter(fn($f) => $f->status !== 'cancelled')
+                        ->filter(fn($f) => ($f->status->name ?? '') !== 'cancelled')
                         ->map(function ($flight) {
                             $inbound = $flight->legs->where('dir', 'Inbound')->first();
                             $outbound = $flight->legs->where('dir', 'Outbound')->first();
                             return [
                                 'id' => $flight->id,
                                 'code' => $flight->code,
-                                'status' => $flight->status,
+                                'status' => $flight->status->name ?? 'new',
                                 'route' => $inbound && $outbound 
                                     ? "{$inbound->from_code} → {$inbound->to_code}"
                                     : '—',
@@ -229,6 +250,9 @@ class GmsGuestController extends Controller
                 'status_id' => $this->getStatusId('not_invited'),
                 'added_at' => now(),
                 'companions' => $companions,
+                'passport_no' => $request->input('passport_no'),
+                'personal_photo' => $request->input('personal_photo'),
+                'passport_front' => $request->input('passport_front'),
                 'preference_overrides' => $preferenceOverrides,
             ]);
         }
@@ -274,6 +298,9 @@ class GmsGuestController extends Controller
         if ($eventId && $guest->events()->where('event_id', $eventId)->exists()) {
             $guest->events()->updateExistingPivot($eventId, [
                 'companions' => $companions,
+                'passport_no' => $request->input('passport_no'),
+                'personal_photo' => $request->input('personal_photo'),
+                'passport_front' => $request->input('passport_front'),
                 'preference_overrides' => $preferenceOverrides,
             ]);
         }

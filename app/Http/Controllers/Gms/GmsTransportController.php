@@ -18,7 +18,7 @@ class GmsTransportController extends Controller
         $eventId = $event['id'] ?? null;
 
         $allRequests = TransportRequest::where('event_id', $eventId)
-            ->with(['guest', 'status', 'fulfillsRequest'])
+            ->with(['guest', 'status:id,name,label,color', 'fulfillsRequest'])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -27,7 +27,7 @@ class GmsTransportController extends Controller
                 'id'                  => $r->code,
                 'guestId'             => $r->guest_id,
                 'guestName'           => $r->guest->name ?? 'Unknown',
-                'status'              => $r->status_id,
+                'status'              => $r->status->name ?? 'pending',
                 'type'                => $r->type,
                 'vehicle'             => $r->vehicle,
                 'pickupLocation'      => $r->pickup_location,
@@ -126,7 +126,7 @@ class GmsTransportController extends Controller
             'event_id' => $eventId,
             'guest_id' => $validated['guestId'],
             'code' => $code,
-            'status_id' => 'pending',
+            'status_id' => \App\Models\InvitationStatus::where('name', 'pending')->value('id'),
             'type' => $validated['type'],
             'vehicle' => $validated['vehicle'],
             'pickup_location' => $validated['pickupLocation'],
@@ -143,8 +143,9 @@ class GmsTransportController extends Controller
     {
         $request->validate(['status' => 'required|in:pending,confirmed,cancelled']);
 
+        $statusId = \App\Models\InvitationStatus::where('name', $request->status)->value('id');
         $transportRequest = TransportRequest::where('code', $id)->firstOrFail();
-        $transportRequest->update(['status_id' => $request->status]);
+        $transportRequest->update(['status_id' => $statusId]);
 
         return back()->with('success', 'Status updated.');
     }

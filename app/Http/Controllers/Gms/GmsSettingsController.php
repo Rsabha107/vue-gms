@@ -36,7 +36,7 @@ class GmsSettingsController extends Controller
     {
         $validated = $request->validate([
             'enabled'   => 'required|boolean',
-            'authMode'  => 'required|in:signed_url,magic_link,full_auth',
+            'authMode'  => 'required|in:signed_url,totp,magic_link,full_auth',
         ]);
 
         $eventData = GmsMockData::getEvent();

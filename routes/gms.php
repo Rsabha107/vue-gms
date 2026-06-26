@@ -67,6 +67,48 @@ Route::prefix('gms')->name('gms.')->group(function () {
     Route::get('/floorplans', [GmsFloorPlanController::class, 'index'])->name('floorplans.index');
     Route::post('/floorplans/{plan}', [GmsFloorPlanController::class, 'save'])->name('floorplans.save');
 
+    // Document upload & serve (private storage)
+    Route::post('/api/upload-document', function (\Illuminate\Http\Request $request) {
+        $request->validate([
+            'file' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            'folder' => 'nullable|string|max:100',
+        ]);
+
+        $folder = 'gms/documents/' . ($request->input('folder', 'general'));
+        $path = $request->file('file')->store($folder);
+
+        return response()->json(['path' => $path]);
+    })->name('api.upload-document');
+
+    Route::get('/api/document/{path}', function (string $path) {
+        $fullPath = storage_path('app/private/' . $path);
+        if (!file_exists($fullPath)) abort(404);
+        return response()->file($fullPath);
+    })->where('path', '.*')->name('api.document');
+
+    // Airport search API
+    Route::get('/api/airports', function (\Illuminate\Http\Request $request) {
+        $q = $request->input('q', '');
+        if (strlen($q) < 2) return response()->json([]);
+        return \App\Models\Airport::where(function ($query) use ($q) {
+                $query->where('iata_code', 'like', "{$q}%")
+                    ->orWhere('municipality', 'like', "%{$q}%")
+                    ->orWhere('name', 'like', "%{$q}%");
+            })
+            ->whereNotNull('iata_code')
+            ->where('iata_code', '!=', '')
+            ->where('type', '!=', 'closed')
+            ->orderByRaw("CASE WHEN iata_code LIKE ? THEN 0 WHEN municipality LIKE ? THEN 1 ELSE 2 END", ["{$q}%", "{$q}%"])
+            ->limit(15)
+            ->get(['iata_code', 'name', 'municipality', 'iso_country'])
+            ->map(fn($a) => [
+                'code' => $a->iata_code,
+                'name' => $a->name,
+                'city' => $a->municipality,
+                'country' => $a->iso_country,
+            ]);
+    })->name('api.airports');
+
     // Flights
     Route::get('/flights',                  [GmsFlightController::class, 'index'])->name('flights.index');
     Route::post('/flights',                 [GmsFlightController::class, 'store'])->name('flights.store');

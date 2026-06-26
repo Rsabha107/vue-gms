@@ -60,7 +60,7 @@ class Guest extends Model
     public function events()
     {
         return $this->belongsToMany(Event::class, 'guest_event')
-            ->withPivot('status_id', 'added_at', 'invited_at', 'companions', 'preference_overrides')
+            ->withPivot('status_id', 'added_at', 'invited_at', 'companions', 'passport_no', 'personal_photo', 'passport_front', 'totp_secret', 'preference_overrides')
             ->withTimestamps()
             ->using(\App\Models\GuestEvent::class);
     }

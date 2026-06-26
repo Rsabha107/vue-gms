@@ -12,7 +12,7 @@ class FlightRequest extends Model
         'event_id',
         'guest_id',
         'code',
-        'status',
+        'status_id',
         'ref',
         'pax',
         'requested_at',
@@ -40,6 +40,11 @@ class FlightRequest extends Model
     public function guest(): BelongsTo
     {
         return $this->belongsTo(Guest::class);
+    }
+
+    public function status(): BelongsTo
+    {
+        return $this->belongsTo(InvitationStatus::class, 'status_id');
     }
 
     public function assignedOfficer(): BelongsTo
