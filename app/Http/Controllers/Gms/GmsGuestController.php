@@ -21,6 +21,9 @@ class GmsGuestController extends Controller
         $eventId = $event['id'] ?? null;
 
         $allEvents = GmsMockData::getEvents();
+        
+        // Pre-load all invitation statuses to avoid N+1 queries (using label for display)
+        $invitationStatuses = \App\Models\InvitationStatus::pluck('label', 'id')->toArray();
 
         return Inertia::render('Gms/Guests/Index', [
             'guests'  => Guest::with([
@@ -38,16 +41,21 @@ class GmsGuestController extends Controller
             ])
                 ->orderBy('created_at', 'desc')
                 ->get()
-                ->map(function ($guest) use ($allEvents) {
+                ->map(function ($guest) use ($allEvents, $invitationStatuses) {
                     $guestArray = $guest->toArray();
 
-                    // Build attendance map: { eventId: { status, added_at, invited_at } }
+                    // Build attendance map: { eventId: { status, added_at, invited_at, companions } }
                     $attendance = [];
                     foreach ($guest->events as $ev) {
+                        $statusLabel = isset($invitationStatuses[$ev->pivot->status_id]) 
+                            ? $invitationStatuses[$ev->pivot->status_id] 
+                            : 'Not Invited';
                         $attendance[$ev->id] = [
-                            'status'     => $ev->pivot->status,
+                            'status'     => $statusLabel,
                             'added_at'   => $ev->pivot->added_at,
                             'invited_at' => $ev->pivot->invited_at,
+                            'companions' => $ev->pivot->companions ?? [],
+                            'preference_overrides' => $ev->pivot->preference_overrides ?? null,
                         ];
                     }
                     $guestArray['attendance'] = (object) $attendance;
@@ -190,15 +198,17 @@ class GmsGuestController extends Controller
             'hotel'        => 'nullable|string',
             'dietaryNotes' => 'nullable|string',
             'notes'        => 'nullable|string',
-            'status_id'    => 'required|in:invited,confirmed,pending,declined',
             'flightPreferences' => 'nullable|string',
             'accommodationPreferences' => 'nullable|string',
             'transportationPreferences' => 'nullable|string',
-            'companionList' => 'nullable|array',
-            'companions'   => 'nullable|integer',
+            'companions'   => 'nullable|array',
+            'preference_overrides' => 'nullable|array',
             'facilities'   => 'nullable|array',
             'facilityOverrides' => 'nullable|array',
         ]);
+
+        $companions = $request->input('companions', []);
+        $preferenceOverrides = $request->input('preference_overrides', null);
 
         // Generate reference number
         $lastGuest = Guest::orderBy('reference_number', 'desc')->first();
@@ -216,8 +226,10 @@ class GmsGuestController extends Controller
         // Auto-add to current event if one is active
         if ($eventId) {
             $guest->events()->attach($eventId, [
-                'status' => 'not_invited',
+                'status_id' => $this->getStatusId('not_invited'),
                 'added_at' => now(),
+                'companions' => $companions,
+                'preference_overrides' => $preferenceOverrides,
             ]);
         }
 
@@ -242,18 +254,29 @@ class GmsGuestController extends Controller
             'hotel'        => 'nullable|string',
             'dietaryNotes' => 'nullable|string',
             'notes'        => 'nullable|string',
-            'status_id'    => 'required|in:invited,confirmed,pending,declined',
             'flightPreferences' => 'nullable|string',
             'accommodationPreferences' => 'nullable|string',
             'transportationPreferences' => 'nullable|string',
-            'companionList' => 'nullable|array',
-            'companions'   => 'nullable|integer',
+            'companions'   => 'nullable|array',
+            'preference_overrides' => 'nullable|array',
+            'event_id'     => 'nullable|integer',
             'facilities'   => 'nullable|array',
             'facilityOverrides' => 'nullable|array',
         ]);
 
         $guest = Guest::findOrFail($id);
         $guest->update($validated);
+
+        // Update companions and preference_overrides for the current event if provided and guest is on the event
+        $eventId = $request->input('event_id');
+        $companions = $request->input('companions', []);
+        $preferenceOverrides = $request->input('preference_overrides', null);
+        if ($eventId && $guest->events()->where('event_id', $eventId)->exists()) {
+            $guest->events()->updateExistingPivot($eventId, [
+                'companions' => $companions,
+                'preference_overrides' => $preferenceOverrides,
+            ]);
+        }
 
         return back()->with('success', 'Guest updated.');
     }
@@ -284,11 +307,13 @@ class GmsGuestController extends Controller
         }
 
         $added = 0;
+        $notInvitedStatus = \App\Models\InvitationStatus::where('name', 'not_invited')->first();
+        
         foreach ($validated['guest_ids'] as $guestId) {
             $guest = Guest::find($guestId);
             if ($guest && !$guest->events()->where('event_id', $eventId)->exists()) {
                 $guest->events()->attach($eventId, [
-                    'status' => 'not_invited',
+                    'status_id' => $notInvitedStatus->id,
                     'added_at' => now(),
                 ]);
                 $added++;
@@ -352,5 +377,20 @@ class GmsGuestController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Import failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Get the status ID from the status name
+     */
+    private function getStatusId(string $statusName): ?int
+    {
+        static $statusCache = [];
+        
+        if (!isset($statusCache[$statusName])) {
+            $status = \App\Models\InvitationStatus::where('name', $statusName)->first();
+            $statusCache[$statusName] = $status?->id;
+        }
+        
+        return $statusCache[$statusName];
     }
 }

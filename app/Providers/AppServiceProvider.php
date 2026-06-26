@@ -44,6 +44,28 @@ class AppServiceProvider extends ServiceProvider
                 }
                 return [];
             },
+            'gmsGuestCount' => function () {
+                // Only load guest count for GMS routes
+                if (request()->is('gms*')) {
+                    try {
+                        return \App\Models\Guest::count();
+                    } catch (\Throwable $e) {
+                        return 0;
+                    }
+                }
+                return 0;
+            },
+            'gmsInvitationCount' => function () {
+                // Only load invitation count for GMS routes
+                if (request()->is('gms*')) {
+                    try {
+                        return \App\Models\Invitation::count();
+                    } catch (\Throwable $e) {
+                        return 0;
+                    }
+                }
+                return 0;
+            },
         ]);
 
         // if (app()->runningInConsole()) {

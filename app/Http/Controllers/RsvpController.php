@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Invitation;
+use App\Models\InvitationStatus;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,6 +15,19 @@ use Inertia\Response;
  */
 class RsvpController extends Controller
 {
+    /**
+     * Cache invitation status IDs
+     */
+    private static $statusIds = null;
+
+    private function getStatusId(string $statusName): ?int
+    {
+        if (self::$statusIds === null) {
+            self::$statusIds = InvitationStatus::pluck('id', 'name')->toArray();
+        }
+        return self::$statusIds[$statusName] ?? null;
+    }
+
     /** GET /rsvp/{token} */
     public function show(string $token): Response
     {
@@ -75,8 +89,8 @@ class RsvpController extends Controller
         // Update guest status based on invitation status
         $invitationStatusName = $invitation->status?->name ?? 'pending';
         $guestStatusName = match($invitationStatusName) {
-            'accepted' => 'confirmed',  // Guest accepted = mark guest as confirmed
-            'pending' => 'confirmed',   // Partial acceptance still counts as confirmed guest
+            'accepted' => 'accepted',   // Keep statuses aligned
+            'pending' => 'pending',
             'declined' => 'declined',
             default => 'pending',
         };
@@ -99,7 +113,7 @@ class RsvpController extends Controller
             };
             
             $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
-                'status' => $pivotStatus,
+                'status_id' => $this->getStatusId($pivotStatus),
             ]);
         }
 

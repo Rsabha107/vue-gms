@@ -202,12 +202,12 @@ function confirm() {
 }
 
 .btn.pri:hover:not(:disabled) {
-  background: var(--gms-maroon-600);
+  background: #6e1830;
 }
 
 .btn.pri:focus:not(:disabled),
 .btn.pri:active:not(:disabled) {
-  background: var(--gms-maroon-600);
+  background: #6e1830;
   color: #fff;
   outline: 2px solid var(--gms-maroon);
   outline-offset: 2px;

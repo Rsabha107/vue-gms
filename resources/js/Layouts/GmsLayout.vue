@@ -10,6 +10,8 @@ const page     = usePage()
 const auth     = computed(() => page.props.auth)
 const event    = computed(() => page.props.event ?? { name: "Doha Cup '26", location: 'Lusail, Qatar' })
 const events   = computed(() => page.props.gmsEvents ?? [])
+const guestCount = computed(() => page.props.gmsGuestCount ?? 0)
+const invitationCount = computed(() => page.props.gmsInvitationCount ?? 0)
 const currentUrl = computed(() => page.url)
 
 // ── Sidebar collapse state ────────────────────────────────────────
@@ -116,8 +118,8 @@ onUnmounted(() => {
 
 // ── Nav structure ─────────────────────────────────────────────────
 const breadcrumbMap = {
-    'gms/guests':            'Guests',
-    'gms/invitations':       'Invitations',
+    'gms/guests':            'Master Guest List',
+    'gms/invitations':       'Roster/Invitations',
     'gms/seating':           'Seating',
     'gms/service-levels':    'Service Levels',
     'gms/floorplans':        'Floor Plans',
@@ -144,8 +146,7 @@ const currentBreadcrumb = computed(() => {
 
 const nav = [
     { name: 'gms.dashboard',       label: 'Dashboard',          icon: 'home',     href: '/gms' },
-    { name: 'gms.guests.index',    label: 'Guests',             icon: 'users',    href: '/gms/guests' },
-    { name: 'gms.invitations.index', label: 'Invitations',      icon: 'mail',     href: '/gms/invitations' },
+    { name: 'gms.invitations.index', label: 'Roster/Invitations', icon: 'mail',     href: '/gms/invitations' },
     { name: 'gms.seating.index',   label: 'Seating',            icon: 'grid',     href: '/gms/seating' },
     { name: 'gms.service-levels.index', label: 'Service Levels', icon: 'star',    href: '/gms/service-levels' },
     { name: 'gms.floorplans.index', label: 'Floor Plans',       icon: 'layout',   href: '/gms/floorplans' },
@@ -198,8 +199,21 @@ function isActive(item) {
         </Link>
       </div>
 
+      <!-- Guests (above event selector) -->
+      <div style="margin: 14px 16px 8px;">
+        <Link href="/gms/guests"
+              class="gms-nav-item"
+              :class="{ active: currentUrl.startsWith('/gms/guests') }"
+              :title="sidebarCollapsed ? 'Master Guest List' : ''"
+              @click="closeMobileMenu">
+          <GmsIcon name="users" :size="16" class="gms-nav-icon" />
+          <span v-show="!sidebarCollapsed">Master Guest List</span>
+          <span v-if="guestCount > 0" v-show="!sidebarCollapsed" class="gms-nav-badge">{{ guestCount }}</span>
+        </Link>
+      </div>
+
       <!-- Event selector -->
-      <div ref="eventSelectorRef" style="margin: 14px 16px 8px; position: relative;" v-show="!sidebarCollapsed">
+      <div ref="eventSelectorRef" style="margin: 0 16px 8px; position: relative;" v-show="!sidebarCollapsed">
         <button 
           class="gms-event-switch"
           @click="toggleEventSelector"
@@ -247,6 +261,7 @@ function isActive(item) {
                   @click="closeMobileMenu">
               <GmsIcon :name="item.icon" :size="16" class="gms-nav-icon" />
               <span v-show="!sidebarCollapsed">{{ item.label }}</span>
+              <span v-if="item.name === 'gms.invitations.index' && invitationCount > 0" v-show="!sidebarCollapsed" class="gms-nav-badge">{{ invitationCount }}</span>
             </Link>
           </template>
         </div>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject, watch } from 'vue'
+import { ref, computed, inject, watch, nextTick } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import GmsLayout from '@/Layouts/GmsLayout.vue'
 import GmsIcon from '@/Components/Gms/GmsIcon.vue'
@@ -277,32 +277,46 @@ function openEditLeg(direction) {
     // Find the specific leg from the legs array
     const leg = r.legs.find(l => l.dir === (direction === 'inbound' ? 'Inbound' : 'Outbound'))
     
+    // Prepare form data
+    let formData = {}
+    
     if (direction === 'inbound') {
-        legForm.airline     = leg?.airline ?? r.airline ?? ''
-        legForm.flightNo    = leg?.flightNo ?? r.inboundFlight ?? r.flightNo ?? ''
-        legForm.class       = leg?.cls ?? r.class ?? 'Business'
-        legForm.date        = leg?.date ?? r.date ?? ''
-        legForm.duration    = leg?.dur ?? r.duration ?? ''
-        legForm.time        = leg?.dep ?? r.time ?? ''
-        legForm.arrivalTime = leg?.arr ?? r.arrivalTime ?? ''
-        legForm.fromCode    = leg?.fromCode ?? r.origin ?? ''
-        legForm.fromCity    = leg?.fromCity ?? r.originCity ?? ''
-        legForm.toCode      = leg?.toCode ?? r.destination ?? ''
-        legForm.toCity      = leg?.toCity ?? r.destCity ?? ''
+        formData = {
+            airline:     leg?.airline ?? r.airline ?? '',
+            flightNo:    leg?.flightNo ?? r.inboundFlight ?? r.flightNo ?? '',
+            class:       leg?.cls ?? r.class ?? 'Business',
+            date:        leg?.date ?? r.date ?? '',
+            duration:    leg?.dur ?? r.duration ?? '',
+            time:        leg?.dep ?? r.time ?? '',
+            arrivalTime: leg?.arr ?? r.arrivalTime ?? '',
+            fromCode:    leg?.fromCode ?? r.origin ?? '',
+            fromCity:    leg?.fromCity ?? r.originCity ?? '',
+            toCode:      leg?.toCode ?? r.destination ?? '',
+            toCity:      leg?.toCity ?? r.destCity ?? '',
+        }
     } else {
-        legForm.airline     = leg?.airline ?? r.airline ?? ''
-        legForm.flightNo    = leg?.flightNo ?? r.outboundFlight ?? ''
-        legForm.class       = leg?.cls ?? 'Business' // Load from leg, not shared class
-        legForm.date        = leg?.date ?? r.outboundDate ?? ''
-        legForm.duration    = leg?.dur ?? r.duration ?? ''
-        legForm.time        = leg?.dep ?? r.outboundTime ?? ''
-        legForm.arrivalTime = leg?.arr ?? r.outboundArrivalTime ?? ''
-        legForm.fromCode    = leg?.fromCode ?? r.destination ?? ''
-        legForm.fromCity    = leg?.fromCity ?? r.destCity ?? ''
-        legForm.toCode      = leg?.toCode ?? r.origin ?? ''
-        legForm.toCity      = leg?.toCity ?? r.originCity ?? ''
+        formData = {
+            airline:     leg?.airline ?? r.airline ?? '',
+            flightNo:    leg?.flightNo ?? r.outboundFlight ?? '',
+            class:       leg?.cls ?? 'Business',
+            date:        leg?.date ?? r.outboundDate ?? '',
+            duration:    leg?.dur ?? r.duration ?? '',
+            time:        leg?.dep ?? r.outboundTime ?? '',
+            arrivalTime: leg?.arr ?? r.outboundArrivalTime ?? '',
+            fromCode:    leg?.fromCode ?? r.destination ?? '',
+            fromCity:    leg?.fromCity ?? r.destCity ?? '',
+            toCode:      leg?.toCode ?? r.origin ?? '',
+            toCity:      leg?.toCity ?? r.originCity ?? '',
+        }
     }
+    
+    // Open modal first
     legModal.value = true
+    
+    // Then populate form data after DOM update
+    nextTick(() => {
+        Object.assign(legForm, formData)
+    })
 }
 
 function saveLeg() {
@@ -438,6 +452,13 @@ watch(() => [form.inboundDepTime, form.inboundArrTime], ([depTime, arrTime]) => 
 // Auto-calculate outbound duration
 watch(() => [form.outboundDepTime, form.outboundArrTime], ([depTime, arrTime]) => {
     form.outboundDuration = calculateDuration(depTime, arrTime)
+})
+
+// Auto-calculate duration for edit leg modal
+watch(() => [legForm.time, legForm.arrivalTime], ([depTime, arrTime]) => {
+    if (legModal.value && depTime && arrTime) {
+        legForm.duration = calculateDuration(depTime, arrTime)
+    }
 })
 
 // Sort guests: international first
@@ -1246,11 +1267,12 @@ function saveNew() {
       <div class="gms-form-grid" style="margin-bottom:14px;">
         <div class="gms-field">
           <label class="gms-label">Date *</label>
-          <input v-model="legForm.date" class="gms-input" placeholder="23 Aug" />
+          <GmsDatePicker v-model="legForm.date" placeholder="Select date" dateFormat="Y-m-d" />
         </div>
         <div class="gms-field">
           <label class="gms-label">Duration</label>
-          <input v-model="legForm.duration" class="gms-input" placeholder="6h 40m" />
+          <input v-model="legForm.duration" class="gms-input" placeholder="Auto-calculated" readonly style="background: var(--gms-surface-2); cursor: not-allowed;" />
+          <div class="gms-hint" style="margin-top:4px;font-size:11px;">Calculated from departure and arrival times</div>
         </div>
       </div>
 
@@ -1258,11 +1280,11 @@ function saveNew() {
       <div class="gms-form-grid">
         <div class="gms-field">
           <label class="gms-label">Departure *</label>
-          <input v-model="legForm.time" class="gms-input" placeholder="08:15" />
+          <GmsTimePicker v-model="legForm.time" placeholder="Select time" />
         </div>
         <div class="gms-field">
           <label class="gms-label">Arrival *</label>
-          <input v-model="legForm.arrivalTime" class="gms-input" placeholder="13:30" />
+          <GmsTimePicker v-model="legForm.arrivalTime" placeholder="Select time" />
         </div>
       </div>
       <p style="font-size:11.5px;color:var(--gms-text-3);margin-top:8px;">Use <code>+1</code> after a time to mark next-day arrival.</p>

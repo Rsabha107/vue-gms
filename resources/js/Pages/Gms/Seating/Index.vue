@@ -21,6 +21,11 @@ const props = defineProps({
     guests:     { type: Array,  default: () => [] },
     tiers:      { type: Array,  default: () => [] },
     event:      { type: Object, default: () => ({}) },
+    // Shared Inertia props
+    errors:     { type: Object, default: () => ({}) },
+    gmsEvents:  { type: Array,  default: () => [] },
+    auth:       { type: Object, default: () => ({}) },
+    flash:      { type: Object, default: () => ({}) },
 })
 
 const toast = inject('toast')
@@ -89,6 +94,7 @@ const fBlock    = ref('all')
 const fStatus   = ref('all')
 const gq        = ref('')  // guest panel search
 const pq        = ref('')  // planner highlight search
+const showAccepted = ref(false) // toggle to show accepted guests
 
 // ── Floating guest panel ─────────────────────────────────────────
 const floatPanel = ref(false)
@@ -120,7 +126,7 @@ const flash = ref(null)
 let flashTimer = null
 
 // ── Names/Dots toggle ──────────────────────────────────────────────
-const showNames = ref(false)
+const showNames = ref(true)
 
 // ── Template picker ───────────────────────────────────────────────
 const templateModal = ref(false)
@@ -376,8 +382,8 @@ function seatClick(seat, event) {
         return
     }
 
-    // assign mode
-    if (seat.status === 'assigned' || seat.status === 'ticket') {
+    // assign mode - open pinned card for any seat
+    if (seat.status === 'assigned' || seat.status === 'ticket' || seat.status === 'available' || seat.status === 'reserved') {
         hover.value = null
         if (pinSeat.value === seat.id) { pinSeat.value = null; return }
         const r = event?.currentTarget?.getBoundingClientRect()
@@ -389,18 +395,6 @@ function seatClick(seat, event) {
         }
         pinSeat.value = seat.id
         return
-    }
-
-    if (seat.status === 'available' || seat.status === 'reserved') {
-        if (pickGuest.value) {
-            const g = guestById(pickGuest.value)
-            assignSeat(seat.id, pickGuest.value)
-            toast(`${g?.name?.split(' ').slice(-1)} → ${seat.id}`)
-            pickGuest.value  = null
-            pendingSeat.value = null
-        } else {
-            pendingSeat.value = pendingSeat.value === seat.id ? null : seat.id
-        }
     }
 }
 
@@ -471,6 +465,18 @@ function pinIssueTicket(seatId) {
 function pinUnassignSeat(seatId) {
     unassignSeat(seatId)
     toast('Seat freed')
+    pinSeat.value = null
+}
+
+function pinRelease(seatId) {
+    releaseSeats([seatId])
+    toast('Released')
+    pinSeat.value = null
+}
+
+function pinRevokeTicket(seatId) {
+    revokeTicket(seatId)
+    toast('Ticket revoked')
     pinSeat.value = null
 }
 
@@ -891,9 +897,11 @@ function smapSeatStyle(seat) {
 }
 
 // ── Guest panel ───────────────────────────────────────────────────
-const glist = computed(() => props.guests.filter(g =>
-    g.status === 'confirmed' || g.status === 'accepted' || g.status === 'invited'
-))
+const glist = computed(() => props.guests.filter(g => {
+    if (g.status === 'confirmed') return true
+    if (showAccepted.value && g.status === 'accepted') return true
+    return false
+}))
 const filteredGuests = computed(() => {
     const q = gq.value.trim().toLowerCase()
     return glist.value.filter(g => !q || g.name.toLowerCase().includes(q))
@@ -1207,13 +1215,12 @@ function deleteTemplate(tplId) {
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════
-       SEAT MAP VIEW
+       SEAT MAP VIEW (FULL PAGE)
   ══════════════════════════════════════════════════════════════ -->
-  <div v-else-if="view === 'map'" class="gms-view">
-    <div class="gms-view-pad">
+  <div v-else-if="view === 'map'" class="gms-view" style="padding: 0;">
 
     <!-- Header ─────────────────────────────────────────────────────── -->
-    <div class="gms-seat-header">
+    <div class="gms-seat-header" style="padding: 28px 32px 18px 32px;">
 
       <!-- Back link -->
       <div class="gms-seat-back" @click="backToList">← Seating</div>
@@ -1265,14 +1272,14 @@ function deleteTemplate(tplId) {
 
     </div>
       <!-- Tabs -->
-      <div class="gms-seg" style="width: fit-content; margin-bottom: 18px;">
+      <div class="gms-seg" style="width: fit-content; margin-bottom: 18px; margin-left: 32px;">
         <button :class="['gms-seat-tab', mapTab==='map'     ? 'on' : '']" @click="mapTab='map'">Seat map</button>
         <button :class="['gms-seat-tab', mapTab==='planner' ? 'on' : '']" @click="mapTab='planner'">Planner</button>
         <button :class="['gms-seat-tab', mapTab==='list'    ? 'on' : '']" @click="mapTab='list'">List view</button>
       </div>
     <!-- ── LIST VIEW TAB ────────────────────────────────────── -->
     <template v-if="mapTab === 'list'">
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <div style="display:flex;gap:8px;margin-bottom:12px; padding: 0 32px;">
         <button class="gms-btn gms-btn-sm" :class="listSubTab==='assign'?'gms-btn-primary':''" @click="listSubTab='assign'">
           Assignments <span style="opacity:.6;margin-left:4px;">{{ assignedSeats.length }}</span>
         </button>
@@ -1280,10 +1287,10 @@ function deleteTemplate(tplId) {
           Reservations <span style="opacity:.6;margin-left:4px;">{{ reservedSeats.length }}</span>
         </button>
       </div>
-      <div style="font-size:12px;color:var(--gms-text-3);margin-bottom:10px;">Click a row to jump to its seat on the map.</div>
+      <div style="font-size:12px;color:var(--gms-text-3);margin-bottom:10px; padding: 0 32px;">Click a row to jump to its seat on the map.</div>
 
       <!-- Assignments -->
-      <div v-if="listSubTab === 'assign'" class="gms-card gms-seat-assign-tbl-wrap">
+      <div v-if="listSubTab === 'assign'" class="gms-card gms-seat-assign-tbl-wrap" style="margin: 0 32px;">
         <div class="gms-card-body-0">
           <div class="gms-table-wrap">
             <table class="gms-table">
@@ -1325,7 +1332,7 @@ function deleteTemplate(tplId) {
       </div>
 
       <!-- Mobile Assignment Cards -->
-      <div v-if="listSubTab === 'assign'" class="gms-seat-assign-mob-list">
+      <div v-if="listSubTab === 'assign'" class="gms-seat-assign-mob-list" style="padding: 0 32px;">
         <div v-for="seat in assignedSeats" :key="seat.id" class="gms-seat-mob-card" @click="locateSeat(seat.id)">
           <div class="gms-seat-mob-header">
             <div v-if="guestById(seat.guestId)" style="display:flex;align-items:center;gap:10px;flex:1;">
@@ -1366,7 +1373,7 @@ function deleteTemplate(tplId) {
       </div>
 
       <!-- Reservations -->
-      <div v-else class="gms-card gms-seat-reserve-tbl-wrap">
+      <div v-else class="gms-card gms-seat-reserve-tbl-wrap" style="margin: 0 32px;">
         <div class="gms-card-body-0">
           <div class="gms-table-wrap">
             <table class="gms-table">
@@ -1391,7 +1398,7 @@ function deleteTemplate(tplId) {
       </div>
 
       <!-- Mobile Reservation Cards -->
-      <div v-if="listSubTab === 'reserve'" class="gms-seat-reserve-mob-list">
+      <div v-if="listSubTab === 'reserve'" class="gms-seat-reserve-mob-list" style="padding: 0 32px;">
         <div v-for="seat in reservedSeats" :key="seat.id" class="gms-seat-mob-card" @click="locateSeat(seat.id)">
           <div class="gms-seat-mob-header">
             <div style="font-size:15px;font-weight:600;">{{ seat.blockLabel }}</div>
@@ -1417,7 +1424,7 @@ function deleteTemplate(tplId) {
 
     <!-- ── MAP / PLANNER SHARED CONTROLS ─────────────────── -->
     <template v-else>
-      <div class="gms-card gms-seat-ctrl-card" style="padding:18px 20px;">
+      <div class="gms-card gms-seat-ctrl-card" style="padding:18px 20px; margin: 0 32px;">
 
         <!-- Filter + zoom row -->
         <div class="gms-seat-filter-row" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
@@ -1461,9 +1468,9 @@ function deleteTemplate(tplId) {
               <button class="gms-zlabel" @click="zoom=1" title="Reset zoom">{{ Math.round(zoom*100) }}%</button>
               <button @click="zoomBy(0.1)"  :disabled="zoom >= Z_MAX" title="Zoom in">+</button>
             </div>
-            <div style="display: flex; gap: 6px; flex: none;">
-              <button class="gms-btn gms-btn-sm" :class="{'gms-btn-primary': !showNames}" @click="showNames = false" title="Show dots">Dots</button>
-              <button class="gms-btn gms-btn-sm" :class="{'gms-btn-primary': showNames}" @click="showNames = true" title="Show names">Names</button>
+            <div v-if="mapTab !== 'planner'" class="gms-seg">
+              <button :class="!showNames ? 'gms-seat-tab on' : ''" @click="showNames = false" title="Show dots">Dots</button>
+              <button :class="showNames ? 'gms-seat-tab on' : ''" @click="showNames = true" title="Show names">Names</button>
             </div>
             <button class="gms-btn gms-btn-sm" :class="floatPanel ? 'gms-btn-primary' : ''"
               @click="floatPanel = !floatPanel" title="Toggle guest assignment panel">
@@ -1510,7 +1517,10 @@ function deleteTemplate(tplId) {
         </div>
 
         <!-- Pitch -->
-        <div class="gms-pitch">PITCH</div>
+        <div class="gms-pitch">
+          <span class="gms-pitch-ball"></span>
+          PITCH
+        </div>
 
         <!-- ══ SEAT MAP (small squares) ═════════════════════ -->
         <div v-if="mapTab === 'map'" class="gms-smap">
@@ -1680,6 +1690,10 @@ function deleteTemplate(tplId) {
             <div style="font-size:10px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.05em;">filled</div>
           </div>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;">
+          <input type="checkbox" v-model="showAccepted" style="width:14px;height:14px;cursor:pointer;accent-color:var(--gms-maroon);" />
+          <span style="font-size:12px;color:var(--gms-text-2);">Show accepted guests</span>
+        </label>
         <div class="gms-search-wrap">
           <GmsIcon name="search" :size="13" class="gms-search-icon" />
           <input v-model="gq" class="gms-search-input" placeholder="Confirmed guests…" />
@@ -1814,34 +1828,91 @@ function deleteTemplate(tplId) {
         <span class="gms-sp-status">
           <span class="gms-sp-dot" :style="{background:
             seatById(pinSeat).status==='assigned' ? 'var(--gms-maroon)' :
-            seatById(pinSeat).status==='ticket'   ? 'var(--gms-text)' : 'var(--gms-text-3)'
+            seatById(pinSeat).status==='ticket'   ? 'var(--gms-text)' :
+            seatById(pinSeat).status==='reserved' ? '#64748b' : '#9ca3af'
           }" />
-          {{ seatById(pinSeat).status === 'ticket' ? 'Ticket issued' : 'Assigned' }}
+          {{ 
+            seatById(pinSeat).status === 'ticket' ? 'Ticket issued' : 
+            seatById(pinSeat).status === 'assigned' ? 'Assigned' : 
+            seatById(pinSeat).status === 'reserved' ? 'Reserved' : 'Available'
+          }}
         </span>
         <button class="gms-sp-close" @click="pinSeat=null" @mousedown.stop title="Close">
           <GmsIcon name="x" :size="13" />
         </button>
       </div>
+      
+      <!-- Guest info for assigned/ticket seats -->
       <div v-if="guestById(seatById(pinSeat).guestId)" class="gms-sp-guest">
         <GmsAvatar :name="guestById(seatById(pinSeat).guestId).name" size="sm" />
         <div style="min-width:0;">
           <div class="gms-sp-name">{{ guestById(seatById(pinSeat).guestId).name }}</div>
           <div class="gms-sp-meta" style="color:var(--gms-text-3);font-size:11.5px;">
-            <span>{{ guestById(seatById(pinSeat).guestId).title }}</span>
-            <span v-if="guestById(seatById(pinSeat).guestId).nationality">· {{ guestById(seatById(pinSeat).guestId).nationality }}</span>
+            <span v-if="tierFor(guestById(seatById(pinSeat).guestId).tier)"
+              class="gms-pill"
+              :style="`background:${tierFor(guestById(seatById(pinSeat).guestId).tier).bg};color:${tierFor(guestById(seatById(pinSeat).guestId).tier).color};font-size:10px;padding:1px 7px;`">
+              {{ tierFor(guestById(seatById(pinSeat).guestId).tier).name }}
+            </span>
           </div>
         </div>
       </div>
-      <div class="gms-sp-acts" style="margin-top:10px;">
+      
+      <!-- Seat info for available/reserved seats -->
+      <div v-if="!guestById(seatById(pinSeat).guestId)" class="gms-sp-guest" style="padding:12px 0;">
+        <div style="font-size:12px;color:var(--gms-text-2);">
+          <div style="margin-bottom:6px;"><strong>Block:</strong> {{ seatById(pinSeat).block }}</div>
+          <div style="margin-bottom:6px;"><strong>Row:</strong> {{ seatById(pinSeat).row }}</div>
+          <div><strong>Seat:</strong> {{ seatById(pinSeat).col }}</div>
+        </div>
+      </div>
+      
+      <!-- Org info for reserved seats -->
+      <div v-if="seatById(pinSeat).status==='reserved' && seatById(pinSeat).resLabel" class="gms-sp-org"
+        :style="{borderColor: orgColor(seatById(pinSeat).resLabel), color: orgColor(seatById(pinSeat).resLabel)}">
+        <span class="gms-sp-org-code" :style="{background: orgColor(seatById(pinSeat).resLabel)}">{{ seatById(pinSeat).resLabel }}</span>
+        <span>{{ orgOf(seatById(pinSeat).resLabel)?.name ?? seatById(pinSeat).resLabel }}</span>
+      </div>
+      
+      <!-- Actions for assigned/ticket seats -->
+      <div v-if="guestById(seatById(pinSeat).guestId)" class="gms-sp-acts" style="margin-top:10px;">
+        <template v-if="seatById(pinSeat).status==='assigned'">
+          <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
+            @mousedown.stop
+            @click="pinIssueTicket(pinSeat)">
+            <GmsIcon name="ticket" :size="12" /> Ticket
+          </button>
+          <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
+            @mousedown.stop
+            @click="pinUnassignSeat(pinSeat)">
+            <GmsIcon name="x" :size="12" /> Unassign
+          </button>
+        </template>
+        <template v-else-if="seatById(pinSeat).status==='ticket'">
+          <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
+            @mousedown.stop
+            @click="pinRevokeTicket(pinSeat)">
+            <GmsIcon name="arrow-right" :size="12" /> Revoke ticket
+          </button>
+          <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
+            @mousedown.stop
+            @click="pinUnassignSeat(pinSeat)">
+            <GmsIcon name="x" :size="12" /> Unassign
+          </button>
+        </template>
+      </div>
+      
+      <!-- Actions for available/reserved seats -->
+      <div v-else class="gms-sp-acts" style="margin-top:10px;">
         <button class="gms-btn gms-btn-sm gms-btn-primary" style="flex:1;justify-content:center;"
           @mousedown.stop
-          @click="pinIssueTicket(pinSeat)">
-          <GmsIcon name="ticket" :size="12" /> Ticket
+          @click="startAssigning(pinSeat); pinSeat = null">
+          <GmsIcon name="users" :size="12" /> Assign guest
         </button>
-        <button class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
+        <button v-if="seatById(pinSeat).status==='reserved'"
+          class="gms-btn gms-btn-sm" style="flex:1;justify-content:center;"
           @mousedown.stop
-          @click="pinUnassignSeat(pinSeat)">
-          <GmsIcon name="x" :size="12" /> Unassign
+          @click="pinRelease(pinSeat)">
+          <GmsIcon name="x" :size="12" /> Release
         </button>
       </div>
     </div>
@@ -1864,7 +1935,6 @@ function deleteTemplate(tplId) {
       <GmsIcon :name="floatPanel ? 'x' : 'users'" :size="22" />
     </button>
 
-    </div>
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════

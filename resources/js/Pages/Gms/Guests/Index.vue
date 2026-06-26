@@ -39,13 +39,6 @@ function parseJsonMaybe(value, fallback) {
   try { return JSON.parse(value) } catch { return fallback }
 }
 
-function normalizeCompanionList(value) {
-  const parsed = parseJsonMaybe(value, [])
-  if (Array.isArray(parsed)) return parsed
-  if (parsed && typeof parsed === 'object') return [parsed]
-  return []
-}
-
 function normalizeFacilities(value) {
   const parsed = parseJsonMaybe(value, {})
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
@@ -62,7 +55,6 @@ function normalizeFacilityOverrides(value) {
 function normalizeGuest(g) {
   return {
     ...g,
-    companionList: normalizeCompanionList(g?.companionList),
     facilities: normalizeFacilities(g?.facilities),
     facilityOverrides: normalizeFacilityOverrides(g?.facilityOverrides),
     attendance: (g?.attendance && !Array.isArray(g.attendance)) ? g.attendance : {},
@@ -233,6 +225,39 @@ const guestVipLevel = computed(() => {
 })
 const tierPickerOpen  = ref(false)
 const companionsExpanded = ref(true)
+
+// Get companions for the current event
+const currentEventCompanions = computed(() => {
+    if (!activeGuest.value || !props.event?.id) return []
+    const attendance = activeGuest.value.attendance?.[String(props.event.id)]
+    return attendance?.companions ?? []
+})
+
+// Get preference overrides for the current event and merge with global
+const currentEventPreferences = computed(() => {
+    if (!activeGuest.value || !props.event?.id) {
+        // No event context, return global preferences
+        return {
+            flight: activeGuest.value?.flightPreferences ?? '',
+            accommodation: activeGuest.value?.accommodationPreferences ?? '',
+            transportation: activeGuest.value?.transportationPreferences ?? '',
+            overrides: { flight: false, accommodation: false, transportation: false }
+        }
+    }
+    const attendance = activeGuest.value.attendance?.[String(props.event.id)]
+    const overrides = attendance?.preference_overrides ?? {}
+    return {
+        flight: overrides.flightPreferences ?? activeGuest.value?.flightPreferences ?? '',
+        accommodation: overrides.accommodationPreferences ?? activeGuest.value?.accommodationPreferences ?? '',
+        transportation: overrides.transportationPreferences ?? activeGuest.value?.transportationPreferences ?? '',
+        overrides: {
+            flight: overrides.flightPreferences != null,
+            accommodation: overrides.accommodationPreferences != null,
+            transportation: overrides.transportationPreferences != null
+        }
+    }
+})
+
 const preferencesExpanded = ref(true)
 const invitationDetailModal = ref(false)
 const activeInvitation = ref(null)
@@ -348,12 +373,12 @@ function saveFacilityOverrides() {
         name: activeGuest.value.name, firstName: activeGuest.value.firstName, lastName: activeGuest.value.lastName,
         title: activeGuest.value.title, guestType: activeGuest.value.guestType, qid: activeGuest.value.qid,
         tier: activeGuest.value.tier, group_id: activeGuest.value.group_id, nationality: activeGuest.value.nationality,
-        status_id: activeGuest.value.status_id, email: activeGuest.value.email, phone: activeGuest.value.phone,
+        email: activeGuest.value.email, phone: activeGuest.value.phone,
         host: activeGuest.value.host, hotel: activeGuest.value.hotel, dietaryNotes: activeGuest.value.dietaryNotes,
         notes: activeGuest.value.notes, flightPreferences: activeGuest.value.flightPreferences,
         accommodationPreferences: activeGuest.value.accommodationPreferences,
         transportationPreferences: activeGuest.value.transportationPreferences,
-        companionList: activeGuest.value.companionList, companions: activeGuest.value.companions,
+        companions: props.event?.id && activeGuest.value.attendance?.[String(props.event.id)]?.companions || [],
         facilities: activeGuest.value.facilities, facilityOverrides: activeGuest.value.facilityOverrides,
     }, {
         onSuccess: () => { isSavingFacilities.value = false; toast('Facilities updated') },
@@ -443,17 +468,24 @@ const editingGuest = ref(null)
 const companions = ref([])
 const GUEST_RELATIONS = ['Spouse', 'Family', 'Aide', 'Security', 'Delegate', 'Interpreter', 'Companion']
 
+// Preference override state
+const prefOverrideActive = ref({ flight: false, accommodation: false, transportation: false })
+const prefOverrideValues = ref({ flight: '', accommodation: '', transportation: '' })
+
 const form = useForm({
     name: '', firstName: '', lastName: '', title: '', guestType: 'local', qid: '',
     tier: props.tiers[0]?.id ?? '', group_id: '', host: '', hotel: '', nationality: '',
-    status_id: 'invited', email: '', phone: '', dietaryNotes: '', notes: '',
+    email: '', phone: '', dietaryNotes: '', notes: '',
     flightPreferences: '', accommodationPreferences: '', transportationPreferences: '',
 })
 
 function openNew() {
     editingGuest.value = null; form.reset()
-    form.tier = props.tiers[0]?.id ?? ''; form.status_id = 'invited'
-    companions.value = []; guestModal.value = true
+    form.tier = props.tiers[0]?.id ?? ''
+    companions.value = []
+    prefOverrideActive.value = { flight: false, accommodation: false, transportation: false }
+    prefOverrideValues.value = { flight: '', accommodation: '', transportation: '' }
+    guestModal.value = true
 }
 
 function openEdit(g, fromDrawer = false) {
@@ -462,12 +494,26 @@ function openEdit(g, fromDrawer = false) {
     form.title = guest.title ?? ''; form.guestType = guest.guestType ?? 'local'; form.qid = guest.qid ?? ''
     form.tier = guest.tier; form.group_id = guest.group_id ?? ''; form.host = guest.host ?? ''
     form.hotel = guest.hotel ?? ''; form.nationality = guest.nationality ?? ''
-    form.status_id = guest.status_id; form.email = guest.email ?? ''; form.phone = guest.phone ?? ''
+    form.email = guest.email ?? ''; form.phone = guest.phone ?? ''
     form.dietaryNotes = guest.dietaryNotes ?? ''; form.notes = guest.notes ?? ''
     form.flightPreferences = guest.flightPreferences ?? ''
     form.accommodationPreferences = guest.accommodationPreferences ?? ''
     form.transportationPreferences = guest.transportationPreferences ?? ''
-    companions.value = guest.companionList.map(c => ({ name: c?.name ?? '', relation: c?.relation ?? 'Companion' }))
+    // Load companions from current event's pivot data
+    const eventCompanions = props.event?.id && guest.attendance?.[String(props.event.id)]?.companions || []
+    companions.value = eventCompanions.map(c => ({ name: c?.name ?? '', relation: c?.relation ?? 'Companion' }))
+    // Load preference overrides from current event's pivot data
+    const eventOverrides = props.event?.id && guest.attendance?.[String(props.event.id)]?.preference_overrides || {}
+    prefOverrideActive.value = {
+        flight: eventOverrides.flightPreferences != null,
+        accommodation: eventOverrides.accommodationPreferences != null,
+        transportation: eventOverrides.transportationPreferences != null
+    }
+    prefOverrideValues.value = {
+        flight: eventOverrides.flightPreferences ?? '',
+        accommodation: eventOverrides.accommodationPreferences ?? '',
+        transportation: eventOverrides.transportationPreferences ?? ''
+    }
     if (fromDrawer) drawerOpen.value = false
     guestModal.value = true
 }
@@ -476,12 +522,27 @@ function saveGuest() {
     if (form.firstName || form.lastName) form.name = (form.firstName + ' ' + form.lastName).trim()
     const payload = { ...form.data() }
     const companionList = companions.value.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), relation: c.relation || 'Companion' }))
-    payload.companionList = companionList; payload.companions = companionList.length
+    payload.companions = companionList
+    payload.event_id = props.event?.id
+
+    // Build preference_overrides object (only send if on an event and guest exists)
+    if (props.event?.id && editingGuest.value) {
+        const preferenceOverrides = {}
+        if (prefOverrideActive.value.flight) preferenceOverrides.flightPreferences = prefOverrideValues.value.flight
+        if (prefOverrideActive.value.accommodation) preferenceOverrides.accommodationPreferences = prefOverrideValues.value.accommodation
+        if (prefOverrideActive.value.transportation) preferenceOverrides.transportationPreferences = prefOverrideValues.value.transportation
+        payload.preference_overrides = Object.keys(preferenceOverrides).length > 0 ? preferenceOverrides : null
+    }
 
     if (editingGuest.value) {
         const idx = localGuests.value.findIndex(g => g.id === editingGuest.value.id)
         if (idx !== -1) {
             localGuests.value[idx] = { ...localGuests.value[idx], ...payload }
+            // Update attendance companions and preference_overrides for current event
+            if (props.event?.id && localGuests.value[idx].attendance?.[String(props.event.id)]) {
+                localGuests.value[idx].attendance[String(props.event.id)].companions = companionList
+                localGuests.value[idx].attendance[String(props.event.id)].preference_overrides = payload.preference_overrides
+            }
             if (activeGuest.value?.id === editingGuest.value.id) activeGuest.value = localGuests.value[idx]
         }
         form.transform(() => payload).put(route('gms.guests.update', editingGuest.value.id), {
@@ -490,7 +551,17 @@ function saveGuest() {
             preserveScroll: true,
         })
     } else {
-        const newGuest = { id: 'G' + Date.now(), ...payload, attendance: {} }
+        const newGuest = { 
+            id: 'G' + Date.now(), 
+            ...payload, 
+            attendance: props.event?.id ? {
+                [String(props.event.id)]: {
+                    status: 'Not Invited',
+                    added_at: new Date().toISOString(),
+                    companions: companionList
+                }
+            } : {}
+        }
         localGuests.value.unshift(newGuest)
         form.transform(() => payload).post(route('gms.guests.store'), {
             onSuccess: () => { guestModal.value = false; toast('Guest created.'); form.transform(data => data) },
@@ -538,7 +609,43 @@ function confirmImport() {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
-function toggleActionsMenu(guestId) { actionsMenuOpen.value = actionsMenuOpen.value === guestId ? null : guestId }
+const menuPosition = ref({ top: 0, left: 0 })
+function toggleActionsMenu(guestId, event) {
+    if (actionsMenuOpen.value === guestId) {
+        actionsMenuOpen.value = null
+        return
+    }
+    actionsMenuOpen.value = guestId
+    // Calculate position for teleported menu (fixed positioning)
+    const rect = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 180 // Approximate menu width
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    
+    // Calculate top position
+    let top = rect.bottom + 4
+    
+    // Calculate left position - align to right edge of button, but keep on screen
+    let left = rect.right - menuWidth
+    
+    // If menu would go off left edge, align to left edge of button
+    if (left < 10) {
+        left = rect.left
+    }
+    
+    // If menu would go off right edge, align to right edge
+    if (left + menuWidth > viewportWidth - 10) {
+        left = viewportWidth - menuWidth - 10
+    }
+    
+    // If menu would go off bottom, open upward
+    const menuHeight = 120 // Approximate menu height
+    if (top + menuHeight > viewportHeight - 10) {
+        top = rect.top - menuHeight - 4
+    }
+    
+    menuPosition.value = { top, left }
+}
 
 const flagEmoji = (cc) => {
     if (!cc) return ''
@@ -551,7 +658,14 @@ const countryName = (cc) => {
 }
 
 function handleClickOutside(e) {
-    if (actionsMenuOpen.value && !e.target.closest('.gms-menu-pop') && !e.target.closest('.gms-btn-icon')) actionsMenuOpen.value = null
+    // Handle teleported actions menu
+    if (actionsMenuOpen.value) {
+        const menu = document.querySelector('.gms-menu-pop')
+        const button = e.target.closest('.gms-btn-icon[title="More actions"]')
+        if (!button && (!menu || !menu.contains(e.target))) {
+            actionsMenuOpen.value = null
+        }
+    }
     if (tierPickerOpen.value && !e.target.closest('.tier-pick-pop') && !e.target.closest('.gd-change-btn')) tierPickerOpen.value = false
 }
 
@@ -563,10 +677,13 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   <div class="gms-view">
     <div class="gms-view-header">
       <div>
-        <h1 class="gms-view-title">Guests</h1>
+        <h1 class="gms-view-title">Master Guest List</h1>
         <p class="gms-view-subtitle">Central directory of every VIP &amp; VVIP — reused across all events. Add people to {{ event?.name ?? 'the event' }} to invite them.</p>
       </div>
       <div class="gms-view-actions">
+        <button class="gms-btn gms-btn-ghost" @click="refreshGuests" :disabled="isRefreshing" title="Refresh">
+          <GmsIcon name="refresh-cw" :size="14" :class="{ 'gms-spin': isRefreshing }" />
+        </button>
         <GmsBtn icon="upload" @click="openImport">Bulk upload</GmsBtn>
         <GmsBtn icon="download">Export</GmsBtn>
         <GmsBtn variant="primary" icon="plus" :icon-size="14" @click="openNew">New guest</GmsBtn>
@@ -600,10 +717,6 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       </GmsFilterDropdown>
 
       <GmsFilterDropdown v-model="groupFilter" label="Group" all-label="All groups" :options="groups" />
-
-      <button class="gms-btn gms-btn-ghost gms-btn-sm" @click="refreshGuests" :disabled="isRefreshing" title="Refresh" style="margin-left: 4px;">
-        <GmsIcon name="refresh-cw" :size="14" :class="{ 'gms-spin': isRefreshing }" />
-      </button>
 
       <span class="mxt-count" style="margin-left: auto;">{{ filtered.length }} of {{ localGuests.length }}</span>
     </div>
@@ -684,17 +797,9 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                     <button v-if="isOnEvent(g)" class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" title="Send invitation" @click="router.visit(route('gms.invitations.index'))">
                       <GmsIcon name="mail" :size="14" />
                     </button>
-                    <div style="position: relative;">
-                      <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" @click="toggleActionsMenu(g.id)" title="More actions">
-                        <GmsIcon name="more-vertical" :size="14" />
-                      </button>
-                      <div v-if="actionsMenuOpen === g.id" class="gms-menu-pop">
-                        <button class="gms-menu-item" @click="openDrawer(g); actionsMenuOpen = null"><GmsIcon name="eye" :size="16" /> View profile</button>
-                        <button class="gms-menu-item" @click="openEdit(g); actionsMenuOpen = null"><GmsIcon name="edit" :size="16" /> Edit</button>
-                        <div class="gms-menu-sep"></div>
-                        <button class="gms-menu-item danger" @click="openDelete(g.id)"><GmsIcon name="trash" :size="16" /> Delete</button>
-                      </div>
-                    </div>
+                    <button class="gms-btn gms-btn-ghost gms-btn-sm gms-btn-icon" @click="toggleActionsMenu(g.id, $event)" title="More actions">
+                      <GmsIcon name="more-vertical" :size="14" />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -753,12 +858,11 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
           <span class="gd-meta-dot">·</span>
           <span>{{ activeGuest.guestType === 'international' ? 'International' : 'Local' }}</span>
         </div>
-        <!-- Event attendance chips in drawer -->
-        <div v-if="Object.keys(activeGuest.attendance || {}).length > 0" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
-          <span v-for="(att, evId) in activeGuest.attendance" :key="evId" class="dir-ev-chip" :class="{ current: isCurrentEvent(evId) }" style="font-size:11px;">
-            <span class="dir-ev-dot" :style="{ background: isCurrentEvent(evId) ? 'var(--maroon)' : 'var(--good)' }"></span>
-            {{ eventName(evId) }}
-            <span style="margin-left:4px;opacity:0.6;font-size:10px;">({{ att.status }})</span>
+        <!-- Event attendance status for current event -->
+        <div v-if="event?.id && activeGuest.attendance?.[String(event.id)]" style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+          <span style="font-size:11px;color:var(--gms-text-3);">Status:</span>
+          <span class="gms-pill" style="background:var(--gms-maroon-tint);color:var(--gms-maroon);font-size:11px;font-weight:600;">
+            {{ activeGuest.attendance[String(event.id)].status }}
           </span>
         </div>
       </div>
@@ -767,6 +871,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     <template v-if="activeGuest">
       <div class="gms-seg gd-tabs">
         <button :class="{ on: drawerTab === 'overview' }" @click="drawerTab = 'overview'">Overview</button>
+        <button :class="{ on: drawerTab === 'preferences' }" @click="drawerTab = 'preferences'">Preferences</button>
         <button :class="{ on: drawerTab === 'facilities' }" @click="drawerTab = 'facilities'">Facilities</button>
         <button :class="{ on: drawerTab === 'invitations' }" @click="drawerTab = 'invitations'">Invitations</button>
       </div>
@@ -779,28 +884,16 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <div class="gms-detail-row"><span class="gms-detail-label">Hosted by</span><span class="gms-detail-value">{{ hostFor(activeGuest.host)?.name ?? '—' }}</span></div>
         <div class="gms-detail-row"><span class="gms-detail-label">Title</span><span class="gms-detail-value">{{ activeGuest.title || '—' }}</span></div>
 
-        <div v-if="activeGuest.companionList && activeGuest.companionList.length > 0" style="margin-top:20px;">
+        <div v-if="currentEventCompanions.length > 0" style="margin-top:20px;">
           <div class="gd-section-head gd-collapsible" @click="companionsExpanded = !companionsExpanded">
-            <div style="display:flex;align-items:center;gap:8px;"><span>Companions</span><span class="gms-pill" style="font-size:11px;">{{ activeGuest.companionList.length }}</span></div>
+            <div style="display:flex;align-items:center;gap:8px;"><span>Companions</span><span class="gms-pill" style="font-size:11px;">{{ currentEventCompanions.length }}</span></div>
             <GmsIcon :name="companionsExpanded ? 'chevron-up' : 'chevron-down'" :size="16" style="color:var(--gms-text-3);" />
           </div>
           <div v-show="companionsExpanded" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-            <div v-for="(comp, idx) in activeGuest.companionList" :key="idx" class="gd-comp-row">
+            <div v-for="(comp, idx) in currentEventCompanions" :key="idx" class="gd-comp-row">
               <span class="gd-comp-name">{{ comp.name }}</span>
               <span class="gd-comp-rel" style="color: white; background: black;">{{ comp.relation }}</span>
             </div>
-          </div>
-        </div>
-
-        <div v-if="activeGuest.flightPreferences || activeGuest.accommodationPreferences || activeGuest.transportationPreferences" style="margin-top:20px;">
-          <div class="gd-section-head gd-collapsible" @click="preferencesExpanded = !preferencesExpanded">
-            <span>Preferences</span>
-            <GmsIcon :name="preferencesExpanded ? 'chevron-up' : 'chevron-down'" :size="16" style="color:var(--gms-text-3);" />
-          </div>
-          <div v-show="preferencesExpanded" style="display:flex;flex-direction:column;gap:12px;margin-top:10px;">
-            <div v-if="activeGuest.flightPreferences" class="gd-pref-item"><div class="gd-pref-head"><GmsIcon name="plane" :size="16" /><span class="gd-pref-label">Flight Preferences</span></div><div class="gd-pref-details"><p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ activeGuest.flightPreferences }}</p></div></div>
-            <div v-if="activeGuest.accommodationPreferences" class="gd-pref-item"><div class="gd-pref-head"><GmsIcon name="building" :size="16" /><span class="gd-pref-label">Accommodation Preferences</span></div><div class="gd-pref-details"><p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ activeGuest.accommodationPreferences }}</p></div></div>
-            <div v-if="activeGuest.transportationPreferences" class="gd-pref-item"><div class="gd-pref-head"><GmsIcon name="car" :size="16" /><span class="gd-pref-label">Transportation Preferences</span></div><div class="gd-pref-details"><p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ activeGuest.transportationPreferences }}</p></div></div>
           </div>
         </div>
 
@@ -838,6 +931,40 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── Preferences tab ── -->
+      <template v-else-if="drawerTab === 'preferences'">
+        <div v-if="!currentEventPreferences.flight && !currentEventPreferences.accommodation && !currentEventPreferences.transportation" class="gms-empty" style="padding:40px 0;">
+          <div class="gms-empty-title">No preferences set</div>
+          <div class="gms-empty-sub">Edit this guest to add travel, accommodation, or transportation preferences.</div>
+        </div>
+        <div v-else style="display:flex;flex-direction:column;gap:16px;">
+          <div v-if="currentEventPreferences.flight" class="gd-pref-item">
+            <div class="gd-pref-head">
+              <GmsIcon name="plane" :size="16" />
+              <span class="gd-pref-label">Flight Preferences</span>
+              <span v-if="currentEventPreferences.overrides.flight" class="gms-pill" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;margin-left:auto;">Event override</span>
+            </div>
+            <div class="gd-pref-details"><p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ currentEventPreferences.flight }}</p></div>
+          </div>
+          <div v-if="currentEventPreferences.accommodation" class="gd-pref-item">
+            <div class="gd-pref-head">
+              <GmsIcon name="building" :size="16" />
+              <span class="gd-pref-label">Accommodation Preferences</span>
+              <span v-if="currentEventPreferences.overrides.accommodation" class="gms-pill" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;margin-left:auto;">Event override</span>
+            </div>
+            <div class="gd-pref-details"><p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ currentEventPreferences.accommodation }}</p></div>
+          </div>
+          <div v-if="currentEventPreferences.transportation" class="gd-pref-item">
+            <div class="gd-pref-head">
+              <GmsIcon name="car" :size="16" />
+              <span class="gd-pref-label">Transportation Preferences</span>
+              <span v-if="currentEventPreferences.overrides.transportation" class="gms-pill" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;margin-left:auto;">Event override</span>
+            </div>
+            <div class="gd-pref-details"><p style="font-size:13px;line-height:1.5;color:var(--gms-text);margin:0;">{{ currentEventPreferences.transportation }}</p></div>
           </div>
         </div>
       </template>
@@ -962,9 +1089,87 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <span class="ng-sec-ic"><GmsIcon name="star" :size="16" /></span>
         <div style="flex:1;"><div class="ng-sec-t">Preferences</div><div class="ng-sec-s">Optional notes about travel, accommodation, and transportation preferences.</div></div>
       </div>
-      <div class="gms-field"><label class="gms-label">Flight Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Optional)</span></label><textarea v-model="form.flightPreferences" class="gms-input" rows="2" placeholder="e.g., Business class preferred, vegetarian meals, window seat" /></div>
-      <div class="gms-field"><label class="gms-label">Accommodation Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Optional)</span></label><textarea v-model="form.accommodationPreferences" class="gms-input" rows="2" placeholder="e.g., High floor, quiet room, accessible room" /></div>
-      <div class="gms-field"><label class="gms-label">Transportation Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Optional)</span></label><textarea v-model="form.transportationPreferences" class="gms-input" rows="2" placeholder="e.g., Mercedes preferred, child seat needed" /></div>
+      
+      <!-- Flight Preferences -->
+      <div class="gms-field">
+        <label class="gms-label">
+          Flight Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Global)</span>
+        </label>
+        <textarea v-model="form.flightPreferences" class="gms-input" rows="2" placeholder="e.g., Business class preferred, vegetarian meals, window seat" />
+        <div v-if="editingGuest && props.event?.id" style="margin-top:8px;">
+          <button 
+            type="button" 
+            class="gms-btn gms-btn-ghost gms-btn-sm" 
+            :style="{ background: prefOverrideActive.flight ? '#fef3c7' : 'transparent', color: prefOverrideActive.flight ? '#92400e' : 'var(--gms-text-3)' }"
+            @click="prefOverrideActive.flight = !prefOverrideActive.flight"
+          >
+            <GmsIcon :name="prefOverrideActive.flight ? 'check-circle' : 'circle'" :size="14" />
+            Override for {{ event?.name ?? 'this event' }}
+          </button>
+          <textarea 
+            v-if="prefOverrideActive.flight" 
+            v-model="prefOverrideValues.flight" 
+            class="gms-input" 
+            rows="2" 
+            placeholder="Event-specific flight preferences..." 
+            style="margin-top:6px;border-color:#f59e0b;" 
+          />
+        </div>
+      </div>
+
+      <!-- Accommodation Preferences -->
+      <div class="gms-field">
+        <label class="gms-label">
+          Accommodation Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Global)</span>
+        </label>
+        <textarea v-model="form.accommodationPreferences" class="gms-input" rows="2" placeholder="e.g., High floor, quiet room, accessible room" />
+        <div v-if="editingGuest && props.event?.id" style="margin-top:8px;">
+          <button 
+            type="button" 
+            class="gms-btn gms-btn-ghost gms-btn-sm" 
+            :style="{ background: prefOverrideActive.accommodation ? '#fef3c7' : 'transparent', color: prefOverrideActive.accommodation ? '#92400e' : 'var(--gms-text-3)' }"
+            @click="prefOverrideActive.accommodation = !prefOverrideActive.accommodation"
+          >
+            <GmsIcon :name="prefOverrideActive.accommodation ? 'check-circle' : 'circle'" :size="14" />
+            Override for {{ event?.name ?? 'this event' }}
+          </button>
+          <textarea 
+            v-if="prefOverrideActive.accommodation" 
+            v-model="prefOverrideValues.accommodation" 
+            class="gms-input" 
+            rows="2" 
+            placeholder="Event-specific accommodation preferences..." 
+            style="margin-top:6px;border-color:#f59e0b;" 
+          />
+        </div>
+      </div>
+
+      <!-- Transportation Preferences -->
+      <div class="gms-field">
+        <label class="gms-label">
+          Transportation Preferences <span style="color:var(--gms-text-3);font-weight:400;">(Global)</span>
+        </label>
+        <textarea v-model="form.transportationPreferences" class="gms-input" rows="2" placeholder="e.g., Mercedes preferred, child seat needed" />
+        <div v-if="editingGuest && props.event?.id" style="margin-top:8px;">
+          <button 
+            type="button" 
+            class="gms-btn gms-btn-ghost gms-btn-sm" 
+            :style="{ background: prefOverrideActive.transportation ? '#fef3c7' : 'transparent', color: prefOverrideActive.transportation ? '#92400e' : 'var(--gms-text-3)' }"
+            @click="prefOverrideActive.transportation = !prefOverrideActive.transportation"
+          >
+            <GmsIcon :name="prefOverrideActive.transportation ? 'check-circle' : 'circle'" :size="14" />
+            Override for {{ event?.name ?? 'this event' }}
+          </button>
+          <textarea 
+            v-if="prefOverrideActive.transportation" 
+            v-model="prefOverrideValues.transportation" 
+            class="gms-input" 
+            rows="2" 
+            placeholder="Event-specific transportation preferences..." 
+            style="margin-top:6px;border-color:#f59e0b;" 
+          />
+        </div>
+      </div>
     </div>
 
     <template #footer>
@@ -1029,4 +1234,18 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       <button class="gms-btn gms-btn-ghost" @click="invitationDetailModal = false">Close</button>
     </template>
   </GmsModal>
+
+  <!-- Teleported Actions Menu -->
+  <Teleport to="body">
+    <div
+      v-if="actionsMenuOpen"
+      class="gms-menu-pop"
+      :style="{ position: 'fixed', top: menuPosition.top + 'px', left: menuPosition.left + 'px', zIndex: 9999 }"
+    >
+      <button class="gms-menu-item" @click="openDrawer(filtered.find(g => g.id === actionsMenuOpen)); actionsMenuOpen = null"><GmsIcon name="eye" :size="16" /> View profile</button>
+      <button class="gms-menu-item" @click="openEdit(filtered.find(g => g.id === actionsMenuOpen)); actionsMenuOpen = null"><GmsIcon name="edit" :size="16" /> Edit</button>
+      <div class="gms-menu-sep"></div>
+      <button class="gms-menu-item danger" @click="openDelete(actionsMenuOpen); actionsMenuOpen = null"><GmsIcon name="trash" :size="16" /> Delete</button>
+    </div>
+  </Teleport>
 </template>

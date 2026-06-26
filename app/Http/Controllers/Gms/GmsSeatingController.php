@@ -97,10 +97,17 @@ class GmsSeatingController extends Controller
                 ->all();
         }
 
-        // Fetch guests from database
+        // Fetch guests from database with their invitation status for this event
         $guests = Guest::where('event_id', $eventId)
+            ->with(['invitations' => function ($query) use ($eventId) {
+                $query->where('event_id', $eventId)->with('status');
+            }])
             ->get()
             ->map(function ($guest) {
+                // Get the invitation for this event
+                $invitation = $guest->invitations->first();
+                $status = $invitation ? $invitation->status->name : 'not_invited';
+                
                 return [
                     'id'           => $guest->id,
                     'name'         => $guest->name,
@@ -112,7 +119,7 @@ class GmsSeatingController extends Controller
                     'group'        => $guest->group_id,
                     'host'         => $guest->host,
                     'hotel'        => $guest->hotel,
-                    'status'       => $guest->status_id,
+                    'status'       => $status,
                     'companions'   => $guest->companions ?? 0,
                     'flag'         => '', // TODO: derive from nationality
                     'guestType'    => $guest->guestType,

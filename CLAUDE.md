@@ -218,7 +218,7 @@ Stats grid (6 cards), upcoming fixtures list, recent guests, module quick-links 
 Props: `event`, `stats`, `matches` (first 4), `guests` (first 8), `tiers`.
 
 ### Guests (`Gms/Guests/Index.vue`) — Directory view
-Central directory of all guests, reused across events. Each guest carries an `attendance` map (`{eventId: {status, added_at, invited_at}}`) from the `guest_event` pivot table.
+Central directory of all guests, reused across events. Each guest carries an `attendance` map (`{eventId: {status, added_at, invited_at, companions}}`) from the `guest_event` pivot table.
 
 **Key features:**
 - **Events column:** Per-event status chips; current event highlighted in maroon
@@ -229,10 +229,25 @@ Central directory of all guests, reused across events. Each guest carries an `at
 - **Profile drawer:** Overview (contact, companions, preferences, service level), Facilities tab, Invitations tab — now shows attendance across all events
 
 **Attendance data model:**
-- `guest_event` pivot table: `guest_id`, `event_id`, `status` (not_invited/invited/accepted/declined/confirmed), `added_at`, `invited_at`
-- Guest model has `events()` belongsToMany relationship
+- `guest_event` pivot table: `guest_id`, `event_id`, `status_id` (FK to invitation_statuses), `added_at`, `invited_at`, `companions` (JSON array)
+- Guest model has `events()` belongsToMany relationship with `GuestEvent` custom pivot
 - Controller returns ALL guests (no event_id filter) with attendance loaded
 - Two separate actions: **add to event** (roster membership) vs **send invite** (email/RSVP step)
+
+**Companions Architecture:** Per-event companions (since guests can bring different companions to different events)
+- Stored in `guest_event.companions` JSON column (not on `guests` table)
+- Each event attendance can have its own companion list
+- Format: `[{name: "John Doe", relation: "Spouse"}, ...]`
+- Edited per-event in the guest create/edit modal (sent with `event_id` to controller)
+- Displayed in drawer from current event's attendance data
+
+**Preferences Architecture:** Global with per-event override (follows facilities pattern)
+- **Global preferences:** Stored on `guests` table (`flightPreferences`, `accommodationPreferences`, `transportationPreferences`) - these are personal characteristics that usually stay the same
+- **Per-event overrides:** Stored in `guest_event.preference_overrides` JSON column
+- Format: `{"flightPreferences": "For this event...", "accommodationPreferences": null, "transportationPreferences": "Different here..."}`
+- Null or missing keys use global preference; non-null values override for that specific event
+- Pattern: Set once globally, override only when event-specific needs differ (e.g., "For Norway event, I need winter transport")
+- Computed: `finalPreference = override ?? globalPreference`
 
 **Facility Management:** Two-layer system for service customization:
 - **Tier baseline:** Facilities inherited from service level

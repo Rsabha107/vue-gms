@@ -12,7 +12,7 @@ onMounted(() => inputRef.value?.focus())
 const pages = [
     { label: 'Dashboard',        icon: 'home',     href: '/gms' },
     { label: 'Guests',           icon: 'users',    href: '/gms/guests' },
-    { label: 'Invitations',      icon: 'mail',     href: '/gms/invitations' },
+    { label: 'Roster/Invitations', icon: 'mail',   href: '/gms/invitations' },
     { label: 'Seating',          icon: 'grid',     href: '/gms/seating' },
     { label: 'Service Levels',   icon: 'star',     href: '/gms/service-levels' },
     { label: 'Flights',          icon: 'plane',    href: '/gms/flights' },

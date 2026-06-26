@@ -2574,7 +2574,7 @@
 
 /* ── Seat row (shared between map + planner) ─────────────────────── */
 .gms-seat-row { display: flex; align-items: center; margin-bottom: 4px; }
-.gms-rl { width: 20px; flex: none; font-size: 10px; color: var(--gms-text-3); text-align: center; font-family: var(--gms-font-mono); }
+.gms-rl { width: 20px; flex: none; font-size: 10px; color: var(--gms-text-3); text-align: center; font-family: var(--gms-font-mono); user-select: none; }
 
 /* ── Small seat map (smap view) ──────────────────────────────────── */
 .gms-smap { overflow-x: auto; padding: 2px 2px 12px; }
@@ -2646,6 +2646,10 @@
   font-size: 8px;
   font-weight: 600;
   color: var(--gms-text-3);
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 .gms-seat:hover { transform: scale(1.22); box-shadow: var(--gms-shadow); z-index: 2; }
 .gms-seat.available { background: var(--gms-surface-3); border-color: var(--gms-border-2); }
@@ -2781,7 +2785,7 @@
 
 /* ── Seat map structure ─────────────────────────────────────────── */
 .gms-stand     { display: flex; flex-direction: column; gap: 18px; align-items: center; }
-.gms-block-h   { text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--gms-text-3); margin-bottom: 8px; text-transform: uppercase; }
+.gms-block-h   { text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--gms-text-3); margin-bottom: 8px; text-transform: uppercase; user-select: none; }
 .gms-seat-rows { display: flex; flex-direction: column; gap: 5px; }
 .gms-seat-row  { display: flex; gap: 5px; justify-content: center; align-items: center; }
 .gms-rl        { width: 18px; flex: none; font-size: 10px; color: var(--gms-text-3); text-align: center; font-family: var(--gms-font-mono); }
@@ -2799,8 +2803,46 @@
   font-weight: 700;
   letter-spacing: 3px;
   margin: 0 auto 22px;
-  width: min(560px, 90%);
+  width: min(900px, 95%);
   background: repeating-linear-gradient(90deg, transparent 0 22px, rgba(63,125,82,.05) 22px 44px);
+  background-size: 200% 100%;
+  animation: pitch-stripes 20s linear infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes pitch-stripes {
+  0% { background-position: 0% 0; }
+  100% { background-position: 100% 0; }
+}
+
+.gms-pitch-ball {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle at 30% 30%, #fff, #e0e0e0 50%, #999);
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  animation: ball-roll 8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  z-index: 1;
+}
+
+@keyframes ball-roll {
+  0% { 
+    left: -12px; 
+    top: 50%;
+    transform: translateY(-50%) scale(1) rotate(0deg);
+  }
+  50% { 
+    left: 50%; 
+    top: 50%;
+    transform: translateY(-50%) scale(1.1) rotate(720deg);
+  }
+  100% { 
+    left: calc(100% + 12px); 
+    top: 50%;
+    transform: translateY(-50%) scale(1) rotate(1440deg);
+  }
 }
 
 /* ── Planner (big labelled boxes) ────────────────────────────────── */
@@ -7286,9 +7328,16 @@
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 500;
   white-space: nowrap;
+  /* Use CSS variable for dynamic colors from database */
+  background: color-mix(in srgb, var(--status-color, #6b7280) 15%, transparent);
+  color: var(--status-color, #6b7280);
 }
-.inv-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.inv-status-dot { 
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--status-color, #6b7280);
+}
 
+/* Fallback class-based colors for service status pills */
 .inv-status-pill.not_invited { background: var(--surface-2); color: var(--ink-3); }
 .inv-status-pill.not_invited .inv-status-dot { background: var(--ink-3); }
 

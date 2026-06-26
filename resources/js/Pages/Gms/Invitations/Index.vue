@@ -23,6 +23,7 @@ const props = defineProps({
     emailTemplates: { type: Array,  default: () => [] },
     matches:        { type: Array,  default: () => [] },
     event:          { type: Object, default: () => ({}) },
+    invitationStatuses: { type: Array, default: () => [] },
 })
 
 const toast = inject('toast')
@@ -84,8 +85,13 @@ function formatDate(dateString) {
 }
 
 function statusLabel(s) {
-    const map = { not_invited: 'Not invited', invited: 'Invited', pending: 'Pending', accepted: 'Confirmed', confirmed: 'Confirmed', declined: 'Declined' }
-    return map[s] || s
+    const status = props.invitationStatuses.find(status => status.name === s)
+    return status?.label || s
+}
+
+function statusColor(statusName) {
+    const status = props.invitationStatuses.find(s => s.name === statusName)
+    return status?.color || '#6b7280'
 }
 
 // ── Refresh ─────────────────────────────────────────────────────
@@ -169,6 +175,14 @@ const acceptModal        = ref(false)
 const acceptingGuest     = ref(null)
 const isAccepting        = ref(false)
 
+const confirmModal       = ref(false)
+const confirmingGuest    = ref(null)
+const isConfirming       = ref(false)
+
+const portalLinkModal    = ref(false)
+const portalLinkGuest    = ref(null)
+const isSendingPortal    = ref(false)
+
 function acceptOnBehalf(guest) {
     if (!guest.invitation) { toast('No invitation found', 'error'); return }
     acceptingGuest.value = guest
@@ -186,17 +200,40 @@ function confirmAcceptOnBehalf() {
 }
 
 function markConfirmed(guest) {
-    if (!guest.invitation) return
-    router.post(route('gms.invitations.markConfirmed', guest.invitation.id), {}, {
+    confirmingGuest.value = guest
+    confirmModal.value = true
+}
+
+function confirmMarkConfirmed() {
+    if (!confirmingGuest.value) return
+    // For not_invited guests: pass guest ID, backend handles pivot update
+    // For guests with invitations: pass invitation ID, backend updates invitation record
+    const id = confirmingGuest.value.invitation?.id || confirmingGuest.value.id
+    isConfirming.value = true
+    
+    router.post(route('gms.invitations.markConfirmed', id), {}, {
         preserveScroll: true,
-        onSuccess: () => { actionsMenuOpen.value = null; toast('Marked as confirmed') },
-        onError: (errors) => { toast(Object.values(errors)[0] || 'Failed.', 'error') },
+        onSuccess: () => { 
+            isConfirming.value = false
+            confirmModal.value = false
+            actionsMenuOpen.value = null
+            guestDrawerOpen.value = false
+            confirmingGuest.value = null
+            toast('Marked as confirmed') 
+        },
+        onError: (errors) => { 
+            isConfirming.value = false
+            toast(Object.values(errors)[0] || 'Failed.', 'error') 
+        },
     })
 }
 
 function markDeclined(guest) {
-    if (!guest.invitation) return
-    router.post(route('gms.invitations.markDeclined', guest.invitation.id), {}, {
+    // For not_invited guests: pass guest ID, backend handles pivot update
+    // For guests with invitations: pass invitation ID, backend updates invitation record
+    const id = guest.invitation?.id || guest.id
+    
+    router.post(route('gms.invitations.markDeclined', id), {}, {
         preserveScroll: true,
         onSuccess: () => { actionsMenuOpen.value = null; toast('Marked as declined') },
         onError: (errors) => { toast(Object.values(errors)[0] || 'Failed.', 'error') },
@@ -221,10 +258,28 @@ function removeFromRoster(guest) {
 }
 
 function sendPortalLink(guest) {
-    router.post(route('gms.invitations.sendPortalLink', guest.id), {}, {
+    portalLinkGuest.value = guest
+    portalLinkModal.value = true
+}
+
+function confirmSendPortalLink() {
+    if (!portalLinkGuest.value) return
+    isSendingPortal.value = true
+    
+    router.post(route('gms.invitations.sendPortalLink', portalLinkGuest.value.id), {}, {
         preserveScroll: true,
-        onSuccess: () => { actionsMenuOpen.value = null; toast(`Portal access link sent to ${guest.name}`) },
-        onError: (errors) => { toast(Object.values(errors)[0] || 'Failed to send portal link', 'error') },
+        onSuccess: () => { 
+            isSendingPortal.value = false
+            portalLinkModal.value = false
+            actionsMenuOpen.value = null
+            guestDrawerOpen.value = false
+            toast(`Portal access link sent to ${portalLinkGuest.value.name}`)
+            portalLinkGuest.value = null
+        },
+        onError: (errors) => { 
+            isSendingPortal.value = false
+            toast(Object.values(errors)[0] || 'Failed to send portal link', 'error') 
+        },
     })
 }
 
@@ -275,7 +330,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     <div class="gms-view-pad">
     <div class="gms-view-header">
       <div>
-        <h1 class="gms-view-title">Invitations</h1>
+        <h1 class="gms-view-title">Roster/Invitations</h1>
         <p class="gms-view-subtitle">Roster for {{ event?.name ?? 'event' }} — everyone added to {{ event?.name ?? 'event' }} to invite them.</p>
       </div>
       <div class="gms-view-actions">
@@ -352,7 +407,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                 <th>Sessions</th>
                 <th>Status</th>
                 <th>Sent / Accepted</th>
-                <th>Passport</th>
+                <th>QID/Passport</th>
                 <th></th>
               </tr>
             </thead>
@@ -374,7 +429,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                   <span class="gms-muted gms-small">{{ g.sessions }} sessions</span>
                 </td>
                 <td>
-                  <span class="inv-status-pill" :class="g.status">
+                  <span class="inv-status-pill" :style="{ '--status-color': statusColor(g.status) }">
                     <span class="inv-status-dot"></span>
                     {{ statusLabel(g.status) }}
                   </span>
@@ -399,13 +454,21 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                       @click="openInviteWizard(g)"
                       style="font-size:12px;"
                     >Invite</GmsBtn>
-                    <!-- Edit button for invited guests -->
+                    <!-- Resend button for invited/pending guests -->
+                    <GmsBtn
+                      v-else-if="g.status === 'invited' || g.status === 'pending'"
+                      variant="ghost"
+                      icon="refresh-cw"
+                      @click="openInviteWizard(g)"
+                      style="font-size:12px;"
+                    >Resend</GmsBtn>
+                    <!-- View button for confirmed/declined guests -->
                     <GmsBtn
                       v-else
                       variant="ghost"
-                      icon="edit"
+                      icon="eye"
                       icon-only
-                      title="Edit invitation"
+                      title="View details"
                       @click="openGuestDrawer(g)"
                     />
                     <!-- More actions -->
@@ -460,7 +523,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                   </div>
                 </td>
                 <td><span class="gms-muted gms-small">{{ g.group }}</span></td>
-                <td><span class="inv-status-pill" :class="g.status"><span class="inv-status-dot"></span>{{ statusLabel(g.status) }}</span></td>
+                <td><span class="inv-status-pill" :style="{ '--status-color': statusColor(g.status) }"><span class="inv-status-dot"></span>{{ statusLabel(g.status) }}</span></td>
                 <td>
                   <span v-if="g.services?.flight" class="inv-status-pill" :class="g.services.flight">
                     <span class="inv-status-dot"></span>
@@ -581,7 +644,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
       <div v-if="activeGuest.email" class="gms-detail-row"><span class="gms-detail-label">Email</span><span class="gms-detail-value">{{ activeGuest.email }}</span></div>
       <div v-if="activeGuest.phone" class="gms-detail-row"><span class="gms-detail-label">Phone</span><span class="gms-detail-value">{{ activeGuest.phone }}</span></div>
       <div class="gms-detail-row"><span class="gms-detail-label">Service Level</span><span class="gms-detail-value"><span class="gms-pill" :style="tierStyle(activeGuest.tier)">{{ tierLabel(activeGuest.tier) }}</span></span></div>
-      <div class="gms-detail-row"><span class="gms-detail-label">Status</span><span class="gms-detail-value"><span class="inv-status-pill" :class="activeGuest.status"><span class="inv-status-dot"></span>{{ statusLabel(activeGuest.status) }}</span></span></div>
+      <div class="gms-detail-row"><span class="gms-detail-label">Status</span><span class="gms-detail-value"><span class="inv-status-pill" :style="{ '--status-color': statusColor(activeGuest.status) }"><span class="inv-status-dot"></span>{{ statusLabel(activeGuest.status) }}</span></span></div>
       <div v-if="activeGuest.group" class="gms-detail-row"><span class="gms-detail-label">Group</span><span class="gms-detail-value">{{ activeGuest.group }}</span></div>
       <div v-if="activeGuest.notes" class="gms-detail-row"><span class="gms-detail-label">Notes</span><span class="gms-detail-value">{{ activeGuest.notes }}</span></div>
 
@@ -619,6 +682,8 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 
     <template #footer>
       <GmsBtn variant="ghost" @click="guestDrawerOpen = false; activeGuest = null">Close</GmsBtn>
+      <GmsBtn v-if="activeGuest?.status !== 'not_invited'" variant="ghost" icon="globe" @click="sendPortalLink(activeGuest)">Send portal link</GmsBtn>
+      <GmsBtn v-if="activeGuest?.status === 'not_invited' || activeGuest?.invitation" variant="ghost" icon="badge" @click="markConfirmed(activeGuest)">Mark confirmed</GmsBtn>
       <GmsBtn variant="primary" icon="arrow-right" @click="router.visit(route('gms.guests.index'))">View Full Profile</GmsBtn>
     </template>
   </GmsDrawer>
@@ -642,6 +707,52 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   >
     <p style="font-size: 13px; color: var(--gms-text-3); margin: 0;">
       The guest will not receive a notification about this action.
+    </p>
+  </GmsConfirmModal>
+
+  <!-- Mark confirmed confirmation modal -->
+  <GmsConfirmModal
+    :open="confirmModal"
+    :loading="isConfirming"
+    title="Mark as Confirmed"
+    :message="confirmingGuest ? `Are you sure you want to mark <strong style='color: var(--gms-text);'>${confirmingGuest.name}</strong> as confirmed?` : ''"
+    description="This action will:"
+    :details="[
+      'Update the guest status to <strong style=\'color: var(--good);\'>confirmed</strong>',
+      'Skip the invitation workflow and RSVP process',
+      'Mark the guest as attending <strong>all offered matches</strong>',
+      'Enable service planning (flights, accommodation, transport)'
+    ]"
+    confirm-text="Mark as Confirmed"
+    confirm-icon="badge"
+    @confirm="confirmMarkConfirmed"
+    @close="confirmModal = false; confirmingGuest = null"
+  >
+    <p style="font-size: 13px; color: var(--gms-text-3); margin: 0;">
+      Use this when a guest has confirmed attendance through an external channel (phone, email, etc.) and you want to bypass the invitation process.
+    </p>
+  </GmsConfirmModal>
+
+  <!-- Send portal link confirmation modal -->
+  <GmsConfirmModal
+    :open="portalLinkModal"
+    :loading="isSendingPortal"
+    title="Send Guest Portal Access"
+    :message="portalLinkGuest ? `Send a secure portal access link to <strong style='color: var(--gms-text);'>${portalLinkGuest.name}</strong>?` : ''"
+    description="This will:"
+    :details="[
+      'Send an <strong>email</strong> with a secure, time-limited access link',
+      'Allow the guest to view their <strong>itinerary and service requests</strong>',
+      'Enable self-service access to event information',
+      'Link expires after <strong>72 hours</strong> for security'
+    ]"
+    confirm-text="Send Portal Link"
+    confirm-icon="globe"
+    @confirm="confirmSendPortalLink"
+    @close="portalLinkModal = false; portalLinkGuest = null"
+  >
+    <p style="font-size: 13px; color: var(--gms-text-3); margin: 0;">
+      The guest will receive an email at <strong style="color: var(--gms-text);">{{ portalLinkGuest?.email || 'their registered email address' }}</strong> with login instructions.
     </p>
   </GmsConfirmModal>
 

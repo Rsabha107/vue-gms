@@ -231,17 +231,17 @@ class GmsFlightController extends Controller
     public function updateLeg(Request $request, string $id, string $legId)
     {
         $validated = $request->validate([
-            'airline' => 'sometimes|string|max:100',
-            'flight_no' => 'sometimes|string|max:12',
-            'from_code' => 'sometimes|string|max:8',
-            'from_city' => 'sometimes|string|max:100',
-            'to_code' => 'sometimes|string|max:8',
-            'to_city' => 'sometimes|string|max:100',
-            'date' => 'sometimes|string|max:16',
-            'dep' => 'sometimes|string|max:12',
-            'arr' => 'sometimes|string|max:12',
-            'cls' => 'sometimes|string|max:16',
-            'dur' => 'sometimes|string|max:16',
+            'airline' => 'nullable|string|max:100',
+            'flight_no' => 'nullable|string|max:12',
+            'from_code' => 'nullable|string|max:8',
+            'from_city' => 'nullable|string|max:100',
+            'to_code' => 'nullable|string|max:8',
+            'to_city' => 'nullable|string|max:100',
+            'date' => 'nullable|string|max:16',
+            'dep' => 'nullable|string|max:12',
+            'arr' => 'nullable|string|max:12',
+            'cls' => 'nullable|string|max:16',
+            'dur' => 'nullable|string|max:16',
         ]);
 
         $flightRequest = FlightRequest::where('code', $id)->firstOrFail();

@@ -17,6 +17,19 @@ use Inertia\Inertia;
 
 class GmsInvitationController extends Controller
 {
+    /**
+     * Cache invitation status IDs
+     */
+    private static $statusIds = null;
+
+    private function getStatusId(string $statusName): ?int
+    {
+        if (self::$statusIds === null) {
+            self::$statusIds = InvitationStatus::pluck('id', 'name')->toArray();
+        }
+        return self::$statusIds[$statusName] ?? null;
+    }
+
     public function index()
     {
         $event = GmsMockData::getEvent();
@@ -25,10 +38,15 @@ class GmsInvitationController extends Controller
         // Roster = guests on this event (via guest_event pivot)
         $roster = [];
         if ($eventId) {
+            // Pre-load all invitation statuses to avoid N+1 queries (using name for consistent frontend checks)
+            $invitationStatuses = \App\Models\InvitationStatus::pluck('name', 'id')->toArray();
+            
             $roster = Guest::with([
                 'status', 
                 'group', 
-                'events', 
+                'events' => function ($q) use ($eventId) {
+                    $q->where('event_id', $eventId);
+                },
                 'invitations' => function ($q) use ($eventId) {
                     $q->where('event_id', $eventId)->with(['matches.venue', 'status']);
                 },
@@ -39,12 +57,14 @@ class GmsInvitationController extends Controller
                 ->whereHas('events', fn($q) => $q->where('event_id', $eventId))
                 ->orderBy('name')
                 ->get()
-                ->map(function ($guest) use ($eventId) {
+                ->map(function ($guest) use ($eventId, $invitationStatuses) {
                     $pivot = $guest->events->firstWhere('id', $eventId)?->pivot;
                     $latestInvitation = $guest->invitations->first();
 
                     // Derive invitation status from pivot + invitation data
-                    $invStatus = $pivot?->status ?? 'not_invited';
+                    $invStatus = $pivot && isset($invitationStatuses[$pivot->status_id]) 
+                        ? $invitationStatuses[$pivot->status_id] 
+                        : 'not_invited';
 
                     // Service statuses
                     $flightRequest = FlightRequest::where('guest_id', $guest->id)
@@ -154,6 +174,7 @@ class GmsInvitationController extends Controller
             'emailTemplates' => GmsMockData::getEmailTemplates(),
             'matches'        => GmsMockData::getMatches(),
             'event'          => $event,
+            'invitationStatuses' => \App\Models\InvitationStatus::select('name', 'label', 'color')->get()->toArray(),
         ]);
     }
 
@@ -179,7 +200,7 @@ class GmsInvitationController extends Controller
             $guest = Guest::find($guestId);
             if ($guest && !$guest->events()->where('event_id', $eventId)->exists()) {
                 $guest->events()->attach($eventId, [
-                    'status' => 'not_invited',
+                    'status_id' => $this->getStatusId('not_invited'),
                     'added_at' => now(),
                 ]);
                 $added++;
@@ -230,14 +251,14 @@ class GmsInvitationController extends Controller
         // Ensure guest is on the event roster; add if not
         if (!$guest->events()->where('event_id', $eventId)->exists()) {
             $guest->events()->attach($eventId, [
-                'status' => 'invited',
+                'status_id' => $this->getStatusId('invited'),
                 'added_at' => now(),
                 'invited_at' => now(),
             ]);
         } else {
             // Update pivot status to invited
             $guest->events()->updateExistingPivot($eventId, [
-                'status' => 'invited',
+                'status_id' => $this->getStatusId('invited'),
                 'invited_at' => now(),
             ]);
         }
@@ -284,7 +305,7 @@ class GmsInvitationController extends Controller
         $subject = str_replace(array_keys($replacements), array_values($replacements), $validated['subject']);
         $body = str_replace(array_keys($replacements), array_values($replacements), $validated['body']);
 
-        $sentStatus = InvitationStatus::where('name', 'sent')->first();
+        $invitedStatus = InvitationStatus::where('name', 'invited')->first();
 
         // Check if invitation already exists for this guest + event
         $invitation = Invitation::where('guest_id', $guest->id)
@@ -296,7 +317,7 @@ class GmsInvitationController extends Controller
             $invitation->update([
                 'subject'   => $subject,
                 'body'      => $body,
-                'status_id' => $sentStatus?->id,
+                'status_id' => $invitedStatus?->id,
                 'sent_at'   => now(),
             ]);
             
@@ -312,7 +333,7 @@ class GmsInvitationController extends Controller
                 'event_id'  => $eventId,
                 'subject'   => $subject,
                 'body'      => $body,
-                'status_id' => $sentStatus?->id,
+                'status_id' => $invitedStatus?->id,
                 'sent_at'   => now(),
             ]);
 
@@ -359,7 +380,7 @@ class GmsInvitationController extends Controller
             // Update pivot status
             if ($invitation->event_id) {
                 $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
-                    'status' => 'confirmed',
+                    'status_id' => $this->getStatusId('confirmed'),
                 ]);
             }
         }
@@ -369,56 +390,120 @@ class GmsInvitationController extends Controller
 
     public function markConfirmed(Request $request, $id)
     {
-        $invitation = Invitation::with(['guest'])->findOrFail($id);
-        $confirmedStatus = InvitationStatus::where('name', 'confirmed')->first();
+        // Handle two cases:
+        // 1. $id is an invitation ID (has invitation record)
+        // 2. $id is a guest ID (no invitation, just update pivot - white glove service)
+        
+        $invitation = Invitation::with(['guest'])->find($id);
+        
+        if ($invitation) {
+            // Case 1: Invitation exists
+            $confirmedStatus = InvitationStatus::where('name', 'confirmed')->first();
 
-        $invitation->update([
-            'status_id' => $confirmedStatus?->id,
-            'responded_at' => $invitation->responded_at ?? now(),
-        ]);
+            $invitation->update([
+                'status_id' => $confirmedStatus?->id,
+                'responded_at' => $invitation->responded_at ?? now(),
+            ]);
 
-        if ($invitation->guest) {
+            if ($invitation->guest) {
+                $confirmedStatus = \App\Models\GuestStatus::where('name', 'confirmed')->first();
+                if ($confirmedStatus) {
+                    $invitation->guest->update([
+                        'status_id' => $confirmedStatus->id,
+                    ]);
+                }
+                if ($invitation->event_id) {
+                    $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
+                        'status_id' => $this->getStatusId('confirmed'),
+                    ]);
+                }
+            }
+
+            return back()->with('success', $invitation->guest->name . ' has been marked as confirmed.');
+        } else {
+            // Case 2: No invitation (not_invited status) - treat $id as guest ID
+            $guest = Guest::findOrFail($id);
+            $event = GmsMockData::getEvent();
+            $eventId = $event['id'] ?? null;
+
+            if (!$eventId) {
+                return back()->with('error', 'No active event selected.');
+            }
+
+            // Update pivot status to confirmed (white glove service)
+            $guest->events()->updateExistingPivot($eventId, [
+                'status_id' => $this->getStatusId('confirmed'),
+            ]);
+
+            // Update guest status
             $confirmedStatus = \App\Models\GuestStatus::where('name', 'confirmed')->first();
             if ($confirmedStatus) {
-                $invitation->guest->update([
+                $guest->update([
                     'status_id' => $confirmedStatus->id,
                 ]);
             }
-            if ($invitation->event_id) {
-                $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
-                    'status' => 'confirmed',
-                ]);
-            }
-        }
 
-        return back()->with('success', $invitation->guest->name . ' has been marked as confirmed.');
+            return back()->with('success', $guest->name . ' has been marked as confirmed (no invitation sent).');
+        }
     }
 
     public function markDeclined(Request $request, $id)
     {
-        $invitation = Invitation::with(['guest'])->findOrFail($id);
-        $declinedStatus = InvitationStatus::where('name', 'declined')->first();
+        // Handle two cases:
+        // 1. $id is an invitation ID (has invitation record)
+        // 2. $id is a guest ID (no invitation, just update pivot)
+        
+        $invitation = Invitation::with(['guest'])->find($id);
+        
+        if ($invitation) {
+            // Case 1: Invitation exists
+            $declinedStatus = InvitationStatus::where('name', 'declined')->first();
 
-        $invitation->update([
-            'status_id' => $declinedStatus?->id,
-            'responded_at' => $invitation->responded_at ?? now(),
-        ]);
+            $invitation->update([
+                'status_id' => $declinedStatus?->id,
+                'responded_at' => $invitation->responded_at ?? now(),
+            ]);
 
-        if ($invitation->guest) {
+            if ($invitation->guest) {
+                $declinedStatus = \App\Models\GuestStatus::where('name', 'declined')->first();
+                if ($declinedStatus) {
+                    $invitation->guest->update([
+                        'status_id' => $declinedStatus->id,
+                    ]);
+                }
+                if ($invitation->event_id) {
+                    $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
+                        'status_id' => $this->getStatusId('declined'),
+                    ]);
+                }
+            }
+
+            return back()->with('success', $invitation->guest->name . ' has been marked as declined.');
+        } else {
+            // Case 2: No invitation (not_invited status) - treat $id as guest ID
+            $guest = Guest::findOrFail($id);
+            $event = GmsMockData::getEvent();
+            $eventId = $event['id'] ?? null;
+
+            if (!$eventId) {
+                return back()->with('error', 'No active event selected.');
+            }
+
+            // Update pivot status to declined
+            $guest->events()->updateExistingPivot($eventId, [
+                'status_id' => $this->getStatusId('declined'),
+            ]);
+
+            // Update guest status
             $declinedStatus = \App\Models\GuestStatus::where('name', 'declined')->first();
             if ($declinedStatus) {
-                $invitation->guest->update([
+                $guest->update([
                     'status_id' => $declinedStatus->id,
                 ]);
             }
-            if ($invitation->event_id) {
-                $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
-                    'status' => 'declined',
-                ]);
-            }
-        }
 
-        return back()->with('success', $invitation->guest->name . ' has been marked as declined.');
+            return back()->with('success', $guest->name . ' has been marked as declined (no invitation sent).');
+        }
     }
 
     public function resetToPending(Request $request, $id)
@@ -426,11 +511,8 @@ class GmsInvitationController extends Controller
         $invitation = Invitation::with(['guest', 'matches'])->findOrFail($id);
         $notInvitedStatus = InvitationStatus::where('name', 'not_invited')->first();
 
-        foreach ($invitation->matches as $match) {
-            $invitation->matches()->updateExistingPivot($match->id, [
-                'response' => null,
-            ]);
-        }
+        // Detach all matches when resetting to not invited
+        $invitation->matches()->detach();
 
         $invitation->update([
             'status_id' => $notInvitedStatus?->id,
@@ -446,12 +528,12 @@ class GmsInvitationController extends Controller
             }
             if ($invitation->event_id) {
                 $invitation->guest->events()->updateExistingPivot($invitation->event_id, [
-                    'status' => 'not_invited',
+                    'status_id' => $this->getStatusId('not_invited'),
                 ]);
             }
         }
 
-        return back()->with('success', $invitation->guest->name . ' has been reset to pending.');
+        return back()->with('success', $invitation->guest->name . ' has been reset to not invited.');
     }
 
     /**

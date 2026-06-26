@@ -18,31 +18,37 @@ class InvitationStatusSeeder extends Seeder
                 'name' => 'not_invited',
                 'label' => 'Not Invited',
                 'description' => 'Guest has not been invited yet',
+                'color' => '#6b7280', // Gray
             ],
             [
-                'name' => 'sent',
-                'label' => 'Sent',
+                'name' => 'invited',
+                'label' => 'Invited',
                 'description' => 'Invitation has been sent to guest',
+                'color' => '#3b82f6', // Blue
             ],
             [
                 'name' => 'pending',
                 'label' => 'Pending',
                 'description' => 'Awaiting guest response',
+                'color' => '#f59e0b', // Amber
             ],
             [
                 'name' => 'accepted',
                 'label' => 'Accepted',
                 'description' => 'Guest has accepted the invitation',
+                'color' => '#10b981', // Green
             ],
             [
                 'name' => 'confirmed',
                 'label' => 'Confirmed',
                 'description' => 'Attendance confirmed',
+                'color' => '#059669', // Dark Green
             ],
             [
                 'name' => 'declined',
                 'label' => 'Declined',
                 'description' => 'Guest has declined the invitation',
+                'color' => '#ef4444', // Red
             ],
         ];
 

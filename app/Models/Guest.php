@@ -34,15 +34,11 @@ class Guest extends Model
         'flightPreferences',
         'accommodationPreferences',
         'transportationPreferences',
-        'companionList',
-        'companions',
     ];
 
     protected $casts = [
         'facilities' => 'array',
         'facilityOverrides' => 'array',
-        'companionList' => 'array',
-        'companions' => 'integer',
     ];
 
     protected $attributes = [
@@ -64,8 +60,9 @@ class Guest extends Model
     public function events()
     {
         return $this->belongsToMany(Event::class, 'guest_event')
-            ->withPivot('status', 'added_at', 'invited_at')
-            ->withTimestamps();
+            ->withPivot('status_id', 'added_at', 'invited_at', 'companions', 'preference_overrides')
+            ->withTimestamps()
+            ->using(\App\Models\GuestEvent::class);
     }
 
     /**

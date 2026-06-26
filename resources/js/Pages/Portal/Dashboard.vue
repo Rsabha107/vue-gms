@@ -7,6 +7,7 @@ import PortalInput from '@/Components/Portal/PortalInput.vue'
 import PortalSelect from '@/Components/Portal/PortalSelect.vue'
 import PortalTextarea from '@/Components/Portal/PortalTextarea.vue'
 import GmsDatePicker from '@/Components/Gms/GmsDatePicker.vue'
+import GmsTimePicker from '@/Components/Gms/GmsTimePicker.vue'
 
 defineOptions({ layout: PortalLayout })
 
@@ -428,13 +429,15 @@ function submitTransportRequest() {
               />
               <p v-if="flightForm.errors.departure_date" class="portal-form-error">{{ flightForm.errors.departure_date }}</p>
             </div>
-            <PortalInput
-              v-model="flightForm.departure_time"
-              type="time"
-              label="Preferred Time"
-              help="Your preferred departure time"
-              :error="flightForm.errors.departure_time"
-            />
+            <div class="portal-form-group">
+              <label class="portal-form-label">Preferred Time</label>
+              <GmsTimePicker
+                v-model="flightForm.departure_time"
+                placeholder="Select departure time"
+                :error="!!flightForm.errors.departure_time"
+              />
+              <p v-if="flightForm.errors.departure_time" class="portal-form-error">{{ flightForm.errors.departure_time }}</p>
+            </div>
           </div>
         </div>
 
@@ -456,13 +459,15 @@ function submitTransportRequest() {
               />
               <p v-if="flightForm.errors.return_date" class="portal-form-error">{{ flightForm.errors.return_date }}</p>
             </div>
-            <PortalInput
-              v-model="flightForm.return_time"
-              type="time"
-              label="Preferred Time"
-              help="Your preferred return time"
-              :error="flightForm.errors.return_time"
-            />
+            <div class="portal-form-group">
+              <label class="portal-form-label">Preferred Time</label>
+              <GmsTimePicker
+                v-model="flightForm.return_time"
+                placeholder="Select return time"
+                :error="!!flightForm.errors.return_time"
+              />
+              <p v-if="flightForm.errors.return_time" class="portal-form-error">{{ flightForm.errors.return_time }}</p>
+            </div>
           </div>
         </div>
 
@@ -522,20 +527,34 @@ function submitTransportRequest() {
         />
 
         <div class="portal-form-row">
-          <PortalInput
-            v-model="accommodationForm.check_in"
-            type="date"
-            label="Check-In Date"
-            required
-            :error="accommodationForm.errors.check_in"
-          />
-          <PortalInput
-            v-model="accommodationForm.check_out"
-            type="date"
-            label="Check-Out Date"
-            required
-            :error="accommodationForm.errors.check_out"
-          />
+          <div class="portal-form-group">
+            <label class="portal-form-label">
+              Check-In Date
+              <span class="required">*</span>
+            </label>
+            <GmsDatePicker
+              v-model="accommodationForm.check_in"
+              placeholder="Select check-in date"
+              dateFormat="Y-m-d"
+              :minDate="new Date().toISOString().split('T')[0]"
+              :error="!!accommodationForm.errors.check_in"
+            />
+            <p v-if="accommodationForm.errors.check_in" class="portal-form-error">{{ accommodationForm.errors.check_in }}</p>
+          </div>
+          <div class="portal-form-group">
+            <label class="portal-form-label">
+              Check-Out Date
+              <span class="required">*</span>
+            </label>
+            <GmsDatePicker
+              v-model="accommodationForm.check_out"
+              placeholder="Select check-out date"
+              dateFormat="Y-m-d"
+              :minDate="accommodationForm.check_in || new Date().toISOString().split('T')[0]"
+              :error="!!accommodationForm.errors.check_out"
+            />
+            <p v-if="accommodationForm.errors.check_out" class="portal-form-error">{{ accommodationForm.errors.check_out }}</p>
+          </div>
         </div>
 
         <div class="portal-form-row">
@@ -609,20 +628,32 @@ function submitTransportRequest() {
         </div>
 
         <div class="portal-form-row">
-          <PortalInput
-            v-model="transportForm.date"
-            type="date"
-            label="Date"
-            required
-            :error="transportForm.errors.date"
-          />
-          <PortalInput
-            v-model="transportForm.time"
-            type="time"
-            label="Time"
-            required
-            :error="transportForm.errors.time"
-          />
+          <div class="portal-form-group">
+            <label class="portal-form-label">
+              Date
+              <span class="required">*</span>
+            </label>
+            <GmsDatePicker
+              v-model="transportForm.date"
+              placeholder="Select transport date"
+              dateFormat="Y-m-d"
+              :minDate="new Date().toISOString().split('T')[0]"
+              :error="!!transportForm.errors.date"
+            />
+            <p v-if="transportForm.errors.date" class="portal-form-error">{{ transportForm.errors.date }}</p>
+          </div>
+          <div class="portal-form-group">
+            <label class="portal-form-label">
+              Time
+              <span class="required">*</span>
+            </label>
+            <GmsTimePicker
+              v-model="transportForm.time"
+              placeholder="Select transport time"
+              :error="!!transportForm.errors.time"
+            />
+            <p v-if="transportForm.errors.time" class="portal-form-error">{{ transportForm.errors.time }}</p>
+          </div>
         </div>
 
         <PortalInput
