@@ -554,6 +554,11 @@ function decrementPax() {
 const pendingGuestRequests = computed(() =>
     localGuestReqs.value.filter(r => !r.fulfilledById)
 )
+
+const selectedGuestPendingRequest = computed(() => {
+    if (!selectedGuestId.value || bookingFromGuestRequest.value) return null
+    return pendingGuestRequests.value.find(r => r.guestId === selectedGuestId.value)
+})
 const fulfilledGuestRequests = computed(() =>
     localGuestReqs.value.filter(r => r.fulfilledById)
 )
@@ -951,33 +956,34 @@ function saveEdit() {
               </div>
             </div>
             <div class="gr-prefs">
-              <div class="gr-pref">
+              <div v-if="r.destCity || r.destination" class="gr-pref">
                 <span class="gr-pref-label">Route</span>
-                <span class="gr-pref-value">
-                  {{ r.legs?.find(l => l.dir === 'Inbound')?.fromCity || r.legs?.find(l => l.dir === 'Outbound')?.toCity || '—' }} → Doha
-                </span>
+                <span class="gr-pref-value">{{ r.destCity || r.destination }} → Doha{{ r.outboundDate ? ' (round trip)' : ' (one way)' }}</span>
               </div>
-              <div class="gr-pref" v-if="r.legs?.find(l => l.dir === 'Inbound')?.date">
-                <span class="gr-pref-label">Inbound</span>
-                <span class="gr-pref-value">{{ fmtDateShort(r.legs.find(l => l.dir === 'Inbound')?.date) }}</span>
+              <div v-if="r.date" class="gr-pref">
+                <span class="gr-pref-label">Departure</span>
+                <span class="gr-pref-value">{{ fmtDateShort(r.date) }}{{ r.time ? ' · ' + r.time : '' }}</span>
               </div>
-              <div class="gr-pref" v-if="r.legs?.find(l => l.dir === 'Outbound')?.date">
+              <div v-if="r.outboundDate" class="gr-pref">
                 <span class="gr-pref-label">Return</span>
-                <span class="gr-pref-value">{{ fmtDateShort(r.legs.find(l => l.dir === 'Outbound')?.date) }}</span>
+                <span class="gr-pref-value">{{ fmtDateShort(r.outboundDate) }}{{ r.outboundTime ? ' · ' + r.outboundTime : '' }}</span>
               </div>
-              <div class="gr-pref">
+              <div v-if="r.class" class="gr-pref">
                 <span class="gr-pref-label">Class</span>
-                <span :class="classPillClass(r.class)">{{ r.class }}</span>
+                <span class="gr-pref-value">{{ r.class }}</span>
               </div>
-              <div class="gr-pref">
-                <span class="gr-pref-label">Pax</span>
+              <div v-if="r.pax" class="gr-pref">
+                <span class="gr-pref-label">Passengers</span>
                 <span class="gr-pref-value">{{ r.pax }}</span>
               </div>
             </div>
             <div v-if="r.notes" class="gr-notes">"{{ r.notes }}"</div>
           </div>
           <div class="gr-actions">
-            <GmsBtn variant="primary" icon="plane" :iconSize="13" @click="bookFromRequest(r)">Book flight</GmsBtn>
+            <button class="gms-btn gms-btn-primary" @click.stop="bookFromRequest(r)">
+              <GmsIcon name="plane" :size="14" />
+              Book flight
+            </button>
           </div>
         </div>
 
@@ -1242,6 +1248,12 @@ function saveEdit() {
       </div>
       <div v-if="activeReq.notes" class="flt-req-note">{{ activeReq.notes }}</div>
 
+      <!-- Guest remarks -->
+      <div v-if="activeReq.guestRemarks" style="margin-top:14px;padding:12px 14px;background:#fef3c7;border:1px solid #fef08a;border-radius:8px;">
+        <div style="font-size:11px;font-weight:600;color:#a16207;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Guest remarks</div>
+        <div style="font-size:13px;color:#854d0e;line-height:1.5;font-style:italic;">"{{ activeReq.guestRemarks }}"</div>
+      </div>
+
     <template #footer>
       <GmsBtn variant="ghost" icon="user" :iconSize="13">Guest profile</GmsBtn>
       <GmsBtn variant="ghost" icon="edit" :iconSize="13" @click="openEditModal(activeReq)">Edit</GmsBtn>
@@ -1269,6 +1281,10 @@ function saveEdit() {
       <div v-if="bookingFromGuestRequest" class="gr-booking-banner">
         <GmsIcon name="globe" :size="14" />
         <span>Booking from guest request {{ bookingFromGuestRequest.id }} — fill in flight details below</span>
+      </div>
+      <div v-if="bookingFromGuestRequest?.notes" style="padding:12px 14px;background:var(--gms-bg);border:1px solid var(--gms-border);border-radius:8px;font-size:13px;color:var(--gms-text-2);font-style:italic;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:600;color:var(--gms-text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-style:normal;">Guest's special request</div>
+        "{{ bookingFromGuestRequest.notes }}"
       </div>
 
       <!-- Step 1: Guest selection -->
@@ -1304,6 +1320,14 @@ function saveEdit() {
       </div>
 
       <!-- Step 2: Flight details (only shown when guest selected) -->
+      <!-- Pending guest request warning -->
+      <div v-if="selectedGuestPendingRequest" style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:#fef3c7;border:1px solid #f59e0b33;border-radius:8px;margin-top:14px;">
+        <GmsIcon name="alert-triangle" :size="16" style="color:#a16207;flex-shrink:0;margin-top:1px;" />
+        <div style="flex:1;font-size:13px;color:#92400e;line-height:1.5;">
+          <strong>This guest has a pending portal request</strong> ({{ selectedGuestPendingRequest.id }}). Consider booking from the <em>Guest requests</em> tab to link it. Proceeding here creates a separate booking.
+        </div>
+      </div>
+
       <div :class="['nf-details', { 'off': !selectedGuest }]">
         <div class="nf-step" style="margin-top:20px;">2 · Flight details</div>
         <div v-if="!selectedGuest" class="gms-muted" style="font-size:12.5px;margin-top:6px;">
@@ -1489,7 +1513,7 @@ function saveEdit() {
         {{ selectedGuest ? `${selectedGuest.name} · ${form.class} · ${form.pax} pax` : 'No guest selected' }}
       </span>
       <div style="margin-left:auto;display:flex;gap:10px;">
-        <GmsBtn variant="ghost" @click="newModal = false; selectedGuestId = null">Cancel</GmsBtn>
+        <GmsBtn variant="ghost" @click="newModal = false; selectedGuestId = null; bookingFromGuestRequest = null">Cancel</GmsBtn>
         <GmsBtn variant="primary" :disabled="!selectedGuest || form.processing" @click="saveNew">
           <GmsIcon name="plus" :size="13" />
           Create request

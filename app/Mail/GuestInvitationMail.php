@@ -35,27 +35,52 @@ class GuestInvitationMail extends Mailable
     /**
      * Get the message envelope.
      */
+    private function buildMergeData(): array
+    {
+        return [
+            'guest_name'     => $this->guest->name,
+            'guest_title'    => $this->guest->title ?? '',
+            'guest_email'    => $this->guest->email ?? '',
+            'event_name'     => $this->eventName,
+            'event_location' => $this->venueName,
+            'tier_name'      => $this->guest->tierInfo?->name ?? '',
+            'rsvp_url'       => route('rsvp.show', ['token' => $this->invitation->rsvp_token]),
+        ];
+    }
+
+    private function replaceTags(string $text, array $data): string
+    {
+        foreach ($data as $key => $value) {
+            $text = str_replace(
+                ['{{' . $key . '}}', '{{ ' . $key . ' }}', '{' . $key . '}'],
+                $value ?? '',
+                $text
+            );
+        }
+        return $text;
+    }
+
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: $this->invitation->subject,
+            subject: $this->replaceTags($this->invitation->subject, $this->buildMergeData()),
         );
     }
 
-    /**
-     * Get the message content definition.
-     */
     public function content(): Content
     {
+        $mergeData = $this->buildMergeData();
+        $body = $this->replaceTags($this->invitation->body, $mergeData);
+
         return new Content(
             view: 'emails.guest-invitation',
             with: [
                 'guestName' => $this->guest->name,
-                'emailBody' => $this->invitation->body,
+                'emailBody' => $body,
                 'matches' => $this->matches,
                 'eventName' => $this->eventName,
                 'venueName' => $this->venueName,
-                'rsvpUrl' => route('rsvp.show', ['token' => $this->invitation->rsvp_token]),
+                'rsvpUrl' => $mergeData['rsvp_url'],
             ],
         );
     }

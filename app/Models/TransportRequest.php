@@ -19,6 +19,7 @@ class TransportRequest extends Model
         'datetime',
         'driver',
         'notes',
+        'guest_remarks',
         'completed_at',
         'fulfilled_by_id',
         'fulfills_request_id',

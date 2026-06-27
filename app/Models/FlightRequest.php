@@ -17,6 +17,7 @@ class FlightRequest extends Model
         'pax',
         'requested_at',
         'note',
+        'guest_remarks',
         'boarded_at',
         'fulfilled_by_id',
         'fulfills_request_id',

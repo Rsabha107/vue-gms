@@ -19,6 +19,7 @@
         .badge-flight_confirmed { background: rgba(122, 90, 138, 0.12); color: #7a5a8a; }
         .badge-accommodation_confirmed { background: rgba(63, 125, 82, 0.12); color: #3f7d52; }
         .badge-transport_confirmed { background: rgba(176, 96, 56, 0.12); color: #b06038; }
+        .badge-service_review { background: rgba(245, 158, 11, 0.12); color: #92400e; }
         .match-card { border: 1px solid rgba(26,18,16,0.1); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
         .match-stage { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #8a1f3d; margin-bottom: 4px; }
         .match-teams { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
@@ -49,6 +50,7 @@
                     'flight_confirmed' => 'Flight Confirmed',
                     'accommodation_confirmed' => 'Accommodation Confirmed',
                     'transport_confirmed' => 'Transport Confirmed',
+                    'service_review' => 'Pending Review',
                 ];
             @endphp
             <span class="badge badge-{{ $templateType }}">{{ $badgeLabels[$templateType] ?? ucfirst(str_replace('_', ' ', $templateType)) }}</span>

@@ -103,6 +103,11 @@ function refreshRequests() {
 const localGuestReqs = ref(props.guestRequests.map(r => ({ ...r })))
 const pendingGuestRequests = computed(() => localGuestReqs.value.filter(r => !r.fulfilledById))
 const fulfilledGuestRequests = computed(() => localGuestReqs.value.filter(r => r.fulfilledById))
+
+const selectedGuestPendingRequest = computed(() => {
+    if (!selectedGuestId.value || bookingFromGuestRequest.value) return null
+    return pendingGuestRequests.value.find(r => r.guestId === selectedGuestId.value)
+})
 const showFulfilled = ref(false)
 const bookingFromGuestRequest = ref(null)
 
@@ -641,32 +646,13 @@ function saveHotel() {
                 <div class="gr-code">{{ r.id }} · submitted {{ fmtDateShort(r.submitted?.split(' ')[0]) }}</div>
               </div>
             </div>
-            <div class="gr-prefs">
-              <div class="gr-pref">
-                <span class="gr-pref-label">Hotel preference</span>
-                <span class="gr-pref-value">{{ r.hotelName || '—' }}</span>
-              </div>
-              <div class="gr-pref">
-                <span class="gr-pref-label">Room type</span>
-                <span class="gr-pref-value">{{ r.roomType || '—' }}</span>
-              </div>
-              <div class="gr-pref">
-                <span class="gr-pref-label">Check-in</span>
-                <span class="gr-pref-value">{{ fmtDateShort(r.checkIn) }}</span>
-              </div>
-              <div class="gr-pref">
-                <span class="gr-pref-label">Check-out</span>
-                <span class="gr-pref-value">{{ fmtDateShort(r.checkOut) }}</span>
-              </div>
-              <div class="gr-pref">
-                <span class="gr-pref-label">Nights</span>
-                <span class="gr-pref-value">{{ r.nights }}</span>
-              </div>
-            </div>
             <div v-if="r.notes" class="gr-notes">"{{ r.notes }}"</div>
           </div>
           <div class="gr-actions">
-            <GmsBtn variant="primary" icon="building" :iconSize="13" @click="bookFromRequest(r)">Book room</GmsBtn>
+            <button class="gms-btn gms-btn-primary" @click.stop="bookFromRequest(r)">
+              <GmsIcon name="building" :size="14" />
+              Book room
+            </button>
           </div>
         </div>
 
@@ -792,6 +778,10 @@ function saveHotel() {
       <div class="gms-detail-row"><span class="gms-detail-label">Check-out</span><span class="gms-detail-value gms-mono">{{ fmtDateShort(activeReq.checkOut) }}</span></div>
       <div class="gms-detail-row"><span class="gms-detail-label">Nights</span><span class="gms-detail-value">{{ activeReq.nights }}</span></div>
       <div v-if="activeReq.notes" class="gms-detail-row"><span class="gms-detail-label">Notes</span><span class="gms-detail-value">{{ activeReq.notes }}</span></div>
+      <div v-if="activeReq.guestRemarks" style="margin-top:14px;padding:12px 14px;background:#fef3c7;border:1px solid #fef08a;border-radius:8px;">
+        <div style="font-size:11px;font-weight:600;color:#a16207;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Guest remarks</div>
+        <div style="font-size:13px;color:#854d0e;line-height:1.5;font-style:italic;">"{{ activeReq.guestRemarks }}"</div>
+      </div>
     </template>
     <template #footer>
       <GmsBtn variant="ghost" icon="user" :iconSize="13">Guest profile</GmsBtn>
@@ -813,6 +803,10 @@ function saveHotel() {
       <div v-if="bookingFromGuestRequest" class="gr-booking-banner">
         <GmsIcon name="globe" :size="14" />
         <span>Booking from guest request {{ bookingFromGuestRequest.id }} — select hotel and confirm details</span>
+      </div>
+      <div v-if="bookingFromGuestRequest?.notes" style="padding:12px 14px;background:var(--gms-bg);border:1px solid var(--gms-border);border-radius:8px;font-size:13px;color:var(--gms-text-2);font-style:italic;">
+        <div style="font-size:11px;font-weight:600;color:var(--gms-text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-style:normal;">Guest's special request</div>
+        "{{ bookingFromGuestRequest.notes }}"
       </div>
       <div class="gms-field">
         <label class="gms-label">Guest</label>
@@ -844,6 +838,12 @@ function saveHotel() {
           />
         </template>
       </div>
+      <div v-if="selectedGuestPendingRequest" style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:#fef3c7;border:1px solid #f59e0b33;border-radius:8px;">
+        <GmsIcon name="alert-triangle" :size="16" style="color:#a16207;flex-shrink:0;margin-top:1px;" />
+        <div style="flex:1;font-size:13px;color:#92400e;line-height:1.5;">
+          <strong>This guest has a pending portal request</strong> ({{ selectedGuestPendingRequest.id }}). Consider booking from the <em>Guest requests</em> tab to link it. Proceeding here creates a separate booking.
+        </div>
+      </div>
       <div class="gms-form-grid">
         <div class="gms-field">
           <label class="gms-label">Hotel</label>
@@ -871,7 +871,7 @@ function saveHotel() {
       </div>
     </div>
     <template #footer>
-      <button class="gms-btn gms-btn-ghost" @click="newModal = false; selectedGuestId = null">Cancel</button>
+      <button class="gms-btn gms-btn-ghost" @click="newModal = false; selectedGuestId = null; bookingFromGuestRequest = null">Cancel</button>
       <button class="gms-btn gms-btn-primary" :disabled="form.processing" @click="saveNew">Create Request</button>
     </template>
   </GmsModal>

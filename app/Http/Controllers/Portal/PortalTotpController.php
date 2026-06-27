@@ -29,13 +29,15 @@ class PortalTotpController extends Controller
 
         $google2fa = new Google2FA();
         $secret = $pivot->totp_secret;
-        $isSetup = !empty($secret);
+        $isSetup = !empty($secret) && $request->session()->get("portal_totp_scanned_{$guest->id}");
         $qrSvg = null;
 
-        if (!$isSetup) {
+        if (empty($secret)) {
             $secret = $google2fa->generateSecretKey();
             $guest->events()->updateExistingPivot($event->id, ['totp_secret' => $secret]);
+        }
 
+        if (!$isSetup) {
             $qrUrl = $google2fa->getQRCodeUrl(
                 config('app.name', 'GMS'),
                 $guest->email ?? $guest->name,
@@ -72,6 +74,7 @@ class PortalTotpController extends Controller
         if (!$pivot || !$pivot->totp_secret) abort(422, 'TOTP not configured.');
 
         $google2fa = new Google2FA();
+        $google2fa->setWindow(2);
         $valid = $google2fa->verifyKey($pivot->totp_secret, $request->code);
 
         if (!$valid) {
@@ -79,6 +82,7 @@ class PortalTotpController extends Controller
         }
 
         $request->session()->put("portal_totp_verified_{$guest->id}", true);
+        $request->session()->put("portal_totp_scanned_{$guest->id}", true);
 
         return redirect()->to(
             \Illuminate\Support\Facades\URL::signedRoute('portal.dashboard', ['guest' => $guest->id])

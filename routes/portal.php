@@ -48,6 +48,9 @@ Route::prefix('portal')->name('portal.')->group(function () {
     Route::delete('/services/transport/{guest}/{id}', [PortalServiceController::class, 'destroyTransport'])
         ->name('services.transport.destroy');
 
+    Route::post('/services/{type}/{guest}/{id}/remarks', [PortalServiceController::class, 'submitRemarks'])
+        ->name('services.remarks');
+
     Route::post('/companions/{guest}', [PortalServiceController::class, 'saveCompanions'])
         ->name('companions.save');
     

@@ -35,6 +35,7 @@ class GmsTransportController extends Controller
                 'datetime'            => $r->datetime,
                 'driver'              => $r->driver,
                 'notes'               => $r->notes,
+                'guestRemarks'        => $r->guest_remarks,
                 'source'              => $r->source,
                 'initiatedBy'         => $r->initiated_by,
                 'fulfilledById'       => $r->fulfilled_by_id,
@@ -76,14 +77,13 @@ class GmsTransportController extends Controller
             'guestRequests' => $guestRequests,
             'vehicleBlocks' => $vehicleBlocks,
             'guests'        => Guest::where('guestType', 'international')
-                ->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                ->with(['tierInfo', 'group', 'invitation' => function($query) use ($eventId) {
-                    $query->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                        ->with('status');
-                }])
+                ->when($eventId, fn($q) => $q->whereHas('events', fn($eq) => $eq->where('event_id', $eventId)))
+                ->with(['tierInfo', 'group', 'events' => fn($q) => $q->where('event_id', $eventId)])
                 ->orderBy('name')
                 ->get()
-                ->map(function($g) {
+                ->map(function($g) use ($eventId) {
+                    $pivotStatus = $g->events->firstWhere('id', $eventId)?->pivot?->status_id;
+                    $statusName = $pivotStatus ? (\App\Models\InvitationStatus::find($pivotStatus)?->name ?? null) : null;
                     return [
                         'id' => $g->id,
                         'name' => $g->name,
@@ -92,8 +92,8 @@ class GmsTransportController extends Controller
                         'group' => $g->group->name ?? null,
                         'host' => $g->host,
                         'email' => $g->email,
-                        'invitationStatus' => $g->invitation?->status?->name ?? null,
-                        'hasConfirmedInvitation' => $g->invitation?->status?->name === 'confirmed',
+                        'invitationStatus' => $statusName,
+                        'hasConfirmedInvitation' => $statusName === 'confirmed',
                     ];
                 }),
             'tiers'  => GmsMockData::getTiers(),
@@ -135,6 +135,20 @@ class GmsTransportController extends Controller
             'driver' => 'TBD',
             'notes' => $validated['notes'],
         ]);
+
+        $guest = Guest::find($validated['guestId']);
+        if ($guest?->email) {
+            $portalUrl = null;
+            try { $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest); } catch (\Throwable $e) {}
+            \App\Services\Gms\ServiceConfirmationService::sendServiceReview($guest, $event['name'] ?? '', 'Transport', [
+                'Booking Code' => $code,
+                'Type'         => $validated['type'],
+                'Vehicle'      => $validated['vehicle'] ?? 'TBD',
+                'Pickup'       => $validated['pickupLocation'],
+                'Drop-off'     => $validated['dropoffLocation'],
+                'Date & Time'  => $validated['datetime'],
+            ], $portalUrl);
+        }
 
         return back()->with('success', 'Transport request created.');
     }
@@ -206,7 +220,7 @@ class GmsTransportController extends Controller
             'event_id'             => $guestRequest->event_id,
             'guest_id'             => $validated['guestId'],
             'code'                 => $code,
-            'status_id'            => 'pending',
+            'status_id'            => \App\Models\InvitationStatus::where('name', 'pending')->value('id'),
             'type'                 => $validated['type'],
             'vehicle'              => $validated['vehicle'],
             'pickup_location'      => $validated['pickupLocation'],
@@ -220,6 +234,21 @@ class GmsTransportController extends Controller
         ]);
 
         $guestRequest->update(['fulfilled_by_id' => $booking->id]);
+
+        $guest = Guest::find($validated['guestId']);
+        if ($guest?->email) {
+            $event = GmsMockData::getEvent();
+            $portalUrl = null;
+            try { $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest); } catch (\Throwable $e) {}
+            \App\Services\Gms\ServiceConfirmationService::sendServiceReview($guest, $event['name'] ?? '', 'Transport', [
+                'Booking Code' => $booking->code,
+                'Type'         => $validated['type'],
+                'Vehicle'      => $validated['vehicle'] ?? 'TBD',
+                'Pickup'       => $validated['pickupLocation'],
+                'Drop-off'     => $validated['dropoffLocation'],
+                'Date & Time'  => $validated['datetime'],
+            ], $portalUrl);
+        }
 
         return back()->with('success', 'Transport booked from guest request.');
     }

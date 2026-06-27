@@ -332,6 +332,51 @@ function deleteTransport(trans) {
     })
 }
 
+// Flight detail modal
+const flightDetailOpen = ref(false)
+const flightDetailData = ref(null)
+
+function openFlightDetail(flight) {
+    flightDetailData.value = flight
+    flightDetailOpen.value = true
+}
+
+function formatLegDate(dateStr) {
+    if (!dateStr) return ''
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// Guest remarks
+const remarksOpen = ref({})
+const remarksText = ref({})
+const remarksSubmitting = ref({})
+
+function toggleRemarks(type, id) {
+    const key = `${type}-${id}`
+    remarksOpen.value[key] = !remarksOpen.value[key]
+}
+
+function submitRemarks(type, id) {
+    const key = `${type}-${id}`
+    const text = remarksText.value[key]?.trim()
+    if (!text) return
+
+    remarksSubmitting.value[key] = true
+    router.post(route('portal.services.remarks', [type, props.guest.id, id]), { remarks: text }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            remarksSubmitting.value[key] = false
+            remarksOpen.value[key] = false
+            toast('Your remarks have been submitted')
+        },
+        onError: () => {
+            remarksSubmitting.value[key] = false
+            toast('Failed to submit remarks', 'error')
+        },
+    })
+}
+
 // Companions
 const RELATIONS = ['Spouse', 'Family', 'Aide', 'Security', 'Delegate', 'Interpreter', 'Companion']
 const localCompanions = ref(props.companions.map(c => ({
@@ -600,8 +645,31 @@ async function uploadCompFile(file, idx, field) {
               </div>
             </div>
           </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+            <button class="portal-btn portal-btn-sm" @click="openFlightDetail(flight)">View full details</button>
+          </div>
           <div v-if="flight.note" style="font-size: 12px; color: var(--portal-text-2); margin-top: 10px; font-style: italic;">
             "{{ flight.note }}"
+          </div>
+          <!-- Guest remarks for pending flights -->
+          <div v-if="flight.status?.name === 'pending' && flight.source !== 'portal'" class="svc-review">
+            <div v-if="flight.guest_remarks" class="svc-remarks-sent">
+              <span style="font-size:11px;font-weight:600;color:var(--portal-text-3);text-transform:uppercase;letter-spacing:.5px;">Your remarks</span>
+              <div style="margin-top:4px;font-style:italic;">"{{ flight.guest_remarks }}"</div>
+            </div>
+            <div v-else>
+              <div class="svc-review-label">Your protocol team has arranged this flight. Please review and let us know if you have any changes.</div>
+              <div v-if="remarksOpen[`flight-${flight.id}`]" style="margin-top:8px;">
+                <textarea v-model="remarksText[`flight-${flight.id}`]" class="portal-textarea" rows="3" placeholder="e.g., I prefer a window seat, different date needed, etc."></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                  <GmsBtn variant="primary" :processing="remarksSubmitting[`flight-${flight.id}`]" @click="submitRemarks('flight', flight.id)">Submit remarks</GmsBtn>
+                  <GmsBtn variant="ghost" @click="toggleRemarks('flight', flight.id)">Cancel</GmsBtn>
+                </div>
+              </div>
+              <div v-else style="margin-top:8px;">
+                <GmsBtn variant="ghost" @click="toggleRemarks('flight', flight.id)">Add remarks or change request</GmsBtn>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -627,6 +695,26 @@ async function uploadCompFile(file, idx, field) {
               </template>
             </div>
           </div>
+          <!-- Guest remarks for pending accommodation -->
+          <div v-if="acc.status?.name === 'pending' && acc.source !== 'portal'" class="svc-review">
+            <div v-if="acc.guest_remarks" class="svc-remarks-sent">
+              <span style="font-size:11px;font-weight:600;color:var(--portal-text-3);text-transform:uppercase;letter-spacing:.5px;">Your remarks</span>
+              <div style="margin-top:4px;font-style:italic;">"{{ acc.guest_remarks }}"</div>
+            </div>
+            <div v-else>
+              <div class="svc-review-label">Your protocol team has arranged this accommodation. Please review and let us know if you have any changes.</div>
+              <div v-if="remarksOpen[`accommodation-${acc.id}`]" style="margin-top:8px;">
+                <textarea v-model="remarksText[`accommodation-${acc.id}`]" class="portal-textarea" rows="3" placeholder="e.g., I need a higher floor, early check-in, etc."></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                  <GmsBtn variant="primary" :processing="remarksSubmitting[`accommodation-${acc.id}`]" @click="submitRemarks('accommodation', acc.id)">Submit remarks</GmsBtn>
+                  <GmsBtn variant="ghost" @click="toggleRemarks('accommodation', acc.id)">Cancel</GmsBtn>
+                </div>
+              </div>
+              <div v-else style="margin-top:8px;">
+                <GmsBtn variant="ghost" @click="toggleRemarks('accommodation', acc.id)">Add remarks or change request</GmsBtn>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -649,6 +737,26 @@ async function uploadCompFile(file, idx, field) {
                 <button class="portal-btn portal-btn-sm" @click="openTransportModal(trans)">Edit</button>
                 <button class="portal-btn portal-btn-sm portal-btn-danger" @click="deleteTransport(trans)">Delete</button>
               </template>
+            </div>
+          </div>
+          <!-- Guest remarks for pending transport -->
+          <div v-if="trans.status?.name === 'pending' && trans.source !== 'portal'" class="svc-review">
+            <div v-if="trans.guest_remarks" class="svc-remarks-sent">
+              <span style="font-size:11px;font-weight:600;color:var(--portal-text-3);text-transform:uppercase;letter-spacing:.5px;">Your remarks</span>
+              <div style="margin-top:4px;font-style:italic;">"{{ trans.guest_remarks }}"</div>
+            </div>
+            <div v-else>
+              <div class="svc-review-label">Your protocol team has arranged this transport. Please review and let us know if you have any changes.</div>
+              <div v-if="remarksOpen[`transport-${trans.id}`]" style="margin-top:8px;">
+                <textarea v-model="remarksText[`transport-${trans.id}`]" class="portal-textarea" rows="3" placeholder="e.g., I prefer an SUV, different pickup time, etc."></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                  <GmsBtn variant="primary" :processing="remarksSubmitting[`transport-${trans.id}`]" @click="submitRemarks('transport', trans.id)">Submit remarks</GmsBtn>
+                  <GmsBtn variant="ghost" @click="toggleRemarks('transport', trans.id)">Cancel</GmsBtn>
+                </div>
+              </div>
+              <div v-else style="margin-top:8px;">
+                <GmsBtn variant="ghost" @click="toggleRemarks('transport', trans.id)">Add remarks or change request</GmsBtn>
+              </div>
             </div>
           </div>
         </div>
@@ -869,6 +977,109 @@ async function uploadCompFile(file, idx, field) {
       </template>
     </PortalModal>
 
+    <!-- Flight Detail Modal -->
+    <PortalModal
+      :open="flightDetailOpen"
+      :title="flightDetailData ? `${flightDetailData.code} — Flight Itinerary` : ''"
+      subtitle="Review your flight details arranged by your protocol team"
+      @close="flightDetailOpen = false; flightDetailData = null"
+    >
+      <template v-if="flightDetailData">
+        <!-- Status & ref header -->
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+          <span class="portal-badge" :class="flightDetailData.status?.name === 'confirmed' ? 'success' : 'warning'" style="font-size: 13px; padding: 5px 12px;">
+            {{ flightDetailData.status?.label || flightDetailData.status?.name || 'Pending' }}
+          </span>
+          <span v-if="flightDetailData.ref" style="font-size: 13px; color: var(--portal-text-3); font-family: var(--gms-font-mono, monospace);">
+            PNR: {{ flightDetailData.ref }}
+          </span>
+        </div>
+
+        <!-- Leg cards -->
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div v-for="leg in flightDetailData.legs" :key="leg.id" class="fd-leg">
+            <div class="fd-leg-header">
+              <div class="fd-leg-dir" :class="leg.dir.toLowerCase() === 'inbound' ? 'fd-dir-in' : 'fd-dir-out'">
+                {{ leg.dir.toLowerCase() === 'inbound' ? '↘' : '↗' }}
+                {{ leg.dir }}
+              </div>
+              <div v-if="leg.flight_no && leg.flight_no !== 'TBD'" class="fd-leg-flight">{{ leg.airline || '' }} {{ leg.flight_no }}</div>
+            </div>
+
+            <!-- Route visual -->
+            <div class="fd-route">
+              <div class="fd-endpoint">
+                <div class="fd-code">{{ leg.from_code !== 'XXX' ? leg.from_code : '' }}</div>
+                <div class="fd-city">{{ leg.from_city }}</div>
+                <div v-if="leg.dep" class="fd-time">{{ leg.dep }}</div>
+              </div>
+              <div class="fd-connector">
+                <div class="fd-line"></div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--portal-maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+                <div class="fd-line"></div>
+              </div>
+              <div class="fd-endpoint" style="text-align: right;">
+                <div class="fd-code">{{ leg.to_code !== 'XXX' ? leg.to_code : '' }}</div>
+                <div class="fd-city">{{ leg.to_city }}</div>
+                <div v-if="leg.arr" class="fd-time">{{ leg.arr }}</div>
+              </div>
+            </div>
+
+            <!-- Details grid -->
+            <div class="fd-details">
+              <div class="fd-detail">
+                <div class="fd-detail-k">Date</div>
+                <div class="fd-detail-v">{{ formatLegDate(leg.date) }}</div>
+              </div>
+              <div class="fd-detail">
+                <div class="fd-detail-k">Cabin</div>
+                <div class="fd-detail-v">{{ leg.cls || '—' }}</div>
+              </div>
+              <div v-if="leg.dur" class="fd-detail">
+                <div class="fd-detail-k">Duration</div>
+                <div class="fd-detail-v">{{ leg.dur }}</div>
+              </div>
+              <div v-if="leg.airline" class="fd-detail">
+                <div class="fd-detail-k">Airline</div>
+                <div class="fd-detail-v">{{ leg.airline }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Passengers -->
+        <div v-if="flightDetailData.pax" style="margin-top: 16px; padding: 12px 14px; background: var(--portal-bg); border: 1px solid var(--portal-border); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 13px; color: var(--portal-text-2);">Passengers</span>
+          <span style="font-size: 14px; font-weight: 600;">{{ flightDetailData.pax }}</span>
+        </div>
+
+        <!-- Notes -->
+        <div v-if="flightDetailData.note" style="margin-top: 12px; padding: 12px 14px; background: var(--portal-bg); border: 1px solid var(--portal-border); border-radius: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: var(--portal-text-3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px;">Special Requests</div>
+          <div style="font-size: 13px; color: var(--portal-text-2); font-style: italic; line-height: 1.5;">"{{ flightDetailData.note }}"</div>
+        </div>
+
+        <!-- Guest remarks already submitted -->
+        <div v-if="flightDetailData.guest_remarks" style="margin-top: 12px; padding: 12px 14px; background: #fef3c7; border: 1px solid #fef08a; border-radius: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: #a16207; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px;">Your Remarks</div>
+          <div style="font-size: 13px; color: #854d0e; font-style: italic; line-height: 1.5;">"{{ flightDetailData.guest_remarks }}"</div>
+        </div>
+
+        <!-- Inline remarks form for pending -->
+        <div v-if="flightDetailData.status?.name === 'pending' && flightDetailData.source !== 'portal' && !flightDetailData.guest_remarks" style="margin-top: 16px;">
+          <div class="svc-review-label" style="margin-bottom: 8px;">Everything look correct? If you need any changes, let your protocol team know below.</div>
+          <textarea v-model="remarksText[`flight-${flightDetailData.id}`]" class="portal-textarea" rows="3" placeholder="e.g., I prefer a window seat, different date needed, etc."></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <GmsBtn variant="primary" :processing="remarksSubmitting[`flight-${flightDetailData.id}`]" @click="submitRemarks('flight', flightDetailData.id)">Submit remarks</GmsBtn>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <GmsBtn variant="ghost" @click="flightDetailOpen = false; flightDetailData = null">Close</GmsBtn>
+      </template>
+    </PortalModal>
+
     <!-- Delete Confirmation Modal -->
     <GmsConfirmModal
       :open="deleteModal.open"
@@ -929,6 +1140,75 @@ async function uploadCompFile(file, idx, field) {
 .portal-btn-danger { color: #dc2626; border-color: rgba(220,38,38,.2); }
 .portal-btn-danger:hover { background: rgba(220,38,38,.06); border-color: #dc2626; }
 .portal-input { padding: 10px 12px; border: 1px solid var(--portal-border, var(--gms-border)); border-radius: 8px; font-size: 14px; background: var(--portal-surface, var(--gms-surface)); outline: none; width: 100%; transition: .12s; }
+
+/* Service review/remarks */
+.svc-review {
+    margin-top: 12px; padding: 12px 14px;
+    background: #fefce8; border: 1px solid #fef08a;
+    border-radius: 8px;
+}
+.svc-review-label { font-size: 13px; color: #854d0e; line-height: 1.5; }
+.svc-remarks-sent {
+    font-size: 13px; color: var(--portal-text-2); line-height: 1.5;
+}
+.portal-textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--portal-border);
+    border-radius: 8px; font-size: 14px; font-family: inherit;
+    background: var(--portal-surface); resize: vertical; min-height: 60px;
+    outline: none; transition: .12s;
+}
+.portal-textarea:focus { border-color: var(--gms-maroon); box-shadow: 0 0 0 3px rgba(138,31,61,.06); }
+
+/* Flight detail modal */
+.fd-leg {
+    border: 1px solid var(--portal-border); border-radius: 12px;
+    overflow: hidden; background: var(--portal-surface);
+}
+.fd-leg-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: var(--portal-bg);
+    border-bottom: 1px solid var(--portal-border);
+}
+.fd-leg-dir {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .5px; display: flex; align-items: center; gap: 6px;
+}
+.fd-dir-in { color: #166534; }
+.fd-dir-out { color: #9333ea; }
+.fd-leg-flight {
+    font-size: 12px; font-weight: 600; color: var(--portal-text-2);
+    font-family: var(--gms-font-mono, monospace);
+}
+.fd-route {
+    display: flex; align-items: center; gap: 12px;
+    padding: 20px 16px;
+}
+.fd-endpoint { flex: 1; min-width: 0; }
+.fd-code {
+    font-size: 28px; font-weight: 700; color: var(--portal-text);
+    font-family: var(--gms-font-mono, monospace); line-height: 1;
+}
+.fd-city { font-size: 12px; color: var(--portal-text-2); margin-top: 2px; }
+.fd-time {
+    font-size: 14px; font-weight: 600; color: var(--portal-text);
+    font-family: var(--gms-font-mono, monospace); margin-top: 6px;
+}
+.fd-connector {
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    padding: 0 4px;
+}
+.fd-line { width: 24px; height: 1px; background: var(--portal-border); }
+.fd-details {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1px; background: var(--portal-border);
+    border-top: 1px solid var(--portal-border);
+}
+.fd-detail { padding: 10px 16px; background: var(--portal-surface); }
+.fd-detail-k {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--portal-text-3); margin-bottom: 2px;
+}
+.fd-detail-v { font-size: 13px; font-weight: 600; color: var(--portal-text); }
 .portal-input:focus { border-color: var(--gms-maroon); box-shadow: 0 0 0 3px rgba(138,31,61,.06); }
 
 /* ── Transport detail card ── */

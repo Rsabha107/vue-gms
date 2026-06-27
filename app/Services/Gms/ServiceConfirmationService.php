@@ -7,6 +7,21 @@ use App\Models\Guest;
 
 class ServiceConfirmationService
 {
+    public static function sendServiceReview(Guest $guest, string $eventName, string $serviceType, array $fields, ?string $portalUrl = null): void
+    {
+        if (!$guest->email) return;
+
+        TemplatedMail::deliver('service_review', $guest->email, [
+            'guest_name'   => $guest->name,
+            'guest_title'  => $guest->title ?? '',
+            'event_name'   => $eventName,
+            'service_type' => $serviceType,
+        ], [
+            'serviceFields' => $fields,
+            'portalUrl'     => $portalUrl,
+        ]);
+    }
+
     public static function sendFlightConfirmation(Guest $guest, string $eventName, array $flightData): void
     {
         if (!$guest->email) return;

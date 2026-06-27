@@ -20,6 +20,7 @@ class AccommodationRequest extends Model
         'check_out',
         'nights',
         'notes',
+        'guest_remarks',
         'checked_in_at',
         'checked_out_at',
         'fulfilled_by_id',

@@ -5,6 +5,7 @@ defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
     variant:    { type: String,  default: 'ghost' },  // ghost | primary | danger
+    size:       { type: String,  default: 'sm'    },  // sm | md | lg
     icon:       { type: String,  default: ''       },
     iconOnly:   { type: Boolean, default: false    },
     iconSize:   { type: Number,  default: 12       },
@@ -15,8 +16,8 @@ const props = defineProps({
 
 <template>
   <button
-    class="gms-btn gms-btn-sm"
-    :class="[`gms-btn-${variant}`, iconOnly ? 'gms-btn-icon' : '']"
+    class="gms-btn"
+    :class="[`gms-btn-${variant}`, size !== 'md' ? `gms-btn-${size}` : '', iconOnly ? 'gms-btn-icon' : '']"
     :disabled="processing || disabled"
     v-bind="$attrs"
   >

@@ -62,6 +62,7 @@ class GmsFlightController extends Controller
                 'pax' => $fr->pax,
                 'submitted' => $fr->requested_at ?? $fr->created_at->format('Y-m-d H:i'),
                 'notes' => $fr->note ?? '',
+                'guestRemarks' => $fr->guest_remarks,
                 'source' => $fr->source,
                 'initiatedBy' => $fr->initiated_by,
                 'fulfilledById' => $fr->fulfilled_by_id,
@@ -141,22 +142,21 @@ class GmsFlightController extends Controller
             'requests'      => $regularRequests,
             'guestRequests' => $guestRequests,
             'guests'        => Guest::where('guestType', 'international')
-                ->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                ->with(['tierInfo', 'invitation' => function($query) use ($eventId) {
-                    $query->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                        ->with('status');
-                }])
+                ->when($eventId, fn($q) => $q->whereHas('events', fn($eq) => $eq->where('event_id', $eventId)))
+                ->with(['tierInfo', 'events' => fn($q) => $q->where('event_id', $eventId)])
                 ->orderBy('name')
                 ->get()
-                ->map(function($guest) {
+                ->map(function($guest) use ($eventId) {
+                    $pivotStatus = $guest->events->firstWhere('id', $eventId)?->pivot?->status_id;
+                    $statusName = $pivotStatus ? (\App\Models\InvitationStatus::find($pivotStatus)?->name ?? null) : null;
                     return [
                         'id' => $guest->id,
                         'name' => $guest->name,
                         'tier' => $guest->tier,
                         'guestType' => $guest->guestType,
                         'nationality' => $guest->nationality,
-                        'invitationStatus' => $guest->invitation?->status?->name ?? null,
-                        'hasConfirmedInvitation' => $guest->invitation?->status?->name === 'confirmed',
+                        'invitationStatus' => $statusName,
+                        'hasConfirmedInvitation' => $statusName === 'confirmed',
                     ];
                 }),
             'tiers'  => ServiceLevel::all(),
@@ -191,8 +191,7 @@ class GmsFlightController extends Controller
         $eventId = $event['id'] ?? null;
 
         $code = $this->nextCode($eventId);
-        // Manual flight creation by team should be 'confirmed' by default
-        $statusName = ($validated['isChange'] ?? false) ? 'change' : 'confirmed';
+        $statusName = ($validated['isChange'] ?? false) ? 'change' : 'pending';
         $status = \App\Models\InvitationStatus::where('name', $statusName)->first();
         
         if (!$status) {
@@ -212,6 +211,23 @@ class GmsFlightController extends Controller
         ]);
 
         $this->createLegs($flightRequest, $validated);
+
+        $guest = Guest::find($validated['guestId']);
+        if ($guest?->email) {
+            $inbound = $flightRequest->legs()->where('dir', 'Inbound')->first();
+            $outbound = $flightRequest->legs()->where('dir', 'Outbound')->first();
+            $portalUrl = null;
+            try { $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest); } catch (\Throwable $e) {}
+
+            \App\Services\Gms\ServiceConfirmationService::sendServiceReview($guest, $event['name'] ?? '', 'Flight', [
+                'Ref Code'  => $flightRequest->code,
+                'Route'     => ($inbound?->from_city ?? '') . ' → ' . ($inbound?->to_city ?? 'Doha'),
+                'Class'     => $inbound?->cls ?? '',
+                'Passengers'=> $validated['pax'],
+                'Inbound'   => ($inbound?->date ?? '') . ($inbound?->dep ? ' · ' . $inbound->dep : ''),
+                'Outbound'  => $outbound ? (($outbound->date ?? '') . ($outbound->dep ? ' · ' . $outbound->dep : '')) : '',
+            ], $portalUrl);
+        }
 
         return back()->with('success', 'Flight request created.');
     }
@@ -246,12 +262,10 @@ class GmsFlightController extends Controller
 
         $code = $this->nextCode($guestRequest->event_id);
 
-        // When team books a guest request, it should be confirmed immediately
-        $status = \App\Models\InvitationStatus::where('name', 'confirmed')->first();
-        
+        $status = \App\Models\InvitationStatus::where('name', 'pending')->first();
+
         if (!$status) {
-            \Log::error("Status 'confirmed' not found in invitation_statuses table");
-            return back()->withErrors(['status' => "Status 'confirmed' not found. Please contact administrator."]);
+            return back()->withErrors(['status' => "Status 'pending' not found. Please contact administrator."]);
         }
 
         $booking = FlightRequest::create([
@@ -269,6 +283,24 @@ class GmsFlightController extends Controller
         $this->createLegs($booking, $validated);
 
         $guestRequest->update(['fulfilled_by_id' => $booking->id]);
+
+        $guest = Guest::find($validated['guestId']);
+        if ($guest?->email) {
+            $event = GmsMockData::getEvent();
+            $inbound = $booking->legs()->where('dir', 'Inbound')->first();
+            $outbound = $booking->legs()->where('dir', 'Outbound')->first();
+            $portalUrl = null;
+            try { $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest); } catch (\Throwable $e) {}
+
+            \App\Services\Gms\ServiceConfirmationService::sendServiceReview($guest, $event['name'] ?? '', 'Flight', [
+                'Ref Code'  => $booking->code,
+                'Route'     => ($inbound?->from_city ?? '') . ' → ' . ($inbound?->to_city ?? 'Doha'),
+                'Class'     => $inbound?->cls ?? '',
+                'Passengers'=> $validated['pax'],
+                'Inbound'   => ($inbound?->date ?? '') . ($inbound?->dep ? ' · ' . $inbound->dep : ''),
+                'Outbound'  => $outbound ? (($outbound->date ?? '') . ($outbound->dep ? ' · ' . $outbound->dep : '')) : '',
+            ], $portalUrl);
+        }
 
         return back()->with('success', 'Flight booked from guest request.');
     }

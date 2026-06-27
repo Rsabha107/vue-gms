@@ -37,6 +37,7 @@ class GmsAccommodationController extends Controller
                 'checkOut'            => $ar->check_out->format('Y-m-d'),
                 'nights'              => $ar->nights,
                 'notes'               => $ar->notes ?? '',
+                'guestRemarks'        => $ar->guest_remarks,
                 'source'              => $ar->source,
                 'initiatedBy'         => $ar->initiated_by,
                 'fulfilledById'       => $ar->fulfilled_by_id,
@@ -78,14 +79,13 @@ class GmsAccommodationController extends Controller
             'guestRequests' => $guestRequests,
             'roomBlocks'    => $roomBlocks,
             'guests'     => Guest::where('guestType', 'international')
-                ->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                ->with(['tierInfo', 'group', 'invitation' => function($query) use ($eventId) {
-                    $query->when($eventId, fn($q) => $q->where('event_id', $eventId))
-                        ->with('status');
-                }])
+                ->when($eventId, fn($q) => $q->whereHas('events', fn($eq) => $eq->where('event_id', $eventId)))
+                ->with(['tierInfo', 'group', 'events' => fn($q) => $q->where('event_id', $eventId)])
                 ->orderBy('name')
                 ->get()
-                ->map(function($g) {
+                ->map(function($g) use ($eventId) {
+                    $pivotStatus = $g->events->firstWhere('id', $eventId)?->pivot?->status_id;
+                    $statusName = $pivotStatus ? (\App\Models\InvitationStatus::find($pivotStatus)?->name ?? null) : null;
                     return [
                         'id' => $g->id,
                         'name' => $g->name,
@@ -93,8 +93,8 @@ class GmsAccommodationController extends Controller
                         'guestType' => $g->guestType,
                         'group' => $g->group->name ?? null,
                         'email' => $g->email,
-                        'invitationStatus' => $g->invitation?->status?->name ?? null,
-                        'hasConfirmedInvitation' => $g->invitation?->status?->name === 'confirmed',
+                        'invitationStatus' => $statusName,
+                        'hasConfirmedInvitation' => $statusName === 'confirmed',
                     ];
                 }),
             'hotels' => GmsMockData::getHotels(),
@@ -135,7 +135,7 @@ class GmsAccommodationController extends Controller
             'event_id'   => $eventId,
             'guest_id'   => $validated['guestId'],
             'code'       => $code,
-            'status_id'  => \App\Models\InvitationStatus::where('name', 'new')->value('id'),
+            'status_id'  => \App\Models\InvitationStatus::where('name', 'pending')->value('id'),
             'hotel_id'   => $hotel->id,
             'hotel_code' => $hotel->code,
             'hotel_name' => $hotel->name,
@@ -145,6 +145,20 @@ class GmsAccommodationController extends Controller
             'nights'     => $nights,
             'notes'      => $validated['notes'],
         ]);
+
+        $guest = Guest::find($validated['guestId']);
+        if ($guest?->email) {
+            $portalUrl = null;
+            try { $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest); } catch (\Throwable $e) {}
+            \App\Services\Gms\ServiceConfirmationService::sendServiceReview($guest, $event['name'] ?? '', 'Accommodation', [
+                'Booking Code' => $code,
+                'Hotel'        => $hotel->name,
+                'Room Type'    => $validated['roomType'],
+                'Check-in'     => $validated['checkIn'],
+                'Check-out'    => $validated['checkOut'],
+                'Nights'       => $nights,
+            ], $portalUrl);
+        }
 
         return back()->with('success', 'Accommodation request created.');
     }
@@ -250,7 +264,7 @@ class GmsAccommodationController extends Controller
             'event_id'             => $eventId,
             'guest_id'             => $validated['guestId'],
             'code'                 => $code,
-            'status_id'            => 'new',
+            'status_id'            => \App\Models\InvitationStatus::where('name', 'pending')->value('id'),
             'hotel_id'             => $hotel->id,
             'hotel_code'           => $hotel->code,
             'hotel_name'           => $hotel->name,
@@ -265,6 +279,21 @@ class GmsAccommodationController extends Controller
         ]);
 
         $guestRequest->update(['fulfilled_by_id' => $booking->id]);
+
+        $guest = Guest::find($validated['guestId']);
+        if ($guest?->email) {
+            $event = GmsMockData::getEvent();
+            $portalUrl = null;
+            try { $portalUrl = \App\Services\Gms\PortalTokenService::generateSignedUrl($guest); } catch (\Throwable $e) {}
+            \App\Services\Gms\ServiceConfirmationService::sendServiceReview($guest, $event['name'] ?? '', 'Accommodation', [
+                'Booking Code' => $code,
+                'Hotel'        => $hotel->name,
+                'Room Type'    => $validated['roomType'],
+                'Check-in'     => $validated['checkIn'],
+                'Check-out'    => $validated['checkOut'],
+                'Nights'       => $nights,
+            ], $portalUrl);
+        }
 
         return back()->with('success', 'Accommodation booked from guest request.');
     }

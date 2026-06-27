@@ -27,6 +27,7 @@ class EmailTemplate extends Model
         'invitation'             => 'Invitation',
         'confirmation'           => 'Invitation Confirmed',
         'portal_access'          => 'Portal Access',
+        'service_review'         => 'Service Review (Pending)',
         'flight_confirmed'       => 'Flight Confirmed',
         'accommodation_confirmed'=> 'Accommodation Confirmed',
         'transport_confirmed'    => 'Transport Confirmed',
@@ -36,7 +37,7 @@ class EmailTemplate extends Model
         'guest_name', 'guest_title', 'guest_email',
         'event_name', 'event_date', 'event_location',
         'tier_name', 'match_list', 'portal_url',
-        'service_details', 'rsvp_url',
+        'service_type', 'service_details', 'rsvp_url',
     ];
 
     public function scopeOfType($query, string $type)

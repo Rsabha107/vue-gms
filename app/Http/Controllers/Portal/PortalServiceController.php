@@ -346,6 +346,25 @@ class PortalServiceController extends Controller
         return back()->with('success', 'Transport request deleted');
     }
 
+    public function submitRemarks(Request $request, Guest $guest, string $type, int $id)
+    {
+        $validated = $request->validate([
+            'remarks' => 'required|string|max:1000',
+        ]);
+
+        $model = match ($type) {
+            'flight'        => \App\Models\FlightRequest::class,
+            'accommodation' => \App\Models\AccommodationRequest::class,
+            'transport'     => \App\Models\TransportRequest::class,
+            default         => abort(404),
+        };
+
+        $record = $model::where('id', $id)->where('guest_id', $guest->id)->firstOrFail();
+        $record->update(['guest_remarks' => $validated['remarks']]);
+
+        return back()->with('success', 'Your remarks have been submitted');
+    }
+
     public function saveCompanions(Request $request, Guest $guest)
     {
         $validated = $request->validate([
